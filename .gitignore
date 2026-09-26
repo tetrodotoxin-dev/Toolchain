@@ -1,0 +1,4 @@
+.bin/
+bazel-*
+.bazelrc.local
+MODULE.bazel.lock

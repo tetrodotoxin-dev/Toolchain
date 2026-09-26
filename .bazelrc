@@ -1,0 +1,2 @@
+common --symlink_prefix=.bin/
+build:release --compilation_mode=opt

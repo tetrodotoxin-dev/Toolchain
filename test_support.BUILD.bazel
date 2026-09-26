@@ -1,0 +1,38 @@
+# # Tetrodotoxin
+# Copyright (c) 2023-present Matt Kaes and contributors
+
+load("@rules_cc//cc:cc_import.bzl", "cc_import")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "headers",
+    hdrs = glob(["include/**/*.hpp"]),
+    strip_include_prefix = "include",
+    deps = ["@perimortem"],
+)
+
+cc_import(
+    name = "support",
+    testonly = True,
+    pic_static_library = "lib/libsupport.pic.a",
+    static_library = "lib/libsupport.a",
+    target_compatible_with = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+    deps = [":headers"],
+)
+
+cc_import(
+    name = "benchmark_support",
+    testonly = True,
+    pic_static_library = "lib/libbenchmark_support.pic.a",
+    static_library = "lib/libbenchmark_support.a",
+    target_compatible_with = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+    deps = [":headers"],
+)
