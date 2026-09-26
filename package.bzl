@@ -8,10 +8,10 @@ Other destinations name one exact file. This keeps the file map explicit and
 lets Bazel schedule its producers without a packaging script running builds.
 """
 
-load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_attributes", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
-def _files(name, files, testonly):
+def _files(name, files, testonly, modes):
     parts = []
     for index, (source, destination) in enumerate(files.items()):
         part = name + "_files_" + str(index)
@@ -22,6 +22,7 @@ def _files(name, files, testonly):
             prefix = destination.rstrip("/") if directory else "",
             renames = {} if directory else {source: destination},
             strip_prefix = strip_prefix.from_pkg() if directory and destination.startswith("include/") else strip_prefix.files_only(),
+            attributes = pkg_attributes(mode = modes.get(destination, "0644")),
             testonly = testonly,
             visibility = ["//visibility:private"],
         )
@@ -29,9 +30,9 @@ def _files(name, files, testonly):
     return parts
 
 def sdk_release(name, files, platforms, version = None, package_name = None, platform_files = {}, **kwargs):
-    parts = _files(name, files, kwargs.get("testonly", False))
+    parts = _files(name, files, kwargs.get("testonly", False), kwargs.get("modes", {}))
     for index, (platform, additions) in enumerate(platform_files.items()):
-        parts += select({platform: _files(name + "_platform_" + str(index), additions, kwargs.get("testonly", False)), "//conditions:default": []})
+        parts += select({platform: _files(name + "_platform_" + str(index), additions, kwargs.get("testonly", False), kwargs.get("modes", {})), "//conditions:default": []})
     pkg_tar(
         name = name,
         srcs = parts,

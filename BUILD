@@ -170,7 +170,6 @@ filegroup(
     srcs = glob([
         "*.bzl",
         "*.py",
-        "*.sh",
     ]) + [
         "BUILD",
         "LICENSE",
@@ -181,7 +180,10 @@ filegroup(
 
 sdk_release(
     name = "sdk",
-    files = {":sources": "/"},
+    files = {
+        ":sources": "/",
+        "archive.sh": "archive.sh",
+    },
     modes = {"archive.sh": "0755"},
     platforms = {"//conditions:default": "source"},
 )
