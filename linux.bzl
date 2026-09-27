@@ -9,6 +9,7 @@ without changing that published machine baseline.
 """
 
 load("@host_tools//:settings.bzl", "AR", "COV", "CPP", "CXX", "ELF_LINKER", "HOST_SYSTEM", "NM", "OBJDUMP", "PYTHON", "RESOURCE_INCLUDE", "STRIP")
+load(":sdk.bzl", "extract_debian")
 load("@bazel_tools//tools/build_defs/cc:action_names.bzl", "ACTION_NAMES")
 load("@bazel_tools//tools/cpp:cc_toolchain_config_lib.bzl", "feature", "flag_group", "flag_set", "tool_path")
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
@@ -19,22 +20,10 @@ load("@rules_cc//cc/toolchains:cc_toolchain_config_info.bzl", "CcToolchainConfig
 # The dated snapshot keeps every package available under its reviewed checksum.
 def _sdk(ctx):
     packages = json.decode(ctx.read(ctx.attr._packages))
-    for name, package in packages.items():
-        directory = "archives/" + name
-        archive = directory + "/package.deb"
-        ctx.download(
-            url = "https://snapshot.ubuntu.com/ubuntu/20260925T000000Z/" + package["path"],
-            sha256 = package["sha256"],
-            output = archive,
-        )
-        unpack = ctx.execute([AR, "x", str(ctx.path(archive))], working_directory = str(ctx.path(directory)))
-        if unpack.return_code:
-            fail(unpack.stderr)
-        payload = [path for path in ctx.path(directory).readdir() if path.basename.startswith("data.tar.")]
-        if len(payload) != 1:
-            fail("Linux SDK package has no unique data archive: " + name)
-        ctx.extract(payload[0])
-        ctx.delete(directory)
+    extract_debian(ctx, {
+        "https://snapshot.ubuntu.com/ubuntu/20260925T000000Z/" + package["path"]: package["sha256"]
+        for package in packages.values()
+    })
     ctx.file("normalize.py", ctx.read(ctx.attr._normalize))
     normalized = ctx.execute([PYTHON, ctx.path("normalize.py"), "linux"])
     if normalized.return_code:

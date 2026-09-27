@@ -2,6 +2,8 @@
 
 """Import a release's shared headers and target binaries without rebuilding it."""
 
+load("@host_tools//:settings.bzl", "AR")
+
 _PLATFORMS = {
     "linux-x86_64-v3": "@tetro_toolchain//:linux",
     "windows-x86_64-msvc": "@tetro_toolchain//:windows",
@@ -28,7 +30,7 @@ def _sdk(ctx):
     ctx.file("BUILD.bazel", """load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_import.bzl", "cc_import")
 package(default_visibility = ["//visibility:public"])
-cc_library(name = "headers", hdrs = glob(["headers/include/**/*.h", "headers/include/**/*.hpp"]), strip_include_prefix = "headers/include", deps = %s)
+cc_library(name = "headers", hdrs = glob(["headers/include/**/*.h", "headers/include/**/*.hpp"], allow_empty = True), strip_include_prefix = "headers/include", deps = %s)
 cc_import(name = "%s", shared_library = select(%s), interface_library = select(%s), deps = [":headers"])
 filegroup(name = "build", srcs = select({key: [value] for key, value in %s.items()}))
 """ % (repr(ctx.attr.deps), ctx.attr.library, repr(libraries), repr(interfaces), repr(libraries)))
@@ -51,7 +53,32 @@ def _dependencies(ctx):
                     fail("Conflicting SDK release pins for " + release.name)
                 continue
             seen[release.name] = pin
-            _sdk_repository(name = release.name, library = release.name, project = release.project, version = release.version, archives = release.archives, deps = release.deps)
+            _sdk_repository(name = release.name, library = release.name, project = release.project, version = release.version, archives = release.archives, deps = [str(dep) for dep in release.deps])
 
-_release = tag_class(attrs = {"name": attr.string(mandatory = True), "project": attr.string(mandatory = True), "version": attr.string(mandatory = True), "archives": attr.string_dict(mandatory = True), "deps": attr.string_list()})
+_release = tag_class(attrs = {"name": attr.string(mandatory = True), "project": attr.string(mandatory = True), "version": attr.string(mandatory = True), "archives": attr.string_dict(mandatory = True), "deps": attr.label_list()})
 dependencies = module_extension(implementation = _dependencies, tag_classes = {"release": _release})
+
+
+def extract_debian(ctx, archives):
+    """Extract pinned binary packages without installing them on the build host."""
+    for index, (url, checksum) in enumerate(archives.items()):
+        directory = "archives/" + str(index)
+        archive = directory + "/package.deb"
+        ctx.download(url = url, sha256 = checksum, output = archive)
+        unpack = ctx.execute([AR, "x", str(ctx.path(archive))], working_directory = str(ctx.path(directory)))
+        if unpack.return_code:
+            fail(unpack.stderr)
+        payload = [path for path in ctx.path(directory).readdir() if path.basename.startswith("data.tar.")]
+        if len(payload) != 1:
+            fail("SDK package has no unique data archive: " + url)
+        ctx.extract(payload[0])
+        ctx.delete(directory)
+
+def _debian_sdk(ctx):
+    extract_debian(ctx, ctx.attr.archives)
+    ctx.file("BUILD.bazel", ctx.read(ctx.attr.build_file))
+
+debian_sdk = repository_rule(implementation = _debian_sdk, attrs = {
+    "archives": attr.string_dict(mandatory = True),
+    "build_file": attr.label(mandatory = True, allow_single_file = True),
+})
