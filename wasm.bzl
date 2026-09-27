@@ -34,7 +34,7 @@ def _config(ctx):
                 flag_set(actions = compile_actions + link_actions, flag_groups = [flag_group(flags = ["--target=wasm32-unknown-emscripten"])]),
                 flag_set(actions = compile_actions, flag_groups = [flag_group(flags = [
                     "-fPIC",
-                    "-DPERI_WASM",
+
                     "-fno-exceptions",
                     "-fno-rtti",
                     "-msimd128",

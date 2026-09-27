@@ -4,7 +4,7 @@ import subprocess
 import sys
 
 symbols = {}
-for line in subprocess.check_output(["nm", "--extern-only", "--defined-only", "--format=posix", *sys.argv[2:]], text=True).splitlines():
+for line in subprocess.check_output([sys.argv[2], "--extern-only", "--defined-only", "--format=posix", *sys.argv[3:]], text=True).splitlines():
     fields = line.split()
     if len(fields) >= 2 and fields[1] in ("T", "D", "B", "R"):
         symbols[fields[0]] = " DATA" if fields[1] != "T" else ""

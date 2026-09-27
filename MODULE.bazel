@@ -14,3 +14,9 @@ emscripten_sysroot(name = "emscripten_sysroot")
 windows_sdk = use_repo_rule("//:windows.bzl", "windows_sdk")
 
 windows_sdk(name = "windows_sdk")
+
+host_tools = use_repo_rule("//:host.bzl", "host_tools")
+
+host_tools(name = "host_tools")
+
+register_toolchains("//:cc_toolchain_for_linux_x86_64", "//:cc_toolchain_for_wasm32", "//:cc_toolchain_for_windows_x64")
