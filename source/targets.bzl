@@ -16,22 +16,24 @@ def toolchains():
 
     cc_toolchain(
         name = "linux_x86_64_toolchain",
-        all_files = ":empty",
-        compiler_files = ":empty",
-        dwp_files = ":empty",
-        linker_files = ":empty",
-        objcopy_files = ":empty",
-        strip_files = ":empty",
+        all_files = ":linux_files",
+        compiler_files = ":linux_files",
+        dwp_files = "@host_tools//:files",
+        linker_files = ":linux_files",
+        objcopy_files = "@host_tools//:files",
+        strip_files = "@host_tools//:files",
         supports_param_files = 0,
         toolchain_config = ":linux_x86_64_toolchain_config",
         toolchain_identifier = "linux_x86_64-toolchain",
     )
 
+    native.filegroup(name = "linux_files", srcs = ["@host_tools//:files", "@linux_sdk//:files"])
+
     native.toolchain(
         name = "cc_toolchain_for_linux_x86_64",
         exec_compatible_with = [
             "@platforms//cpu:x86_64",
-            "@platforms//os:linux",
+            "@platforms//os:" + HOST_SYSTEM,
         ],
         target_compatible_with = [
             "@platforms//cpu:x86_64",
@@ -61,23 +63,25 @@ def toolchains():
 
     cc_toolchain(
         name = "wasm32_toolchain",
-        all_files = "@emscripten_sysroot//:headers",
-        ar_files = ":empty",
-        as_files = ":empty",
-        compiler_files = "@emscripten_sysroot//:headers",
-        dwp_files = ":empty",
-        linker_files = ":empty",
-        objcopy_files = ":empty",
-        strip_files = ":empty",
+        all_files = ":wasm_files",
+        ar_files = "@host_tools//:files",
+        as_files = "@host_tools//:files",
+        compiler_files = ":wasm_files",
+        dwp_files = "@host_tools//:files",
+        linker_files = "@host_tools//:files",
+        objcopy_files = "@host_tools//:files",
+        strip_files = "@host_tools//:files",
         supports_param_files = 1,
         toolchain_config = ":wasm32_config",
         toolchain_identifier = "clang-wasm32",
     )
 
+    native.filegroup(name = "wasm_files", srcs = ["@host_tools//:files", "@emscripten_sysroot//:headers"])
+
     native.toolchain(
         name = "cc_toolchain_for_wasm32",
         exec_compatible_with = [
-            "@platforms//os:linux",
+            "@platforms//os:" + HOST_SYSTEM,
             "@platforms//cpu:x86_64",
         ],
         target_compatible_with = [
@@ -136,9 +140,9 @@ def toolchains():
         all_files = ":windows_files",
         ar_files = ":windows_files",
         as_files = ":empty",
-        compiler_files = "@windows_sdk//:files",
+        compiler_files = ":windows_files",
         dwp_files = ":empty",
-        linker_files = "@windows_sdk//:files",
+        linker_files = ":windows_files",
         objcopy_files = ":empty",
         strip_files = ":empty",
         supports_param_files = 1,

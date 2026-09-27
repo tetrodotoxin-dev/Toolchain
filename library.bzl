@@ -27,7 +27,7 @@ def _exports(ctx):
             objects.extend(library.pic_objects or library.objects or [])
     output = ctx.actions.declare_file(ctx.label.name + ".def")
     ctx.actions.run(
-        inputs = depset(objects + [ctx.file._writer]),
+        inputs = depset(objects + [ctx.file._writer] + ctx.files._tools),
         outputs = [output],
         executable = PYTHON,
         arguments = [ctx.file._writer.path, output.path, NM] + [f.path for f in objects],
@@ -38,6 +38,7 @@ def _exports(ctx):
 _exports_rule = rule(implementation = _exports, attrs = {
     "library": attr.label(providers = [CcInfo]),
     "_writer": attr.label(default = Label("//:exports.py"), allow_single_file = True),
+    "_tools": attr.label(default = Label("@host_tools//:files")),
 })
 
 def shared_library(name, deps = [], local_defines = [], linkopts = [], copts = []):

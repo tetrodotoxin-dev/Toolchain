@@ -1,0 +1,50 @@
+[
+  {
+    "url": "https://download.visualstudio.microsoft.com/download/pr/c610cd8c-801b-44b8-a80a-82cc382aeb43/852382a9aa73502b7849c1bcadfb603ba7175c4e8b60e6aba03c7de711d4ece5/Microsoft.VC.14.44.17.14.CRT.Headers.base.vsix",
+    "sha256": "852382a9aa73502b7849c1bcadfb603ba7175c4e8b60e6aba03c7de711d4ece5",
+    "trees": {
+      "Contents/VC/Tools/MSVC/14.44.35207/include": "include/crt"
+    }
+  },
+  {
+    "url": "https://download.visualstudio.microsoft.com/download/pr/67cf767c-5e71-47c2-a54a-cd5631e28942/f01f701a7bcd9587a340898c851424f6a52bb913a70c185ff0d5bf0288c5831a/Microsoft.VC.14.44.17.14.CRT.x64.Desktop.base.vsix",
+    "sha256": "f01f701a7bcd9587a340898c851424f6a52bb913a70c185ff0d5bf0288c5831a",
+    "trees": {
+      "Contents/VC/Tools/MSVC/14.44.35207/lib/x64": "lib/crt"
+    }
+  },
+  {
+    "url": "https://download.visualstudio.microsoft.com/download/pr/67cf767c-5e71-47c2-a54a-cd5631e28942/9135b03c0df53c7a0aa9bef7230a1c2ff4263a0ee7baa7e419d034f484f6bb56/Microsoft.VC.14.44.17.14.CRT.x64.Store.base.vsix",
+    "sha256": "9135b03c0df53c7a0aa9bef7230a1c2ff4263a0ee7baa7e419d034f484f6bb56",
+    "trees": {
+      "Contents/VC/Tools/MSVC/14.44.35207/lib/x64": "lib/crt"
+    }
+  },
+  {
+    "url": "https://api.nuget.org/v3-flatcontainer/microsoft.windows.sdk.cpp/10.0.26100.7705/microsoft.windows.sdk.cpp.10.0.26100.7705.nupkg",
+    "sha256": "ff455660bee071a744715a9665666fa29c07681579d3d815959a9eec5a556424",
+    "trees": {
+      "c/Include/10.0.26100.0/ucrt": "include/ucrt",
+      "c/Include/10.0.26100.0/shared": "include/shared",
+      "c/Include/10.0.26100.0/um": "include/um",
+      "c/Include/10.0.26100.0/winrt": "include/winrt",
+      "c/Extension SDKs/Microsoft.UniversalCRT.Debug/10.0.26100.0/Redist/Debug/x64": "runtime/debug"
+    }
+  },
+  {
+    "url": "https://api.nuget.org/v3-flatcontainer/microsoft.windows.sdk.cpp.x64/10.0.26100.7705/microsoft.windows.sdk.cpp.x64.10.0.26100.7705.nupkg",
+    "sha256": "ad6ce90ff94010699d29548b3c2b1e52c89eb81143e2199155d9a5c38001b52b",
+    "trees": {
+      "c/um/x64": "lib/um",
+      "c/ucrt/x64": "lib/ucrt"
+    }
+  },
+  {
+    "url": "https://download.visualstudio.microsoft.com/download/pr/45d3b8dd-bced-4b37-9974-142f748d710c/4aaf54db0bfc9435f7c3660e1a00237a4b556042bfeea64bde44c2e0194e6ee5/Microsoft.VC.14.44.17.14.CRT.Redist.X64.base.vsix",
+    "sha256": "4aaf54db0bfc9435f7c3660e1a00237a4b556042bfeea64bde44c2e0194e6ee5",
+    "trees": {
+      "Contents/VC/Redist/MSVC/14.44.35112/x64/Microsoft.VC143.CRT": "runtime/release",
+      "Contents/VC/Redist/MSVC/14.44.35112/debug_nonredist/x64/Microsoft.VC143.DebugCRT": "runtime/debug"
+    }
+  }
+]
