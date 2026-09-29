@@ -8,6 +8,8 @@
 #include <fcntl.h>
 #include <io.h>
 #include <windows.h>
+// Exercise case insensitive SDK library lookup when cross linking from Linux.
+#pragma comment(lib, "LiBcMt")
 #else
 #include <unistd.h>
 #endif

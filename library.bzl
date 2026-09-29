@@ -35,7 +35,7 @@ def _exports(ctx):
     )
     return [DefaultInfo(files = depset([output]))]
 
-_exports_rule = rule(implementation = _exports, attrs = {
+exports = rule(implementation = _exports, attrs = {
     "library": attr.label(providers = [CcInfo]),
     "_writer": attr.label(default = Label("//:exports.py"), allow_single_file = True),
     "_tools": attr.label(default = Label("@host_tools//:files")),
@@ -54,7 +54,7 @@ def shared_library(name, deps = [], local_defines = [], linkopts = [], copts = [
         copts = copts,
         visibility = ["//:__subpackages__"],
     )
-    _exports_rule(name = "exports", library = ":implementation", visibility = ["//visibility:private"])
+    exports(name = "exports", library = ":implementation", visibility = ["//visibility:private"])
     cc_shared_library(
         name = "build",
         tags = ["__DONT_DEPEND_ON_DEF_PARSER__"],

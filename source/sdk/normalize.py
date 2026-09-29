@@ -23,8 +23,7 @@ def linux(root):
 
 
 def windows(root, virtual_root):
-    # LLD normalizes default library names before its filesystem search. Publish
-    # those names directly so library discovery also works on a Linux host.
+    # Keep conventional lowercase library names in the extracted SDK.
     for path in (root / "lib").rglob("*"):
         if path.is_file() and path.suffix.lower() == ".lib" and path.name != path.name.lower():
             path.rename(path.with_name(path.name.lower()))
@@ -38,7 +37,10 @@ def windows(root, virtual_root):
             if child.is_dir():
                 entries.append(directory(child, child.name))
             else:
+                # LLD checks the physical library path after VFS resolution.
+                # Headers keep virtual names so later includes use this view.
                 entries.append({"type": "file", "name": child.name,
+                                "use-external-name": child.is_relative_to(root / "lib"),
                                 "external-contents": child.resolve().as_posix()})
         return {"type": "directory", "name": name, "contents": entries}
 
