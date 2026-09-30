@@ -8,7 +8,6 @@ cc_library(
         "benchmark.hpp",
         "clock.hpp",
         "harness.hpp",
-        "process/child.hpp",
         "stream.hpp",
         "unit_test.hpp",
     ],
@@ -58,14 +57,7 @@ cc_library(
     deps = [":headers"],
 )
 
-cc_library(
-    name = "process",
-    srcs = ["process/child.cpp"],
-    deps = [
-        ":clock",
-        ":headers",
-        ":stream",
-    ],
+filegroup(
+    name = "sources",
+    srcs = glob(["**"]),
 )
-
-filegroup(name = "sources", srcs = glob(["**"]))

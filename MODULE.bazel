@@ -1,25 +1,25 @@
 module(
     name = "tetro_toolchain",
-    version = "0.2.1",
+    version = "0.3.0-dev.1",
 )
 
 bazel_dep(name = "rules_cc", version = "0.2.17")
 bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "rules_pkg", version = "1.3.0")
 
-linux_sdk = use_repo_rule("//:linux.bzl", "linux_sdk")
+linux_sdk = use_repo_rule("//source/bazel:linux.bzl", "linux_sdk")
 
 linux_sdk(name = "linux_sdk")
 
-emscripten_sysroot = use_repo_rule("//:wasm.bzl", "emscripten_sysroot")
+emscripten_sysroot = use_repo_rule("//source/bazel:wasm.bzl", "emscripten_sysroot")
 
 emscripten_sysroot(name = "emscripten_sysroot")
 
-windows_sdk = use_repo_rule("//:windows.bzl", "windows_sdk")
+windows_sdk = use_repo_rule("//source/bazel:windows.bzl", "windows_sdk")
 
 windows_sdk(name = "windows_sdk")
 
-host_tools = use_repo_rule("//:host.bzl", "host_tools")
+host_tools = use_repo_rule("//source/bazel:host.bzl", "host_tools")
 
 host_tools(name = "host_tools")
 

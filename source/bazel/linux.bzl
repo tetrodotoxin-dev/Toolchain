@@ -8,17 +8,22 @@ and dynamic libstdc++. Platform implementations can select scalar algorithms
 without changing that published machine baseline.
 """
 
-load("@host_tools//:settings.bzl", "AR", "COV", "CPP", "CXX", "ELF_LINKER", "HOST_SYSTEM", "NM", "OBJDUMP", "PYTHON", "RESOURCE_INCLUDE", "STRIP")
-load(":sdk.bzl", "extract_debian")
 load("@bazel_tools//tools/build_defs/cc:action_names.bzl", "ACTION_NAMES")
 load("@bazel_tools//tools/cpp:cc_toolchain_config_lib.bzl", "feature", "flag_group", "flag_set", "tool_path")
+load("@host_tools//:settings.bzl", "AR", "COV", "CPP", "CXX", "ELF_LINKER", "HOST_SYSTEM", "NM", "OBJDUMP", "PYTHON", "RESOURCE_INCLUDE", "STRIP")
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load("@rules_cc//cc/toolchains:cc_toolchain_config_info.bzl", "CcToolchainConfigInfo")
+load(":sdk.bzl", "extract_debian")
 
 # A fixed target sysroot keeps releases independent of the build machine's
 # distribution. Ubuntu 22.04 supplies the existing glibc and libstdc++ model.
 # The dated snapshot keeps every package available under its reviewed checksum.
 def _sdk(ctx):
+    """Assemble the Linux sysroot from pinned Debian packages.
+
+    Args:
+        ctx: Repository context with package pins and the sysroot normalizer.
+    """
     packages = json.decode(ctx.read(ctx.attr._packages))
     extract_debian(ctx, {
         "https://snapshot.ubuntu.com/ubuntu/20260925T000000Z/" + package["path"]: package["sha256"]
@@ -39,9 +44,28 @@ _COMPILE = [ACTION_NAMES.c_compile, ACTION_NAMES.cpp_compile]
 _LINK = [ACTION_NAMES.cpp_link_executable, ACTION_NAMES.cpp_link_dynamic_library, ACTION_NAMES.cpp_link_nodeps_dynamic_library]
 
 def _flags(name, actions, flags, enabled = True):
+    """Apply one ordered flag list to a set of toolchain actions.
+
+    Args:
+        name: Feature name used by the C++ toolchain configuration.
+        actions: Bazel action names that receive the flags.
+        flags: Command line arguments in invocation order.
+        enabled: Whether the feature is active by default.
+
+    Returns:
+        A toolchain feature containing the requested flag set.
+    """
     return feature(name = name, enabled = enabled, flag_sets = [flag_set(actions = actions, flag_groups = [flag_group(flags = flags)])])
 
 def _impl(ctx):
+    """Configure Clang and LLD for the declared Linux target sysroot.
+
+    Args:
+        ctx: Analysis context of the compiler configuration rule.
+
+    Returns:
+        CcToolchainConfigInfo for the Linux x86_64 target.
+    """
     sdk = Label("@linux_sdk//:files").workspace_root
     return cc_common.create_cc_toolchain_config_info(
         ctx = ctx,
@@ -49,8 +73,8 @@ def _impl(ctx):
             feature(name = "supports_pic", enabled = True),
             _flags("target_sdk", _COMPILE + _LINK, ["--target=x86_64-linux-gnu", "--sysroot=" + sdk, "--gcc-install-dir=" + sdk + "/usr/lib/gcc/x86_64-linux-gnu/11"]),
             feature(name = "pic", enabled = True, flag_sets = [flag_set(actions = _COMPILE, flag_groups = [flag_group(flags = ["-fPIC"], expand_if_available = "pic")])]),
-            _flags("common_compile", _COMPILE, ["-Wall", "-Werror", "-fno-exceptions", "-fno-rtti", "-march=x86-64-v3", "-mrdrnd", "-no-canonical-prefixes", "-resource-dir", RESOURCE_INCLUDE.removesuffix("/include")]),
-            _flags("cpp_language", [ACTION_NAMES.cpp_compile], ["-std=c++26"]),
+            _flags("common_compile", _COMPILE, ["-Wall", "-Werror", "-fvisibility=hidden", "-fno-exceptions", "-fno-rtti", "-march=x86-64-v3", "-mrdrnd", "-no-canonical-prefixes", "-resource-dir", RESOURCE_INCLUDE.removesuffix("/include")]),
+            _flags("cpp_language", [ACTION_NAMES.cpp_compile], ["-std=c++26", "-fvisibility-inlines-hidden"]),
             _flags("c_language", [ACTION_NAMES.c_compile], ["-xc", "-std=c23"]),
             _flags("opt", _COMPILE, ["-O3", "-DNDEBUG"], False),
             _flags("dbg", _COMPILE, ["-O0", "-g"], False),

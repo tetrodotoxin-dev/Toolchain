@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <stdint.h>
 #include <stdio.h>
 
 #include "toolchain/validation/harness.hpp"
@@ -17,8 +18,8 @@ auto create(
     const char* name,
     TestFunc run,
     const char* file,
-    size_t line) -> void;
-auto log_message(Bytes file, size_t line, Bytes message) -> void;
+    uint64_t line) -> void;
+auto log_message(Bytes file, uint64_t line, Bytes message) -> void;
 auto print_bytes(Bytes value, bool hexadecimal) -> void;
 auto run(int argc, const char* const* argv) -> int;
 
@@ -57,7 +58,7 @@ class TestEntry {
       const char* name,
       TestFunc function,
       const char* file,
-      size_t line) {
+      uint64_t line) {
     create(harness, name, function, file, line);
   }
 };

@@ -1,6 +1,6 @@
 # Copyright (c) 2023-present Matt Kaes and contributors
 
-"""Import a release's shared headers and target binaries without rebuilding it."""
+"""Import a release's headers and static or shared libraries."""
 
 load("@host_tools//:settings.bzl", "AR")
 
@@ -11,6 +11,12 @@ _PLATFORMS = {
 }
 
 def _sdk(ctx):
+    """Import a pinned release's headers and libraries as C++ targets.
+
+    Args:
+        ctx: Repository context with release identity, archive checksums and
+            dependency labels for the generated headers target.
+    """
     if "headers" not in ctx.attr.archives:
         fail("An SDK pin must include its shared headers archive")
     for archive, checksum in ctx.attr.archives.items():
@@ -19,21 +25,32 @@ def _sdk(ctx):
             sha256 = checksum,
             output = archive,
         )
+    static_libraries = {}
     libraries = {}
     interfaces = {}
     for platform, condition in _PLATFORMS.items():
         if platform not in ctx.attr.archives:
             continue
         windows = platform == "windows-x86_64-msvc"
-        libraries[condition] = platform + "/lib/" + (ctx.attr.library + ".dll" if windows else "lib" + ctx.attr.library + ".so")
-        interfaces[condition] = platform + "/lib/" + ctx.attr.library + ".lib" if windows else None
+        directory = platform + "/lib/"
+        shared = directory + (ctx.attr.library + ".dll" if windows else "lib" + ctx.attr.library + ".so")
+        archive = directory + (ctx.attr.library + ".lib" if windows else "lib" + ctx.attr.library + ".a")
+
+        # A Windows import library accompanies its DLL. Without that DLL the
+        # .lib contains the implementation, just as an .a does on Linux.
+        static = ctx.path(archive).exists and not (windows and ctx.path(shared).exists)
+        if not static and not ctx.path(shared).exists:
+            fail("SDK archive contains no library for " + platform)
+        static_libraries[condition] = archive if static else None
+        libraries[condition] = None if static else shared
+        interfaces[condition] = directory + ctx.attr.library + ".lib" if windows and not static else None
     ctx.file("BUILD.bazel", """load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_import.bzl", "cc_import")
 package(default_visibility = ["//visibility:public"])
 cc_library(name = "headers", hdrs = glob(["headers/include/**/*.h", "headers/include/**/*.hpp"], allow_empty = True), strip_include_prefix = "headers/include", deps = %s)
-cc_import(name = "%s", shared_library = select(%s), interface_library = select(%s), deps = [":headers"])
+cc_import(name = "%s", static_library = select(%s), shared_library = select(%s), interface_library = select(%s), deps = [":headers"])
 filegroup(name = "build", srcs = select({key: [value] for key, value in %s.items()}))
-""" % (repr(ctx.attr.deps), ctx.attr.library, repr(libraries), repr(interfaces), repr(libraries)))
+""" % (repr(ctx.attr.deps), ctx.attr.library, repr(static_libraries), repr(libraries), repr(interfaces), repr({key: static_libraries[key] or libraries[key] for key in libraries})))
 
 _sdk_repository = repository_rule(implementation = _sdk, attrs = {
     "library": attr.string(mandatory = True),
@@ -44,6 +61,11 @@ _sdk_repository = repository_rule(implementation = _sdk, attrs = {
 })
 
 def _dependencies(ctx):
+    """Merge matching SDK pins and create one repository per release name.
+
+    Args:
+        ctx: Module extension context containing the modules' release tags.
+    """
     seen = {}
     for module in ctx.modules:
         for release in module.tags.release:
@@ -58,9 +80,13 @@ def _dependencies(ctx):
 _release = tag_class(attrs = {"name": attr.string(mandatory = True), "project": attr.string(mandatory = True), "version": attr.string(mandatory = True), "archives": attr.string_dict(mandatory = True), "deps": attr.label_list()})
 dependencies = module_extension(implementation = _dependencies, tag_classes = {"release": _release})
 
-
 def extract_debian(ctx, archives):
-    """Extract pinned binary packages without installing them on the build host."""
+    """Extract pinned Debian payloads into the repository without installing them.
+
+    Args:
+        ctx: Repository context receiving the extracted package files.
+        archives: Dictionary mapping package download URLs to SHA256 checksums.
+    """
     for index, (url, checksum) in enumerate(archives.items()):
         directory = "archives/" + str(index)
         archive = directory + "/package.deb"
@@ -75,6 +101,11 @@ def extract_debian(ctx, archives):
         ctx.delete(directory)
 
 def _debian_sdk(ctx):
+    """Extract Debian packages and expose them through the supplied BUILD file.
+
+    Args:
+        ctx: Repository context with archive pins and the BUILD file label.
+    """
     extract_debian(ctx, ctx.attr.archives)
     ctx.file("BUILD.bazel", ctx.read(ctx.attr.build_file))
 

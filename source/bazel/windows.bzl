@@ -8,9 +8,20 @@ winsysroot layout when a developer wants to use an installed version instead.
 """
 
 load("@host_tools//:settings.bzl", "ARCHIVER", "CLANG", "HOST_SYSTEM", "LINKER", "PATH", "PYTHON", "RESOURCE_INCLUDE", "TEMP")
+
+# Pinned rules_cc 0.2.17 provides its MSVC configuration at this private path.
+# Reusing it keeps the Windows action grammar and import library handling in
+# the upstream implementation. Recheck this path when upgrading rules_cc.
+# buildifier: disable=bzl-visibility
 load("@rules_cc//cc/private/toolchain:windows_cc_toolchain_config.bzl", windows_config = "cc_toolchain_config")
 
 def _sdk(ctx):
+    """Assemble MSVC and Windows SDK files from downloads or an installed SDK.
+
+    Args:
+        ctx: Repository context with package pins, normalization tools and
+            the SDK selection and license acceptance environment variables.
+    """
     source = ctx.os.environ.get("TETRO_WINDOWS_SDK")
     if source:
         # An explicit installed SDK remains useful when testing a newer vendor
@@ -40,6 +51,7 @@ def _sdk(ctx):
     normalized = ctx.execute([PYTHON, ctx.path("normalize.py"), "windows", "external/" + ctx.name])
     if normalized.return_code:
         fail(normalized.stderr)
+
     # Runtime DLLs support local validation without becoming part of a product's
     # release archive. In particular, the debug CRT remains a development input.
     ctx.file("BUILD.bazel", '''package(default_visibility = ["//visibility:public"])
@@ -52,8 +64,8 @@ windows_sdk = repository_rule(implementation = _sdk, attrs = {
     "_normalize": attr.label(default = Label("//source:sdk/normalize.py")),
 }, environ = ["TETRO_WINDOWS_SDK", "TETRO_ACCEPT_WINDOWS_SDK_LICENSE"])
 
-
 def windows_toolchain_config():
+    """Declare the windows_config target using clang-cl and the Windows SDK."""
     windows_config(
         name = "windows_config",
         abi_version = "msvc",
@@ -64,7 +76,6 @@ def windows_toolchain_config():
             "/clang:-mavx2",
             "/clang:-mrdrnd",
             "/clang:-march=x86-64-v3",
-
             "/DNOMINMAX",
             "/D_CRT_SECURE_NO_WARNINGS",
             "/clang:-fno-exceptions",

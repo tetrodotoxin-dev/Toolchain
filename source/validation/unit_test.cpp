@@ -3,41 +3,70 @@
 
 #include "toolchain/validation/unit_test.hpp"
 
+#include <inttypes.h>
+#include <stdint.h>
 #include <stdlib.h>
 
 #include "toolchain/validation/clock.hpp"
 
 using namespace Toolchain::Validation;
 
+const char* clear_color = getenv("NO_COLOR") ? "" : "\x1b[0m";
+const char* heading_color = getenv("NO_COLOR") ? "" : "\x1b[38;5;124m";
+const char* dim_color = getenv("NO_COLOR") ? "" : "\x1b[38;5;246m";
+const char* pass_color = getenv("NO_COLOR") ? "" : "\x1b[38;5;34m";
+const char* fail_color = getenv("NO_COLOR") ? "" : "\x1b[38;5;160m";
+const char* skip_color = getenv("NO_COLOR") ? "" : "\x1b[38;5;178m";
+
 struct Instance {
   const Harness* harness;
   const char* name;
   Test::TestFunc run;
   const char* file;
-  size_t line;
+  uint64_t line;
+  Test::TestResult result = Test::TestResult::Pass;
+  double milliseconds = 0;
 };
 
-// Static registration only records borrowed declarations. Nothing from the
-// library under test is needed before its first test begins.
-static Instance tests[4096];
-static size_t count = 0;
+// Keep the warning threshold in milliseconds to match the reported test time.
+// A slow test still has its ordinary pass, fail or skip result.
+static constexpr double slow_test_ms = 1000;
 
+// Static registration allows for easily adding tests without requiring global
+// static clean up. 4k cases should be more than enough for any realistic test
+// suite but the number can always be expanded if required.
+static Instance tests[4096];
+static uint64_t count = 0;
+
+// Setup the tests in registration order, but log an error and abort if we hit
+// the test limit.
 auto Test::create(
     const Harness& harness,
     const char* name,
     TestFunc run,
     const char* file,
-    size_t line) -> void {
+    uint64_t line) -> void {
   if (count == sizeof(tests) / sizeof(*tests)) {
-    fputs("Validation registration capacity exceeded.\n", stderr);
+    fputs(
+        "Validation registration capacity exceeded the 4096 test limit.\n",
+        stderr);
     abort();
   }
+
   tests[count++] = {&harness, name, run, file, line};
 }
 
-auto Test::log_message(Bytes file, size_t line, Bytes message) -> void {
+static auto output_break() -> void {
+  printf(
+      "%s[==============================================================]%s\n",
+      dim_color, clear_color);
+}
+
+auto Test::log_message(Bytes file, uint64_t line, Bytes message) -> void {
+  // Use the supplied lengths to write the whole diagnostic, including any
+  // bytes after an embedded zero.
   fwrite(file.data, 1, file.size, stdout);
-  printf(":%zu:\n    ", line);
+  printf(":%" PRIu64 ":\n    ", line);
   fwrite(message.data, 1, message.size, stdout);
   fputc('\n', stdout);
 }
@@ -47,8 +76,9 @@ auto Test::print_bytes(Bytes value, bool hexadecimal) -> void {
     fwrite(value.data, 1, value.size, stdout);
     return;
   }
+
   const auto* data = static_cast<const unsigned char*>(value.data);
-  for (size_t i = 0; i < value.size; ++i) {
+  for (uint64_t i = 0; i < value.size; ++i) {
     printf("%02x", unsigned(data[i]));
   }
 }
@@ -59,56 +89,179 @@ auto Test::run(int argc, const char* const* argv) -> int {
     fprintf(stderr, "Usage: %s [silent]\n", argv[0]);
     return 1;
   }
-  size_t passed = 0;
-  size_t failed = 0;
-  size_t skipped = 0;
+
+  // Test stat counters for keeping track of all runs.
+  uint64_t passed = 0;
+  uint64_t failed = 0;
+  uint64_t skipped = 0;
+
+  // Loop over all of the tests to figure out how much padding we should add for
+  // the name column so all of the timings are aligned. Names should be short so
+  // we reserve at least 12 characters of space by default so the read out isn't
+  // too cramp.
+  uint64_t width = 12;
+  for (uint64_t i = 0; i < count; ++i) {
+    const auto length = strlen(tests[i].name);
+    if (length > width) {
+      width = length;
+    }
+  }
+
   const Harness* active = nullptr;
   const uint64_t started = time_ns();
   if (!silent) {
-    printf("Tests found: %zu\n", count);
+    output_break();
+    printf(
+        "%s  Tests found: %" PRIu64 "%s\n", heading_color, count, clear_color);
+    output_break();
   }
-  for (size_t i = 0; i < count; ++i) {
-    const auto& test = tests[i];
+
+  for (uint64_t i = 0; i < count; ++i) {
+    auto& test = tests[i];
+
+    // Tests are logged in registration order. If the test harness changed then
+    // we can assume the user is starting a new harness so we'll need to call
+    // `init` on the current harness.
+    //
+    // If the user reuses the harness after a transition then we will open it up
+    // as a second instance and call `init` again.
     if (active != test.harness) {
       active = test.harness;
       if (!silent) {
-        printf("[ START ] %s\n", active->name);
+        printf("%s[ START ] %s%s\n", dim_color, active->name, clear_color);
       }
+
       if (active->init) {
         active->init();
       }
     }
+
+    // Harness setup is excluded from test time.
     if (active->setup) {
       active->setup();
     }
-    TestResult result = TestResult::Pass;
+
     const uint64_t begin = time_ns();
+
+    // The test framework uses macros that assume result is TestResult::Pass by
+    // default and use setting the value directly to side step injecting a bunch
+    // of control flow in the test code. We create a reference here on the stack
+    // to hold the value directly.
+    TestResult result = TestResult::Pass;
     test.run(result);
-    const double milliseconds = double(time_ns() - begin) / 1'000'000;
+
+    const double milliseconds = (time_ns() - begin) / 1'000'000.0;
+
+    // The registration already carries the test's name and source location.
+    // Keep its outcome and timing there too so the final report can point to
+    // every failure and slow test after the individual output has scrolled by.
+    test.result = result;
+    test.milliseconds = milliseconds;
+
+    // Regardless of the test result we always perform teardown.
     if (active->teardown) {
       active->teardown();
     }
+
+    // Determine the outcome of the test and record the appropriate stats along
+    // with the the result text and color.
     const char* outcome;
+    const char* color;
     switch (result) {
     case TestResult::Pass:
       ++passed;
       outcome = "PASS";
+      color = pass_color;
       break;
     case TestResult::Failed:
       ++failed;
       outcome = "FAIL";
+      color = fail_color;
       break;
     case TestResult::Skipped:
       ++skipped;
       outcome = "SKIP";
+      color = skip_color;
+      break;
+    default:
+      ++failed;
+      outcome = "INVALID";
+      color = fail_color;
       break;
     }
+
     if (!silent || result != TestResult::Pass) {
-      printf("  [ %s ] %-28s (%g ms)\n", outcome, test.name, milliseconds);
+      // printf takes an int field width even when our counts use uint64_t.
+      const int padding = width + 2;
+      printf(
+          "%s  [ %-7s ] %-*s%s  (%g ms)%s\n", color, outcome, padding,
+          test.name, dim_color, milliseconds, clear_color);
     }
   }
-  printf(
-      "Passed: %zu  Failed: %zu  Skipped: %zu\nTotal time: %g ms\n", passed,
-      failed, skipped, double(time_ns() - started) / 1'000'000);
+
+  // Skipped tests have no pass or fail result. Excluding them keeps the rate
+  // about the tests that completed, while the skip count stays visible above.
+  // An empty run or a run with only skips has no rate to report.
+  const uint64_t completed = passed + failed;
+
+  // Overall time includes the harness work and individual test output. Stop
+  // that measurement before formatting the final report.
+  const double total_ms = (time_ns() - started) / 1'000'000.0;
+  if (!silent) {
+    output_break();
+
+    printf("%s\n  Testing Completed:%s\n", heading_color, clear_color);
+    printf("%s      Passed:  %" PRIu64 "%s\n", pass_color, passed, clear_color);
+    printf(
+        "%s      Failed:  %" PRIu64 "%s\n", failed ? fail_color : dim_color,
+        failed, clear_color);
+    printf(
+        "%s     Skipped:  %" PRIu64 "%s\n", skipped ? skip_color : dim_color,
+        skipped, clear_color);
+    printf("\n  Pass Rate:   %" PRIu64 " / %" PRIu64, passed, completed);
+    if (completed) {
+      printf(" (%.2f%%)\n", 100.0 * passed / completed);
+    } else {
+      printf(" (n/a)\n");
+    }
+
+    printf("  Total Time:  %g ms\n\n", total_ms);
+    output_break();
+  }
+
+  // These lists remain useful in silent runs. Keep each file:line: together
+  // so terminals and editors can recognize it as a source link.
+  if (failed) {
+    printf("%s\n  Failed tests:%s\n", fail_color, clear_color);
+    for (uint64_t i = 0; i < count; ++i) {
+      const auto& test = tests[i];
+      if (test.result != TestResult::Pass &&
+          test.result != TestResult::Skipped) {
+        printf(
+            "    %s:%" PRIu64 ": %s::%s\n", test.file, test.line,
+            test.harness->name, test.name);
+      }
+    }
+  }
+
+  // Report each test over the threshold, including a passing test hidden by
+  // silent mode. Setup and teardown are outside these recorded durations.
+  bool slow_heading = false;
+  for (uint64_t i = 0; i < count; ++i) {
+    const auto& test = tests[i];
+    if (test.milliseconds >= slow_test_ms) {
+      if (!slow_heading) {
+        printf(
+            "%s\n  Slow tests (>= %g ms):%s\n", skip_color, slow_test_ms,
+            clear_color);
+        slow_heading = true;
+      }
+
+      printf(
+          "    %s:%" PRIu64 ": %s::%s (%g ms)\n", test.file, test.line,
+          test.harness->name, test.name, test.milliseconds);
+    }
+  }
+
   return failed ? 1 : 0;
 }

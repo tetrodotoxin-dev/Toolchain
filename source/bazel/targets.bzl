@@ -5,11 +5,19 @@
 load("@host_tools//:settings.bzl", "HOST_SYSTEM")
 load("@rules_cc//cc/toolchains:cc_toolchain.bzl", "cc_toolchain")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//:linux.bzl", "cc_toolchain_config")
-load("//:wasm.bzl", "wasm_cc_toolchain_config")
-load("//:windows.bzl", "windows_toolchain_config")
+load(":linux.bzl", "cc_toolchain_config")
+load(":wasm.bzl", "wasm_cc_toolchain_config")
+load(":windows.bzl", "windows_toolchain_config")
 
+# The root bootstrap declares one fixed set of labels used by MODULE.bazel.
+# A caller supplied name would not control those platform and compiler labels.
+# buildifier: disable=unnamed-macro
 def toolchains():
+    """Declare compiler targets, platforms and the Toolchain source archive.
+
+    Called once from the repository root BUILD file to define the public
+    labels used by consuming modules for toolchain registration.
+    """
     native.filegroup(name = "empty")
 
     cc_toolchain_config(name = "linux_x86_64_toolchain_config")
@@ -123,13 +131,6 @@ def toolchains():
             "@platforms//cpu:x86_64",
         ],
     )
-
-    native.exports_files([
-        "exports.py",
-        "package.bzl",
-        "library.bzl",
-        "sdk.bzl",
-    ])
 
     # Upstream rules own the MSVC command grammar, dependency tracking and import
     # library flags. Only our compiler options and SDK locations are specified here.

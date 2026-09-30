@@ -19,6 +19,11 @@ _DISTRIBUTIONS = {
 }
 
 def _host(ctx):
+    """Acquire host LLVM tools and publish their paths in settings.bzl.
+
+    Args:
+        ctx: Repository context supplying the host platform and environment.
+    """
     system = ctx.os.name.lower()
     system = "windows" if "windows" in system else system
     if system not in _DISTRIBUTIONS or ctx.os.arch not in ("amd64", "x86_64"):

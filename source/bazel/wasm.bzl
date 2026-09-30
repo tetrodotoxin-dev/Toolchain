@@ -3,13 +3,19 @@
 
 """Clang code generation for modules hosted by an Emscripten application."""
 
-load("@host_tools//:settings.bzl", "AR", "COV", "CPP", "CXX", "HOST_SYSTEM", "NM", "OBJDUMP", "RESOURCE_INCLUDE", "STRIP", "WASM_LINKER")
 load("@bazel_tools//tools/build_defs/cc:action_names.bzl", "ACTION_NAMES")
 load("@bazel_tools//tools/cpp:cc_toolchain_config_lib.bzl", "feature", "flag_group", "flag_set", "tool_path")
+load("@host_tools//:settings.bzl", "AR", "COV", "CPP", "CXX", "HOST_SYSTEM", "NM", "OBJDUMP", "RESOURCE_INCLUDE", "STRIP", "WASM_LINKER")
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load("@rules_cc//cc/toolchains:cc_toolchain_config_info.bzl", "CcToolchainConfigInfo")
 
 def _sysroot(ctx):
+    """Extract the pinned Emscripten headers into a Bazel repository.
+
+    Args:
+        ctx: Repository context used to download and expose the headers.
+    """
+
     # Only the target headers are extracted. The compiler, linker and resource
     # headers come from the selected LLVM distribution used for native builds.
     ctx.download_and_extract(
@@ -22,6 +28,14 @@ def _sysroot(ctx):
 emscripten_sysroot = repository_rule(implementation = _sysroot)
 
 def _config(ctx):
+    """Configure Clang and LLD for modules hosted by Emscripten.
+
+    Args:
+        ctx: Rule context whose headers attribute supplies the target sysroot.
+
+    Returns:
+        CcToolchainConfigInfo for the wasm32 target.
+    """
     headers = ctx.attr.headers.label.workspace_root
     compile_actions = [ACTION_NAMES.c_compile, ACTION_NAMES.cpp_compile]
     link_actions = [ACTION_NAMES.cpp_link_executable, ACTION_NAMES.cpp_link_dynamic_library, ACTION_NAMES.cpp_link_nodeps_dynamic_library]
@@ -37,13 +51,14 @@ def _config(ctx):
                     "-resource-dir",
                     RESOURCE_INCLUDE.removesuffix("/include"),
                     "-fPIC",
-
+                    "-fvisibility=hidden",
                     "-fno-exceptions",
                     "-fno-rtti",
                     "-msimd128",
                 ])]),
                 flag_set(actions = [ACTION_NAMES.cpp_compile], flag_groups = [flag_group(flags = [
                     "-std=c++26",
+                    "-fvisibility-inlines-hidden",
                     "-nostdinc++",
                     "-isystem",
                     headers + "/c++/v1",
@@ -58,7 +73,6 @@ def _config(ctx):
                 flag_set(actions = link_actions, flag_groups = [flag_group(flags = [
                     "-nostdlib",
                     "-Wl,--no-entry",
-                    "-Wl,--export-all",
                     "-Wl,--import-memory",
                     "-Wl,--experimental-pic",
                     "-Wl,--unresolved-symbols=import-dynamic",
