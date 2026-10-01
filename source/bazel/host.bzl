@@ -83,12 +83,15 @@ def _host(ctx):
     values["PATH"] = ctx.os.environ.get("PATH", "")
     values["TEMP"] = ctx.os.environ.get("TEMP", "/tmp")
     ctx.file("settings.bzl", "\n".join([key + " = " + repr(value) for key, value in values.items()]) + "\n")
-    ctx.file("BUILD.bazel", '''exports_files(["settings.bzl"])
+
+    # Individual tools let tests declare their inputs without adding the whole
+    # compiler installation to their runfiles.
+    ctx.file("BUILD.bazel", '''exports_files(["settings.bzl"] + {tools})
 filegroup(
     name = "files",
-    srcs = %s + glob(["llvm/lib/clang/**", "llvm/lib/libLLVM*.so*", "llvm/lib/libclang*.so*", "llvm/bin/*.dll"], allow_empty = True),
+    srcs = {tools} + glob(["llvm/lib/clang/**", "llvm/lib/libLLVM*.so*", "llvm/lib/libclang*.so*", "llvm/bin/*.dll"], allow_empty = True),
     visibility = ["//visibility:public"],
 )
-''' % repr(sorted({file: True for file in files})))
+'''.format(tools = repr(sorted({file: True for file in files}))))
 
 host_tools = repository_rule(implementation = _host, environ = ["BAZEL_LLVM", "PATH", "TEMP"])

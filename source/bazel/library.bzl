@@ -5,6 +5,9 @@
 load("@rules_cc//cc:cc_import.bzl", "cc_import")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
+load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
+load("@rules_cc//cc/common:cc_shared_library_info.bzl", "CcSharedLibraryInfo")
 
 LINUX = Label("//:linux")
 WEB = Label("//:web")
@@ -24,7 +27,7 @@ def _project_name(project):
         fail("project must identify the library used by EXPORTED(PROJECT)")
     return value
 
-def static_library(name, deps = [], project = None, defines = [], **kwargs):
+def static_library(name, deps = [], project = None, defines = [], implementation_deps = [], **kwargs):
     """Compile a static library with Toolchain's export annotation available.
 
     PROJECT_STATIC=1 reaches this implementation and its consumers so both
@@ -32,7 +35,10 @@ def static_library(name, deps = [], project = None, defines = [], **kwargs):
 
     Args:
         name: Static library target name.
-        deps: C++ dependencies required by the library.
+        deps: C++ dependencies required by the public interface.
+        implementation_deps: Dependencies whose headers and definitions are
+            available only to this library's sources. Link requirements reach
+            consumers because a static archive leaves its references unresolved.
         project: EXPORTED identifier, defaulting to the uppercase module name.
         defines: Additional definitions shared with consumers.
         **kwargs: Additional cc_library attributes.
@@ -40,12 +46,38 @@ def static_library(name, deps = [], project = None, defines = [], **kwargs):
     cc_library(
         name = name,
         deps = deps + [Label("//source:headers")],
+        implementation_deps = implementation_deps,
         defines = defines + [_project_name(project) + "_STATIC=1"],
         linkstatic = True,
         **kwargs
     )
 
-def shared_library(name, srcs = [], hdrs = [], deps = [], project = None, copts = [], defines = [], local_defines = [], includes = [], linkopts = [], shared_lib_name = None, user_link_flags = [], features = [], tags = [], **kwargs):
+def _shared_runtime_impl(ctx):
+    """Expose the shared link's remaining dependencies without their headers.
+
+    Args:
+        ctx: Rule context selecting the completed cc_shared_library.
+
+    Returns:
+        C++ linker inputs for the remaining shared dependencies.
+    """
+    shared = ctx.attr.shared[CcSharedLibraryInfo]
+    primary = ctx.attr.shared[DefaultInfo].files.to_list()
+
+    # The completed link already distinguishes embedded static code from the
+    # shared dependencies its consumers still need. Reuse that decision so an
+    # alwayslink implementation archive cannot be linked into consumers again.
+    libraries = [library for library in shared.linker_input.libraries if (library.resolved_symlink_dynamic_library or library.dynamic_library) not in primary]
+    inputs = [cc_common.create_linker_input(owner = ctx.label, libraries = depset(libraries))]
+    inputs.extend([dependency.linker_input for dependency in shared.dynamic_deps.to_list()])
+    return [CcInfo(linking_context = cc_common.create_linking_context(linker_inputs = depset(inputs)))]
+
+_shared_runtime = rule(
+    implementation = _shared_runtime_impl,
+    attrs = {"shared": attr.label(mandatory = True, providers = [CcSharedLibraryInfo])},
+)
+
+def shared_library(name, srcs = [], hdrs = [], deps = [], project = None, copts = [], defines = [], local_defines = [], includes = [], linkopts = [], shared_lib_name = None, user_link_flags = [], features = [], tags = [], implementation_deps = [], **kwargs):
     """Compile a shared library and expose its headers and binary to consumers.
 
     PROJECT_EXPORT=1 belongs to this target's source compilation. Consumers
@@ -57,6 +89,10 @@ def shared_library(name, srcs = [], hdrs = [], deps = [], project = None, copts 
         srcs: Implementation sources compiled with PROJECT_EXPORT=1.
         hdrs: Public headers available to this library and its consumers.
         deps: Libraries and headers required by the public interface.
+        implementation_deps: Dependencies available to implementation sources.
+            Their headers and definitions stay private. Static code is absorbed
+            by this shared library and shared dependencies remain available to
+            consumers and release packaging.
         project: EXPORTED identifier, defaulting to the uppercase module name.
         copts: Additional options for implementation compilation.
         defines: Additional definitions shared with consumers.
@@ -76,6 +112,7 @@ def shared_library(name, srcs = [], hdrs = [], deps = [], project = None, copts 
     implementation = name + "_implementation"
     shared = name + "_shared"
     interface = name + "_interface"
+    runtime = name + "_runtime"
     cc_library(
         name = headers,
         hdrs = hdrs,
@@ -89,6 +126,7 @@ def shared_library(name, srcs = [], hdrs = [], deps = [], project = None, copts 
         name = implementation,
         srcs = srcs,
         deps = [":" + headers],
+        implementation_deps = implementation_deps,
         copts = copts,
         local_defines = local_defines + [_project_name(project) + "_EXPORT=1"],
         linkopts = linkopts,
@@ -115,11 +153,17 @@ def shared_library(name, srcs = [], hdrs = [], deps = [], project = None, copts 
         visibility = ["//visibility:private"],
         **common
     )
+    _shared_runtime(
+        name = runtime,
+        shared = ":" + shared,
+        visibility = ["//visibility:private"],
+        **common
+    )
     cc_import(
         name = name,
         shared_library = ":" + shared,
         interface_library = select({WINDOWS: ":" + interface, "//conditions:default": None}),
-        deps = [":" + headers],
+        deps = [":" + headers, ":" + runtime],
         linkopts = linkopts,
         visibility = visibility,
         **common

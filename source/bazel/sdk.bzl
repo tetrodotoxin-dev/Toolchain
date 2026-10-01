@@ -5,7 +5,9 @@
 Each release tag supplies checksums for headers and platform archives, using
 keys such as linux-x86_64-v3-shared and linux-x86_64-v3-static. Linkage defaults
 to shared. Selecting static also publishes the project's STATIC definition.
-Declare the selected variants of public dependencies in deps.
+Declare public dependencies in deps and private link requirements in
+implementation_deps. Private dependency headers and definitions stay inside
+their own SDK, while their libraries remain available to consumers.
 Bundled runtime libraries are imported from the selected archive automatically.
 An explicitly declared SDK dependency supplies overlapping runtime libraries
 when their recorded contents match. Incompatible copies fail the import.
@@ -31,7 +33,7 @@ def _runtime(ctx, metadata, platform):
         Bundled libraries that still need their own C++ import target.
     """
     provided = {}
-    for dependency in ctx.attr.deps:
+    for dependency in ctx.attr.deps + ctx.attr.implementation_deps:
         label = Label(dependency)
         manifest = ctx.path(label.same_package_label(platform + "/sdk.json"))
         if manifest.exists:
@@ -128,6 +130,7 @@ def _sdk(ctx):
                     fail("SDK archive is missing its declared runtime file: " + path)
     ctx.template("BUILD.bazel", ctx.attr._template, substitutions = {
         "{dependencies}": repr(ctx.attr.deps),
+        "{implementation_dependencies}": repr(ctx.attr.implementation_deps),
         "{library}": repr(ctx.attr.library),
         "{static_libraries}": repr(static_libraries),
         "{shared_libraries}": repr(libraries),
@@ -144,6 +147,7 @@ _sdk_repository = repository_rule(implementation = _sdk, attrs = {
     "version": attr.string(mandatory = True),
     "archives": attr.string_dict(mandatory = True),
     "deps": attr.string_list(),
+    "implementation_deps": attr.string_list(),
     "linkage": attr.string(default = "shared", values = ["static", "shared"]),
     "_template": attr.label(default = Label("//source/bazel:sdk.BUILD.tpl")),
     "_export": attr.label(default = Label("//source:toolchain/export.h")),
@@ -158,13 +162,13 @@ def _dependencies(ctx):
     seen = {}
     for module in ctx.modules:
         for release in module.tags.release:
-            pin = (release.project, release.version, release.archives, release.deps, release.linkage)
+            pin = (release.project, release.version, release.archives, release.deps, release.implementation_deps, release.linkage)
             if release.name in seen:
                 if seen[release.name] != pin:
                     fail("Conflicting SDK release pins for " + release.name)
                 continue
             seen[release.name] = pin
-            _sdk_repository(name = release.name, library = release.name, project = release.project, version = release.version, archives = release.archives, deps = [str(dep) for dep in release.deps], linkage = release.linkage)
+            _sdk_repository(name = release.name, library = release.name, project = release.project, version = release.version, archives = release.archives, deps = [str(dep) for dep in release.deps], implementation_deps = [str(dep) for dep in release.implementation_deps], linkage = release.linkage)
 
 _release = tag_class(attrs = {
     "name": attr.string(mandatory = True),
@@ -172,6 +176,7 @@ _release = tag_class(attrs = {
     "version": attr.string(mandatory = True),
     "archives": attr.string_dict(mandatory = True),
     "deps": attr.label_list(),
+    "implementation_deps": attr.label_list(),
     "linkage": attr.string(default = "shared", values = ["static", "shared"]),
 })
 dependencies = module_extension(implementation = _dependencies, tag_classes = {"release": _release})

@@ -34,6 +34,7 @@ cc_library(
     strip_include_prefix = "headers/include",
     defines = select({defines}),
     deps = {dependencies},
+    implementation_deps = {implementation_dependencies},
 )
 
 cc_import(

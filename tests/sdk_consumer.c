@@ -4,13 +4,25 @@
 #include "tests/library.h"
 
 #if EXPECT_STATIC
-#if !TOOLCHAIN_TEST_STATIC || !TETRO_TOOLCHAIN_STATIC
-#error Static SDK consumers need both libraries' static definitions.
+#if !TOOLCHAIN_TEST_STATIC
+#error Static SDK consumers need the public library's static definition.
 #endif
+
 #else
 #if defined(TOOLCHAIN_TEST_STATIC) || defined(TETRO_TOOLCHAIN_STATIC)
 #error Shared SDK consumers must preserve import declarations.
 #endif
+#endif
+
+#if defined(TOOLCHAIN_PROJECT_VALUE) || defined(TETRO_TOOLCHAIN_STATIC) || \
+    defined(TOOLCHAIN_PRIVATE_STATIC)
+#error SDK consumers must not receive implementation dependency definitions.
+#endif
+
+#if __has_include(         \
+    "project_detail.h") || \
+    __has_include("tests/project.h") || __has_include("tests/runtime.h")
+#error SDK consumers must not receive implementation dependency headers.
 #endif
 
 #if defined(TOOLCHAIN_TEST_EXPORT) || defined(TETRO_TOOLCHAIN_EXPORT)

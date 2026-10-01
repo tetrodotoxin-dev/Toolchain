@@ -114,6 +114,10 @@ def verify(toolchain, directory):
             with zipfile.ZipFile(path) as archive:
                 if key == "headers":
                     assert "include/toolchain/export.h" in archive.namelist()
+                    if project == "toolchain_test":
+                        assert "include/tests/public.h" in archive.namelist()
+                        for name in ["project.h", "runtime.h", "project_detail.h"]:
+                            assert not any(path.endswith("/" + name) for path in archive.namelist()), archive.namelist()
                     continue
                 metadata = json.loads(archive.read("sdk.json"))
                 assert metadata["linkage"] == key.rsplit("-", 1)[1]
@@ -130,6 +134,9 @@ def verify(toolchain, directory):
                     assert "TOOLCHAIN_TEST_VALUE=21" in metadata["defines"]
                     assert "TOOLCHAIN_TEST_PRIVATE=1" not in metadata["defines"]
                     assert "TOOLCHAIN_TEST_EXPORT=1" not in metadata["defines"]
+                    assert "TOOLCHAIN_TEST_PUBLIC=1" in metadata["defines"]
+                    for define in ["TOOLCHAIN_PROJECT_VALUE=1", "TETRO_TOOLCHAIN_STATIC=1", "TOOLCHAIN_PRIVATE_STATIC=1"]:
+                        assert define not in metadata["defines"], metadata
                     expected_flags = ["-Wl,--wrap=toolchain_link_probe"] if key.startswith("linux-") else []
                     assert metadata["linkopts"] == expected_flags
                 if metadata["interface"]:

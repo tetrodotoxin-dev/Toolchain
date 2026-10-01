@@ -23,6 +23,6 @@ sdks.release(
     version = "{version}",
     linkage = "{linkage}",
     archives = {library_archives},
-    deps = {dependencies},
+    implementation_deps = {dependencies},
 )
 use_repo(sdks, "toolchain_test")

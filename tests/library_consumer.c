@@ -11,6 +11,15 @@
 #error An implementation's private definition reached its consumer.
 #endif
 
+#if defined(TOOLCHAIN_PROJECT_VALUE) || defined(TETRO_TOOLCHAIN_STATIC) || \
+    defined(TOOLCHAIN_PRIVATE_STATIC)
+#error An implementation dependency's definition reached its consumer.
+#endif
+
+#if __has_include("project_detail.h")
+#error An implementation dependency's include path reached its consumer.
+#endif
+
 #if defined(__linux__)
 // The public linker option redirects this declaration to its implementation.
 // Without that option the consumer has an unresolved call to the probe.
