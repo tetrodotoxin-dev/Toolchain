@@ -87,6 +87,34 @@ def _headers(target):
             headers.append([file, file.path[len(prefix):]])
     return headers
 
+def _runtime(target, primary):
+    """Collect declared shared dependencies beside the published library.
+
+    Args:
+        target: Configured library with transitive C++ linker inputs.
+        primary: Published binary, already included by the release rule.
+
+    Returns:
+        Runtime library records and their [File, archive_path] pairs.
+    """
+    libraries = {}
+    files = []
+    for entry in target[CcInfo].linking_context.linker_inputs.to_list():
+        for library in entry.libraries:
+            binary = library.resolved_symlink_dynamic_library or library.dynamic_library
+            if not binary or binary == primary:
+                continue
+            interface = library.resolved_symlink_interface_library or library.interface_library
+            name = "lib/" + binary.basename
+            import_name = "lib/" + binary.basename.removesuffix(".dll") + ".lib" if interface else None
+            if binary.extension == "dll" and not interface:
+                fail("Bundled Windows dependency supplies no import library: " + str(entry.owner))
+            libraries[name] = {"library": name, "interface": import_name}
+            files.append([binary, name])
+            if interface:
+                files.append([interface, import_name])
+    return libraries.values(), files
+
 def _package(ctx):
     """Write source, header and platform archives with a checksum manifest.
 
@@ -98,13 +126,14 @@ def _package(ctx):
     """
     stem = ctx.attr.project + "-" + ctx.attr.version
     variants = {linkage: getattr(ctx.split_attr, linkage) for linkage in ["static", "shared"] if getattr(ctx.attr, linkage)}
-    headers = {"toolchain/export.h": ctx.file._export}
+    headers = {}
     for targets in variants.values():
         for target in targets.values():
             for file, path in _headers(target):
                 if path in headers and headers[path] != file:
                     fail("Release variants supply different headers for " + path)
                 headers[path] = file
+    headers.setdefault("toolchain/export.h", ctx.file._export)
     license = [[file.path, "LICENSE"] for file in ctx.files.sources if file.short_path == "LICENSE"]
     archives = {
         stem + "-headers.zip": [[file.path, "include/" + path] for path, file in headers.items()] + license,
@@ -114,6 +143,7 @@ def _package(ctx):
     for linkage, targets in variants.items():
         for platform, target in targets.items():
             files = _binaries(target, ctx.attr.project, linkage)
+            runtime, runtime_files = _runtime(target, files.binary)
             project = ctx.attr.project.upper().replace("-", "_").replace(".", "_")
             defines = target[CcInfo].compilation_context.defines.to_list()
             if linkage == "static" and project + "_STATIC=1" not in defines:
@@ -139,8 +169,10 @@ def _package(ctx):
                 "interface": "lib/" + files.interface_name if files.interface else None,
                 "defines": defines,
                 "linkopts": linkopts,
+                "runtime": runtime,
             }))
-            members = [[files.binary.path, "lib/" + files.name], [metadata.path, "sdk.json"]]
+            members = [[file.path, path] for file, path in runtime_files] + [[files.binary.path, "lib/" + files.name], [metadata.path, "sdk.json"]]
+            inputs.extend([file for file, _ in runtime_files])
             inputs.extend([files.binary, metadata])
             if files.interface:
                 members.append([files.interface.path, "lib/" + files.interface_name])
@@ -179,6 +211,11 @@ def package_release(name, static = None, shared = None, project = None, platform
     in -static.zip or -shared.zip. Static Windows archives use _static.lib so
     they can share an installation directory with the DLL's import library.
     Each archive preserves public definitions and the target's linkopts.
+    Declared transitive shared libraries and their import libraries accompany
+    either linkage in lib/. System libraries supplied by the platform remain
+    platform requirements. Static dependency archives retain separate SDK pins.
+    The archive writer checks repeated filenames for identical contents, so
+    conflicting libraries fail packaging instead of replacing one another.
     Linkopts must remain valid outside the build tree; linker scripts and other
     additional linker inputs require their own distribution support. Dependency
     SDKs provide their own link requirements through the importer's deps.

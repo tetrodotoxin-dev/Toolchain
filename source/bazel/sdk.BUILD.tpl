@@ -5,6 +5,26 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
+# Each platform may have a different dependency set. Only the imports selected
+# by that platform enter the consuming target's link and runtime dependencies.
+_RUNTIME = {runtime}
+
+[
+    cc_import(
+        name = "runtime_" + str(index),
+        shared_library = select({
+            platform: libraries[index]["library"] if index < len(libraries) else None
+            for platform, libraries in _RUNTIME.items()
+        }),
+        interface_library = select({
+            platform: libraries[index]["interface"] if index < len(libraries) else None
+            for platform, libraries in _RUNTIME.items()
+        }),
+        visibility = ["//visibility:private"],
+    )
+    for index in range(max([len(libraries) for libraries in _RUNTIME.values()]))
+]
+
 cc_library(
     name = "headers",
     hdrs = glob(
@@ -22,7 +42,10 @@ cc_import(
     shared_library = select({shared_libraries}),
     interface_library = select({interface_libraries}),
     linkopts = select({linkopts}),
-    deps = [":headers"],
+    deps = [":headers"] + select({
+        platform: [":runtime_" + str(index) for index in range(len(libraries))]
+        for platform, libraries in _RUNTIME.items()
+    }),
 )
 
 filegroup(

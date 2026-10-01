@@ -1,4 +1,4 @@
-module(name = "sdk_consumer")
+module(name = "sdk_consumer", version = "{version}")
 
 bazel_dep(name = "rules_cc", version = "0.2.17")
 bazel_dep(name = "tetro_toolchain", version = "{version}")
@@ -8,17 +8,14 @@ archive_override(
     urls = ["https://github.com/tetrodotoxin-dev/Toolchain/releases/download/v{version}/tetro_toolchain-{version}-source.tar.gz"],
 )
 
-register_toolchains("@tetro_toolchain//:cc_toolchain_for_linux_x86_64")
+register_toolchains(
+    "@tetro_toolchain//:cc_toolchain_for_linux_x86_64",
+    "@tetro_toolchain//:cc_toolchain_for_windows_x64",
+    "@tetro_toolchain//:cc_toolchain_for_wasm32",
+)
 
 sdks = use_extension("@tetro_toolchain//source/bazel:sdk.bzl", "dependencies")
-sdks.release(
-    name = "tetro_toolchain",
-    project = "Toolchain",
-    version = "{version}",
-    linkage = "{linkage}",
-    archives = {dependency_archives},
-)
-use_repo(sdks, fixture_dependency = "tetro_toolchain")
+{dependency_pin}
 
 sdks.release(
     name = "toolchain_test",
@@ -26,6 +23,6 @@ sdks.release(
     version = "{version}",
     linkage = "{linkage}",
     archives = {library_archives},
-    deps = ["@fixture_dependency//:tetro_toolchain"],
+    deps = {dependencies},
 )
 use_repo(sdks, "toolchain_test")

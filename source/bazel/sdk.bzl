@@ -6,6 +6,9 @@ Each release tag supplies checksums for headers and platform archives, using
 keys such as linux-x86_64-v3-shared and linux-x86_64-v3-static. Linkage defaults
 to shared. Selecting static also publishes the project's STATIC definition.
 Declare the selected variants of public dependencies in deps.
+Bundled runtime libraries are imported from the selected archive automatically.
+An explicitly declared SDK dependency supplies overlapping runtime libraries
+when their recorded contents match. Incompatible copies fail the import.
 """
 
 load("@host_tools//:settings.bzl", "AR")
@@ -15,6 +18,42 @@ _PLATFORMS = {
     "windows-x86_64-msvc": str(Label("//:windows")),
     "wasm32-emscripten": str(Label("//:web")),
 }
+
+def _runtime(ctx, metadata, platform):
+    """Reuse declared SDK dependencies before importing bundled copies.
+
+    Args:
+        ctx: Repository context with the explicitly declared dependency labels.
+        metadata: The selected archive's library records and content digests.
+        platform: Archive platform whose dependency metadata is being compared.
+
+    Returns:
+        Bundled libraries that still need their own C++ import target.
+    """
+    provided = {}
+    for dependency in ctx.attr.deps:
+        label = Label(dependency)
+        manifest = ctx.path(label.same_package_label(platform + "/sdk.json"))
+        if manifest.exists:
+            supplied = json.decode(ctx.read(manifest))
+
+            # A dependency on an SDK's headers target supplies no runtime.
+            # Only its named library import can replace the bundled copies.
+            if supplied.get("project") != label.name.upper().replace("-", "_").replace(".", "_"):
+                continue
+            for path, digest in supplied.get("sha256", {}).items():
+                if path in provided and provided[path] != digest:
+                    fail("Conflicting SDK dependency contents for " + platform + "/" + path)
+                provided[path] = digest
+    runtime = []
+    for library in metadata.get("runtime", []):
+        if library["library"] in provided:
+            for path in library.values():
+                if path and (not provided.get(path) or metadata.get("sha256", {}).get(path) != provided[path]):
+                    fail("Bundled runtime disagrees with a declared SDK dependency: " + platform + "/" + path)
+        else:
+            runtime.append({key: platform + "/" + path if path else None for key, path in library.items()})
+    return runtime
 
 def _sdk(ctx):
     """Import a pinned release's headers and libraries as C++ targets.
@@ -48,6 +87,8 @@ def _sdk(ctx):
     interfaces = {}
     defines = {}
     linkopts = {}
+    runtime = {}
+    binaries = {}
     for platform, condition in _PLATFORMS.items():
         if platform not in selected:
             continue
@@ -79,6 +120,12 @@ def _sdk(ctx):
         interfaces[condition] = interface
         defines[condition] = metadata.get("defines", [project + "_STATIC=1"] if static else [])
         linkopts[condition] = metadata.get("linkopts", [])
+        binaries[condition] = [binary] + [platform + "/" + library["library"] for library in metadata.get("runtime", [])]
+        runtime[condition] = _runtime(ctx, metadata, platform)
+        for library in runtime[condition]:
+            for path in library.values():
+                if path and not ctx.path(path).exists:
+                    fail("SDK archive is missing its declared runtime file: " + path)
     ctx.template("BUILD.bazel", ctx.attr._template, substitutions = {
         "{dependencies}": repr(ctx.attr.deps),
         "{library}": repr(ctx.attr.library),
@@ -87,7 +134,8 @@ def _sdk(ctx):
         "{interface_libraries}": repr(interfaces),
         "{defines}": repr(defines),
         "{linkopts}": repr(linkopts),
-        "{binaries}": repr({key: [static_libraries[key] or libraries[key]] for key in libraries}),
+        "{runtime}": repr(runtime),
+        "{binaries}": repr(binaries),
     }, executable = False)
 
 _sdk_repository = repository_rule(implementation = _sdk, attrs = {

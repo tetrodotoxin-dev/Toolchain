@@ -3,10 +3,12 @@
 
 #include "tests/project.h"
 
+#include "tests/runtime.h"
+
 #ifdef TOOLCHAIN_TEST_EXPORT
 #error A dependent library's export flag reached this implementation.
 #endif
 
 C_LINKAGE int toolchain_project_entry(int value) {
-  return value;
+  return toolchain_runtime_entry(value);
 }

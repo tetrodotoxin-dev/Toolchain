@@ -72,6 +72,7 @@ static_library(
     testonly = True,
     srcs = ["project.c"],
     hdrs = ["project.h"],
+    deps = [":runtime"],
 )
 
 shared_library(
@@ -79,6 +80,21 @@ shared_library(
     testonly = True,
     srcs = ["project.c"],
     hdrs = ["project.h"],
+    deps = [":runtime"],
+)
+
+# The SDK must carry a dependency reached through another shared library.
+shared_library(
+    name = "runtime",
+    testonly = True,
+    srcs = ["runtime.c"],
+    hdrs = ["runtime.h"],
+    project = "toolchain_runtime",
+    shared_lib_name = select({
+        "//:linux": "libruntime.so.1",
+        "//:windows": "runtime.dll",
+        "//conditions:default": "libruntime.so",
+    }),
 )
 
 static_library(
@@ -114,7 +130,10 @@ shared_library(
     }),
     local_defines = ["TOOLCHAIN_TEST_PRIVATE=1"],
     project = "toolchain_test",
-    deps = [":project_shared"],
+    deps = [
+        ":project_shared",
+        ":runtime",
+    ],
 )
 
 cc_test(
