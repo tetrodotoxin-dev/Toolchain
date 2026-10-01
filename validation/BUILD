@@ -4,7 +4,7 @@ load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_python//python:py_test.bzl", "py_test")
 load("//source/bazel:library.bzl", "shared_library", "static_library")
 load("//source/bazel:package.bzl", "package_release")
-load("//source/bazel:validation.bzl", "benchmark", "test")
+load("//source/bazel:validation.bzl", "tests")
 load("//source/bazel:vscode.bzl", "vscode")
 
 package(default_visibility = ["//visibility:public"])
@@ -16,32 +16,24 @@ filegroup(
     srcs = glob(["**"]),
 )
 
-test(
-    name = "unit_tests",
-    srcs = ["unit_test.cpp"],
-)
+exports_files([
+    "benchmark.cpp",
+    "unit_test.cpp",
+])
 
-test(
+tests(
     name = "reporting",
-    size = "small",
     srcs = ["reporting.cpp"],
     tags = ["manual"],
 )
 
-benchmark(
-    name = "benchmark",
-    srcs = ["benchmark.cpp"],
-)
-
-test(
+tests(
     name = "skipped",
-    size = "small",
     srcs = ["skipped.cpp"],
 )
 
-test(
+tests(
     name = "empty",
-    size = "small",
 )
 
 # The reporting example intentionally fails. The outer test checks its exit
@@ -51,20 +43,20 @@ py_test(
     size = "small",
     srcs = ["validation.py"],
     args = [
-        "$(rlocationpath :unit_tests)",
+        "$(rlocationpath //:tests)",
         "$(rlocationpath :reporting)",
-        "$(rlocationpath :benchmark)",
+        "$(rlocationpath //:benchmarks)",
         "$(rlocationpath :skipped)",
         "$(rlocationpath :empty)",
         "$(rlocationpath reporting.cpp)",
     ],
     data = [
         "reporting.cpp",
-        ":benchmark",
         ":empty",
         ":reporting",
         ":skipped",
-        ":unit_tests",
+        "//:benchmarks",
+        "//:tests",
     ],
     deps = ["@rules_python//python/runfiles"],
 )

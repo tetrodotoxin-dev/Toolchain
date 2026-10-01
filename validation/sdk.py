@@ -2,7 +2,7 @@
 
 """Consume Toolchain's built SDK fixtures through the real repository importer.
 
-Build //:sdk, //tests:sdk and //tests:project_sdk first, then pass the source
+Build //:sdk, //validation:sdk and //validation:project_sdk first, then pass the source
 tarball and fixture archive directory. Bazel's distdir supplies the exact
 archives under their release URLs. This tests packaging before publication,
 without editing a consuming project's dependency pins.
@@ -115,7 +115,7 @@ def verify(toolchain, directory):
                 if key == "headers":
                     assert "include/toolchain/export.h" in archive.namelist()
                     if project == "toolchain_test":
-                        assert "include/tests/public.h" in archive.namelist()
+                        assert "include/validation/public.h" in archive.namelist()
                         for name in ["project.h", "runtime.h", "project_detail.h"]:
                             assert not any(path.endswith("/" + name) for path in archive.namelist()), archive.namelist()
                     continue

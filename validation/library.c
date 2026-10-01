@@ -1,10 +1,10 @@
 // # Tetrodotoxin
 // Copyright (c) 2023-present Matt Kaes and contributors
 
-#include "tests/library.h"
+#include "validation/library.h"
 
 #include "project_detail.h"
-#include "tests/project.h"
+#include "validation/project.h"
 
 #ifndef TOOLCHAIN_TEST_PRIVATE
 #error The implementation requires its private definition.

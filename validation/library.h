@@ -4,7 +4,7 @@
 #ifndef TOOLCHAIN_TEST_LIBRARY_H
 #define TOOLCHAIN_TEST_LIBRARY_H
 
-#include "tests/public.h"
+#include "validation/public.h"
 #include "toolchain/export.h"
 
 #if TOOLCHAIN_TEST_VALUE != 21

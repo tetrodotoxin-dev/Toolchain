@@ -1,7 +1,7 @@
 // # Tetrodotoxin
 // Copyright (c) 2023-present Matt Kaes and contributors
 
-#include "tests/library.h"
+#include "validation/library.h"
 
 // The C++ helper keeps native linkage. The entrypoint has C linkage and an
 // independent export annotation for hosts that discover it by name.

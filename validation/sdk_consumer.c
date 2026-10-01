@@ -1,9 +1,9 @@
 // # Tetrodotoxin
 // Copyright (c) 2023-present Matt Kaes and contributors
 
-#include "tests/library.h"
+#include "validation/library.h"
 
-#if EXPECT_COMPONENT && __has_include("tests/optional.h")
+#if EXPECT_COMPONENT && __has_include("validation/optional.h")
 #error The selected SDK component exposes an unrelated header.
 #endif
 
@@ -25,7 +25,7 @@
 
 #if __has_include(         \
     "project_detail.h") || \
-    __has_include("tests/project.h") || __has_include("tests/runtime.h")
+    __has_include("validation/project.h") || __has_include("validation/runtime.h")
 #error SDK consumers must not receive implementation dependency headers.
 #endif
 

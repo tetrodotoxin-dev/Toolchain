@@ -196,13 +196,13 @@ int main(int argc, const char* argv[]) {
       break;
     default:
       ++failed;
-      outcome = "INVALID";
+      outcome = "????";
       color = fail_color;
       break;
     }
 
     if (!silent || result != Test::TestResult::Pass) {
-      printf("%s  [ %-7s ] ", color, outcome);
+      printf("%s  [ %-4s ] ", color, outcome);
       Test::print_bytes(test.name, false);
       for (auto padding = test.name.size; padding < width + 2; ++padding) {
         putchar(' ');

@@ -52,9 +52,9 @@ _vscode = rule(
 def vscode(name):
     """Declare `bazel run //:vscode` to populate the repository's .vscode folder.
 
-    The shared files expect //:build, //validation:unit_tests and
-    //validation:benchmarks. Debug and Release profiles run Build All in the
-    selected mode, then launch either Unit Tests or Benchmarks under CodeLLDB.
+    The shared files expect //:tests and //:benchmarks. Debug and Release
+    profiles build all targets in the selected mode, then launch either Tests
+    or Benchmarks under CodeLLDB.
     IntelliSense uses source/ for the project's public include paths and
     Bazel's generated include trees under .bin/bin for dependencies.
     Repeating the command replaces these shared configuration files with the

@@ -1,9 +1,9 @@
 // # Tetrodotoxin
 // Copyright (c) 2023-present Matt Kaes and contributors
 
-#include "tests/project.h"
+#include "validation/project.h"
 
-#include "tests/runtime.h"
+#include "validation/runtime.h"
 
 #ifdef TOOLCHAIN_TEST_EXPORT
 #error A dependent library's export flag reached this implementation.

@@ -8,9 +8,7 @@
       "command": "bazel",
       "args": [
         "build",
-        "//:build",
-        "//validation:unit_tests",
-        "//validation:benchmarks",
+        "...",
         "--config=debug"
       ],
       "group": {"kind": "build", "isDefault": true},
@@ -22,27 +20,25 @@
       "command": "bazel",
       "args": [
         "build",
-        "//:build",
-        "//validation:unit_tests",
-        "//validation:benchmarks",
+        "...",
         "--config=release"
       ],
       "group": "build",
       "problemMatcher": "$gcc"
     },
     {
-      "label": "[Debug] Unit Tests",
+      "label": "[Debug] Tests",
       "type": "process",
       "command": "bazel",
-      "args": ["run", "//validation:unit_tests", "--config=debug"],
+      "args": ["run", "//:tests", "--config=debug"],
       "group": "test",
       "problemMatcher": "$gcc"
     },
     {
-      "label": "[Release] Unit Tests",
+      "label": "[Release] Tests",
       "type": "process",
       "command": "bazel",
-      "args": ["run", "//validation:unit_tests", "--config=release"],
+      "args": ["run", "//:tests", "--config=release"],
       "group": "test",
       "problemMatcher": "$gcc"
     },
@@ -50,14 +46,14 @@
       "label": "[Debug] Benchmarks",
       "type": "process",
       "command": "bazel",
-      "args": ["run", "//validation:benchmarks", "--config=debug"],
+      "args": ["run", "//:benchmarks", "--config=debug"],
       "problemMatcher": "$gcc"
     },
     {
       "label": "[Release] Benchmarks",
       "type": "process",
       "command": "bazel",
-      "args": ["run", "//validation:benchmarks", "--config=release"],
+      "args": ["run", "//:benchmarks", "--config=release"],
       "problemMatcher": "$gcc"
     }
   ]

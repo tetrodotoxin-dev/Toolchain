@@ -42,7 +42,7 @@ def verify_tests(program, reporting, skipped, empty, source):
     for number, line in enumerate(Path(source).read_text().splitlines(), 1):
         match = re.match(r"VALIDATION_TEST\(Reporting, (\w+)\)", line)
         if match:
-            locations[match[1]] = f"tests/reporting.cpp:{number}: Reporting::{match[1]}"
+            locations[match[1]] = f"validation/reporting.cpp:{number}: Reporting::{match[1]}"
 
     # Failure output comes from real EXPECT, ASSERT and SKIP calls. Only the
     # outside process may expect their nonzero exit status and inspect the
