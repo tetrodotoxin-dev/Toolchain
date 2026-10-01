@@ -106,11 +106,18 @@ def verify(toolchain, directory):
     for project in ["tetro_toolchain", "toolchain_test"]:
         prefix = project + "-" + version + "-"
         pins[project] = {}
-        for path in directory.glob(prefix + "*.zip"):
+        # The checksum manifest names this release exactly. A version prefix
+        # alone also matches development archives left in the output directory.
+        manifest = directory / (prefix + "sha256.txt")
+        for entry in manifest.read_text().splitlines():
+            digest, name = entry.split(maxsplit=1)
+            assert name.startswith(prefix) and name.endswith(".zip"), name
+            path = directory / name
+            assert checksum(path) == digest, path
             key = path.name.removeprefix(prefix).removesuffix(".zip")
             if key == "source":
                 continue
-            pins[project][key] = checksum(path)
+            pins[project][key] = digest
             with zipfile.ZipFile(path) as archive:
                 if key == "headers":
                     assert "include/toolchain/export.h" in archive.namelist()
