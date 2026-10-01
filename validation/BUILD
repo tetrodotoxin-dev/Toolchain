@@ -2,10 +2,8 @@ load("@host_tools//:settings.bzl", "NM")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_python//python:py_test.bzl", "py_test")
-load("//source/bazel:library.bzl", "shared_library", "static_library")
+load("//:defs.bzl", "library", "tests", "vscode")
 load("//source/bazel:package.bzl", "package_release")
-load("//source/bazel:validation.bzl", "tests")
-load("//source/bazel:vscode.bzl", "vscode")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -61,7 +59,7 @@ py_test(
     deps = ["@rules_python//python/runfiles"],
 )
 
-static_library(
+library(
     name = "project_static",
     testonly = True,
     srcs = ["project.c"],
@@ -74,7 +72,7 @@ static_library(
     deps = [":runtime"],
 )
 
-shared_library(
+library(
     name = "project_shared",
     testonly = True,
     srcs = ["project.c"],
@@ -84,16 +82,18 @@ shared_library(
     ],
     defines = ["TOOLCHAIN_PROJECT_VALUE=1"],
     includes = ["private"],
+    linkage = "shared",
     deps = [":runtime"],
 )
 
 # The SDK must carry a dependency reached through another shared library.
-shared_library(
+library(
     name = "runtime",
     testonly = True,
     srcs = ["runtime.c"],
     hdrs = ["runtime.h"],
-    project = "toolchain_runtime",
+    linkage = "shared",
+    module = "toolchain_runtime",
     shared_lib_name = select({
         "//:linux": "libruntime.so.1",
         "//:windows": "runtime.dll",
@@ -126,15 +126,15 @@ cc_library(
 )
 
 # Shared consumers must not link this implementation archive a second time.
-static_library(
+library(
     name = "private_static",
     testonly = True,
     srcs = ["private.c"],
-    project = "toolchain_private",
+    module = "toolchain_private",
     alwayslink = True,
 )
 
-static_library(
+library(
     name = "static_implementation",
     testonly = True,
     srcs = [
@@ -153,11 +153,11 @@ static_library(
         "//conditions:default": [],
     }),
     local_defines = ["TOOLCHAIN_TEST_PRIVATE=1"],
-    project = "toolchain_test",
+    module = "toolchain_test",
     deps = [":public"],
 )
 
-shared_library(
+library(
     name = "shared_library",
     testonly = True,
     srcs = [
@@ -174,12 +174,13 @@ shared_library(
         ":project_shared",
         ":runtime",
     ],
+    linkage = "shared",
     linkopts = select({
         "//:linux": ["-Wl,--wrap=toolchain_link_probe"],
         "//conditions:default": [],
     }),
     local_defines = ["TOOLCHAIN_TEST_PRIVATE=1"],
-    project = "toolchain_test",
+    module = "toolchain_test",
     deps = [":public"],
 )
 

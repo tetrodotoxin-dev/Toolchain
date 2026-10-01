@@ -150,6 +150,8 @@ def verify(toolchain, directory):
         root = Path(temporary)
         workspace = root / "consumer"
         workspace.mkdir()
+        (workspace / "source").mkdir()
+        shutil.copyfile(sources / "sdk.source.tpl", workspace / "source/BUILD.bazel")
         shutil.copyfile(sources / "sdk_consumer.c", workspace / "consumer.c")
         for linkage in ["static", "shared"]:
             values = {

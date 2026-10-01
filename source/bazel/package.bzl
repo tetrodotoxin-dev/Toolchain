@@ -3,6 +3,7 @@
 """Package one project's source, headers and every target's linker outputs."""
 
 load("@host_tools//:settings.bzl", "PYTHON")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 
 _TARGETS = {
@@ -256,6 +257,65 @@ _package_release = rule(implementation = _package, attrs = {
     "_writer": attr.label(default = Label("//source/bazel:package.py"), allow_single_file = True),
     "_allowlist_function_transition": attr.label(default = "@bazel_tools//tools/allowlists/function_transition_allowlist"),
 })
+
+def package(name = "sdk", module = None, components = [], static = None, shared = None, linkage = None, visibility = ["//visibility:public"], tags = ["manual"], **kwargs):
+    """Publish a module's library, component interfaces and SDK target.
+
+    The source package supplies //source:<module> and //source:<component>.
+    Root component targets expose those header interfaces and link the common
+    runtime. The SDK records the same interfaces for archive consumers.
+    These declarations set their own visibility, so a root BUILD can load
+    package directly without a separate native package declaration.
+
+    Args:
+        name: SDK target name, defaulting to sdk.
+        module: Published library identity, defaulting to the Bazel module name.
+        components: Component names whose header interfaces live in //source.
+        static: Static runtime target. With neither variant supplied, the
+            selected linkage uses //source:<module>.
+        shared: Optional shared runtime target. Supply both variants to package
+            both while selecting one for source consumers through linkage.
+        linkage: Linkage used by root library and component consumers. Defaults
+            to static when available, otherwise shared.
+        visibility: Visibility of the published targets, defaulting to public.
+        tags: SDK target tags. The default manual tag keeps cross compilation
+            out of wildcard builds while permitting an explicit :sdk build.
+        **kwargs: Additional release attributes such as platforms and sources.
+    """
+    module = module or native.module_name()
+    linkage = linkage or ("shared" if shared and not static else "static")
+    if linkage not in ["static", "shared"]:
+        fail("package linkage must be static or shared")
+    if not static and not shared:
+        if linkage == "static":
+            static = "//source:" + module
+        else:
+            shared = "//source:" + module
+    runtime = static if linkage == "static" else shared
+    if not runtime:
+        fail("package requires a target for its selected " + linkage + " linkage")
+    common = {key: kwargs[key] for key in ["testonly", "target_compatible_with", "compatible_with"] if key in kwargs}
+    native.alias(name = module, actual = runtime, visibility = visibility, **common)
+    definitions = [module.upper().replace("-", "_").replace(".", "_") + "_STATIC=1"] if linkage == "static" else []
+    for component in components:
+        cc_library(
+            name = component,
+            deps = ["//source:" + component],
+            implementation_deps = [runtime],
+            defines = definitions,
+            visibility = visibility,
+            **common
+        )
+    package_release(
+        name = name,
+        project = module,
+        components = {"//source:" + component: component for component in components},
+        static = static,
+        shared = shared,
+        visibility = visibility,
+        tags = tags,
+        **kwargs
+    )
 
 def package_release(name, static = None, shared = None, project = None, platforms = None, sources = None, components = {}, **kwargs):
     """Package static and shared libraries with common source and headers.

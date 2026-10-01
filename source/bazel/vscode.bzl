@@ -49,7 +49,7 @@ _vscode = rule(
     },
 )
 
-def vscode(name):
+def vscode(name = "vscode"):
     """Declare `bazel run //:vscode` to populate the repository's .vscode folder.
 
     The shared files expect //:tests and //:benchmarks. Debug and Release
@@ -61,6 +61,6 @@ def vscode(name):
     Toolchain versions. Keep .vscode ignored in the consuming repository.
 
     Args:
-        name: Installer target name, conventionally vscode at the project root.
+        name: Installer target name, defaulting to vscode at the project root.
     """
     _vscode(name = name)

@@ -13,6 +13,52 @@ LINUX = Label("//:linux")
 WEB = Label("//:web")
 WINDOWS = Label("//:windows")
 
+def library(name = None, module = None, linkage = "static", components = {}, srcs = [], hdrs = [], includes = [], deps = [], defines = [], **kwargs):
+    """Compile a library and declare its component header interfaces.
+
+    Components follow the source/<module>/<component> layout. Their dependency
+    mapping describes public header requirements. The common runtime contains
+    the implementations, including dependencies private to those implementations.
+    Declare these neutral header interfaces once when compiling both variants.
+
+    Args:
+        name: Compiled target name, defaulting to module.
+        module: Library identity and header directory, defaulting to the Bazel
+            module name. Its uppercase spelling identifies EXPORTED(MODULE).
+        linkage: Either static or shared, defaulting to static.
+        components: Component names mapped to their component dependencies.
+        srcs: Implementation sources.
+        hdrs: Public headers for the complete library.
+        includes: Public include directories relative to this Bazel package.
+        deps: External dependencies required by the public headers.
+        defines: Definitions shared by the library and component consumers.
+        **kwargs: Additional attributes for the selected library variant.
+    """
+    module = module or native.module_name()
+    if linkage not in ["static", "shared"]:
+        fail("library linkage must be static or shared")
+    common = {key: kwargs[key] for key in ["visibility", "testonly", "target_compatible_with", "compatible_with"] if key in kwargs}
+    for component, dependencies in components.items():
+        cc_library(
+            name = component,
+            hdrs = native.glob([module + "/" + component + "/**/*.h", module + "/" + component + "/**/*.hpp"], allow_empty = True),
+            includes = includes,
+            defines = defines,
+            deps = [":" + dependency for dependency in dependencies] + deps + [Label("//source:headers")],
+            **common
+        )
+    compile_library = static_library if linkage == "static" else shared_library
+    compile_library(
+        name = name or module,
+        project = module,
+        srcs = srcs,
+        hdrs = hdrs,
+        includes = includes,
+        deps = deps,
+        defines = defines,
+        **kwargs
+    )
+
 def _project_name(project):
     """Turn a declared project name into its EXPORTED identifier.
 
