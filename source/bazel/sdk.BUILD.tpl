@@ -53,3 +53,19 @@ filegroup(
     name = "build",
     srcs = select({binaries}),
 )
+
+# Components share the selected binary while keeping the aggregate header
+# interface private. Each virtual include tree contains only its own headers.
+_COMPONENTS = {components}
+
+[
+    cc_library(
+        name = name,
+        hdrs = select(component["headers"]),
+        strip_include_prefix = "headers/include",
+        defines = select(component["defines"]),
+        deps = {dependencies},
+        implementation_deps = [{library}],
+    )
+    for name, component in _COMPONENTS.items()
+]

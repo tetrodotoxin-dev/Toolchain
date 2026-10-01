@@ -8,10 +8,18 @@ cc_test(
     deps = ["@toolchain_test"],
 )
 
+cc_test(
+    name = "component_consumer",
+    srcs = ["consumer.c"],
+    local_defines = ["EXPECT_STATIC={static}", "EXPECT_COMPONENT=1"],
+    deps = ["@toolchain_test//:api"],
+)
+
 package_release(
     name = "repack",
     project = "toolchain_test",
     {linkage} = "@toolchain_test",
+    components = {"@toolchain_test//:api": "api"},
     platforms = ["linux-x86_64-v3"],
     sources = [],
 )

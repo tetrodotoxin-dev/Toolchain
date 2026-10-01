@@ -3,6 +3,10 @@
 
 #include "tests/library.h"
 
+#if EXPECT_COMPONENT && __has_include("tests/optional.h")
+#error The selected SDK component exposes an unrelated header.
+#endif
+
 #if EXPECT_STATIC
 #if !TOOLCHAIN_TEST_STATIC
 #error Static SDK consumers need the public library's static definition.

@@ -160,20 +160,23 @@ def verify(toolchain, directory):
                 "dependency_archives": repr(pins["tetro_toolchain"]),
                 "library_archives": repr(pins["toolchain_test"]),
                 "dependency_pin": (sources / "sdk.dependency.tpl").read_text() if linkage == "static" else "",
-                "dependencies": repr(["@fixture_dependency//:tetro_toolchain"] if linkage == "static" else []),
+                "dependencies": repr(["@fixture_dependency//:api"] if linkage == "static" else []),
             }
             values["dependency_pin"] = substitute(values["dependency_pin"], values)
             for output, template in [("MODULE.bazel", "sdk.MODULE.tpl"), ("BUILD.bazel", "sdk.BUILD.tpl")]:
                 (workspace / output).write_text(substitute((sources / template).read_text(), values))
             subprocess.run([
                 "bazel", "--batch", "--output_base=" + str(root / "bazel"),
-                "test", "//:consumer", "//:repack", "--nocache_test_results",
+                "test", "//:consumer", "//:component_consumer", "//:repack", "--nocache_test_results",
                 "--distdir=" + str(toolchain.parent), "--distdir=" + str(directory),
             ], cwd=workspace, check=True)
             print(linkage + " SDK consumer passed", flush=True)
             original = directory / ("toolchain_test-" + version + "-linux-x86_64-v3-" + linkage + ".zip")
             repacked = workspace / "bazel-bin" / original.name
             with zipfile.ZipFile(original) as before, zipfile.ZipFile(repacked) as after:
+                before_components = json.loads(before.read("sdk.json"))["components"]
+                after_components = json.loads(after.read("sdk.json"))["components"]
+                assert before_components == after_components, (before_components, after_components)
                 before_runtime = json.loads(before.read("sdk.json"))["runtime"]
                 after_runtime = json.loads(after.read("sdk.json"))["runtime"]
                 assert before_runtime == after_runtime
@@ -185,7 +188,7 @@ def verify(toolchain, directory):
             for platform in ["windows_x64", "wasm32"]:
                 subprocess.run([
                     "bazel", "--batch", "--output_base=" + str(root / "bazel"),
-                    "build", "//:consumer", "--platforms=@tetro_toolchain//:" + platform,
+                    "build", "//:consumer", "//:component_consumer", "--platforms=@tetro_toolchain//:" + platform,
                     "--distdir=" + str(toolchain.parent), "--distdir=" + str(directory),
                 ], cwd=workspace, check=True)
                 print(linkage + " SDK consumer built for " + platform, flush=True)

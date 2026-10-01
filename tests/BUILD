@@ -115,6 +115,24 @@ cc_library(
     defines = ["TOOLCHAIN_TEST_PUBLIC=1"],
 )
 
+cc_library(
+    name = "api",
+    testonly = True,
+    hdrs = ["library.h"],
+    defines = ["TOOLCHAIN_TEST_VALUE=21"],
+    deps = [
+        ":public",
+        "//source:headers",
+    ],
+)
+
+cc_library(
+    name = "project_api",
+    hdrs = ["project.h"],
+    defines = ["TOOLCHAIN_PROJECT_VALUE=1"],
+    deps = ["//source:headers"],
+)
+
 # Shared consumers must not link this implementation archive a second time.
 static_library(
     name = "private_static",
@@ -132,7 +150,10 @@ static_library(
         "library.cpp",
         "private.c",
     ],
-    hdrs = ["library.h"],
+    hdrs = [
+        "library.h",
+        "optional.h",
+    ],
     defines = ["TOOLCHAIN_TEST_VALUE=21"],
     implementation_deps = [":project_static"],
     linkopts = select({
@@ -151,7 +172,10 @@ shared_library(
         "library.c",
         "library.cpp",
     ],
-    hdrs = ["library.h"],
+    hdrs = [
+        "library.h",
+        "optional.h",
+    ],
     defines = ["TOOLCHAIN_TEST_VALUE=21"],
     implementation_deps = [
         ":private_static",
@@ -201,6 +225,7 @@ py_test(
 package_release(
     name = "sdk",
     testonly = True,
+    components = {":api": "api"},
     project = "toolchain_test",
     shared = ":shared_library",
     sources = [":sources"],
@@ -211,6 +236,7 @@ package_release(
 package_release(
     name = "project_sdk",
     testonly = True,
+    components = {":project_api": "api"},
     shared = ":project_shared",
     sources = [":sources"],
     static = ":project_static",

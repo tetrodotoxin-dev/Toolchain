@@ -40,8 +40,8 @@ def _runtime(ctx, metadata, platform):
             supplied = json.decode(ctx.read(manifest))
 
             # A dependency on an SDK's headers target supplies no runtime.
-            # Only its named library import can replace the bundled copies.
-            if supplied.get("project") != label.name.upper().replace("-", "_").replace(".", "_"):
+            # The library and its component targets all link the same binary.
+            if supplied.get("project") != label.name.upper().replace("-", "_").replace(".", "_") and label.name not in supplied.get("components", {}):
                 continue
             for path, digest in supplied.get("sha256", {}).items():
                 if path in provided and provided[path] != digest:
@@ -91,6 +91,7 @@ def _sdk(ctx):
     linkopts = {}
     runtime = {}
     binaries = {}
+    components = {}
     for platform, condition in _PLATFORMS.items():
         if platform not in selected:
             continue
@@ -124,6 +125,13 @@ def _sdk(ctx):
         linkopts[condition] = metadata.get("linkopts", [])
         binaries[condition] = [binary] + [platform + "/" + library["library"] for library in metadata.get("runtime", [])]
         runtime[condition] = _runtime(ctx, metadata, platform)
+        for name, component in metadata.get("components", {}).items():
+            if name in [ctx.attr.library, "headers", "build"] or name.startswith("runtime_"):
+                fail("SDK component conflicts with a reserved target name: " + name)
+            if name not in components:
+                components[name] = {"headers": {}, "defines": {}}
+            components[name]["headers"][condition] = ["headers/include/" + path for path in component["headers"]]
+            components[name]["defines"][condition] = component["defines"]
         for library in runtime[condition]:
             for path in library.values():
                 if path and not ctx.path(path).exists:
@@ -139,6 +147,7 @@ def _sdk(ctx):
         "{linkopts}": repr(linkopts),
         "{runtime}": repr(runtime),
         "{binaries}": repr(binaries),
+        "{components}": repr(components),
     }, executable = False)
 
 _sdk_repository = repository_rule(implementation = _sdk, attrs = {

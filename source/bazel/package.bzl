@@ -65,27 +65,63 @@ def _binaries(target, project, linkage):
         fail("Windows shared release target supplies no import library: " + str(target.label))
     return struct(binary = binary, name = binary.basename, interface = interface, interface_name = binary.basename.removesuffix(".dll") + ".lib" if interface else None)
 
-def _headers(target):
-    """Collect repository headers with the include paths consumers use.
+_PublicHeadersInfo = provider("Declared public header paths across ordinary dependencies.", fields = {"entries": "Declared header files and their public include paths."})
+
+def _public_headers_impl(target, ctx):
+    """Follow public header declarations without duplicating include aliases.
 
     Args:
-        target: Configured target providing the C++ compilation context.
+        target: Configured dependency whose public interface is being visited.
+        ctx: Aspect context exposing the rule's header and prefix declarations.
 
     Returns:
-        A list of [File, include_path] pairs from the target's repository.
+        Public header mappings, including mappings from ordinary dependencies.
     """
+    if CcInfo not in target:
+        return []
     context = target[CcInfo].compilation_context
     roots = context.includes.to_list() + context.system_includes.to_list() + context.quote_includes.to_list()
     roots = [root + "/" if root and root != "." else "" for root in roots]
+    strip = getattr(ctx.rule.attr, "strip_include_prefix", "")
+    prefix = getattr(ctx.rule.attr, "include_prefix", "")
+    repository = target.label.workspace_root + "/" if target.label.workspace_root else ""
+    package = target.label.package + "/" if target.label.package else ""
+    strip_root = repository + (strip[1:] if strip.startswith("/") else package + strip)
+    strip_root = strip_root.rstrip("/") + "/" if strip_root else ""
     headers = []
-    for file in context.headers.to_list():
-        if file.owner.workspace_root != target.label.workspace_root:
-            continue
-        prefixes = [prefix for prefix in roots if file.path.startswith(prefix)]
-        if prefixes:
-            prefix = sorted(prefixes, key = len)[-1]
-            headers.append([file, file.path[len(prefix):]])
-    return headers
+    for file in getattr(ctx.rule.files, "hdrs", []) + getattr(ctx.rule.files, "textual_hdrs", []) + context.direct_private_headers:
+        if strip or prefix:
+            if not file.path.startswith(strip_root):
+                fail("Header is outside its declared strip_include_prefix: " + file.path)
+            path = file.path[len(strip_root):]
+            path = prefix.rstrip("/") + "/" + path if prefix else path
+        else:
+            prefixes = [root for root in roots if file.path.startswith(root)]
+            if not prefixes:
+                continue
+            path = file.path[len(sorted(prefixes, key = len)[-1]):]
+        headers.append((file, path))
+    dependencies = getattr(ctx.rule.attr, "deps", [])
+    actual = getattr(ctx.rule.attr, "actual", None)
+    if actual:
+        dependencies = dependencies + [actual]
+    return [_PublicHeadersInfo(entries = depset(headers, transitive = [dep[_PublicHeadersInfo].entries for dep in dependencies if _PublicHeadersInfo in dep]))]
+
+_public_headers = aspect(
+    implementation = _public_headers_impl,
+    attr_aspects = ["deps", "actual"],
+)
+
+def _headers(target):
+    """Select the public headers owned by the released target's repository.
+
+    Args:
+        target: Configured library with declared public header mappings.
+
+    Returns:
+        File and include path pairs, with external SDK headers left to deps.
+    """
+    return [(file, path) for file, path in target[_PublicHeadersInfo].entries.to_list() if file.owner.workspace_root == target.label.workspace_root]
 
 def _runtime(target, primary):
     """Collect declared shared dependencies beside the published library.
@@ -161,6 +197,21 @@ def _package(ctx):
                         fail("SDK link requirements need relocatable inputs; additional linker inputs are not packaged: " + str(target.label))
                     linkopts.extend(entry.user_link_flags)
             archive = stem + "-" + platform + "-" + linkage
+
+            # Components select header interfaces over this library's binary.
+            # Their compilation contexts include their public header dependencies
+            # so SDK consumers receive the same complete include surface.
+            components = {}
+            for component, name in zip(ctx.split_attr.components.get(platform, []), ctx.attr.component_names):
+                paths = {path: True for _, path in _headers(component)}
+                paths["toolchain/export.h"] = True
+                for path in paths:
+                    if path not in headers:
+                        fail("Component header is outside the released interface: " + path)
+                components[name] = {
+                    "headers": sorted(paths),
+                    "defines": depset(component[CcInfo].compilation_context.defines.to_list() + ([project + "_STATIC=1"] if linkage == "static" else [])).to_list(),
+                }
             metadata = ctx.actions.declare_file(archive + ".json")
             ctx.actions.write(metadata, json.encode({
                 "project": project,
@@ -170,6 +221,7 @@ def _package(ctx):
                 "defines": defines,
                 "linkopts": linkopts,
                 "runtime": runtime,
+                "components": components,
             }))
             members = [[file.path, path] for file, path in runtime_files] + [[files.binary.path, "lib/" + files.name], [metadata.path, "sdk.json"]]
             inputs.extend([file for file, _ in runtime_files])
@@ -192,8 +244,10 @@ def _package(ctx):
     return [DefaultInfo(files = depset(outputs + [checksum]))]
 
 _package_release = rule(implementation = _package, attrs = {
-    "static": attr.label(cfg = _transition, providers = [CcInfo]),
-    "shared": attr.label(cfg = _transition, providers = [CcInfo]),
+    "static": attr.label(cfg = _transition, providers = [CcInfo], aspects = [_public_headers]),
+    "shared": attr.label(cfg = _transition, providers = [CcInfo], aspects = [_public_headers]),
+    "components": attr.label_list(cfg = _transition, providers = [CcInfo], aspects = [_public_headers]),
+    "component_names": attr.string_list(),
     "project": attr.string(mandatory = True),
     "version": attr.string(mandatory = True),
     "sources": attr.label_list(allow_files = True),
@@ -203,7 +257,7 @@ _package_release = rule(implementation = _package, attrs = {
     "_allowlist_function_transition": attr.label(default = "@bazel_tools//tools/allowlists/function_transition_allowlist"),
 })
 
-def package_release(name, static = None, shared = None, project = None, platforms = None, sources = None, **kwargs):
+def package_release(name, static = None, shared = None, project = None, platforms = None, sources = None, components = {}, **kwargs):
     """Package static and shared libraries with common source and headers.
 
     Called from the repository root to collect its source packages and build
@@ -229,6 +283,10 @@ def package_release(name, static = None, shared = None, project = None, platform
         platforms: Platform names to publish, defaulting to all SDK platforms.
         sources: Source archive inputs. Omit at the repository root to collect
             its standard source packages and build configuration.
+        components: Header interface targets mapped to public SDK target names.
+            Each component links the release binary and exposes the selected
+            target's public headers and definitions. These targets describe
+            headers independently of the release's static or shared linkage.
         **kwargs: Common rule attributes such as visibility, tags and testonly.
     """
     if not static and not shared:
@@ -240,6 +298,8 @@ def package_release(name, static = None, shared = None, project = None, platform
         name = name,
         static = static,
         shared = shared,
+        components = components.keys(),
+        component_names = components.values(),
         project = project or native.module_name(),
         platforms = selected,
         version = native.module_version(),
