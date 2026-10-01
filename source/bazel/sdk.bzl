@@ -1,13 +1,19 @@
 # Copyright (c) 2023-present Matt Kaes and contributors
 
-"""Import a release's headers and static or shared libraries."""
+"""Import a release's headers and one selected library linkage.
+
+Each release tag supplies checksums for headers and platform archives, using
+keys such as linux-x86_64-v3-shared and linux-x86_64-v3-static. Linkage defaults
+to shared. Selecting static also publishes the project's STATIC definition.
+Declare the selected variants of public dependencies in deps.
+"""
 
 load("@host_tools//:settings.bzl", "AR")
 
 _PLATFORMS = {
-    "linux-x86_64-v3": "@tetro_toolchain//:linux",
-    "windows-x86_64-msvc": "@tetro_toolchain//:windows",
-    "wasm32-emscripten": "@tetro_toolchain//:web",
+    "linux-x86_64-v3": str(Label("//:linux")),
+    "windows-x86_64-msvc": str(Label("//:windows")),
+    "wasm32-emscripten": str(Label("//:web")),
 }
 
 def _sdk(ctx):
@@ -19,38 +25,70 @@ def _sdk(ctx):
     """
     if "headers" not in ctx.attr.archives:
         fail("An SDK pin must include its shared headers archive")
-    for archive, checksum in ctx.attr.archives.items():
+    selected = {"headers": "headers"}
+    for platform in _PLATFORMS:
+        archive = platform + "-" + ctx.attr.linkage
+        if archive in ctx.attr.archives:
+            selected[platform] = archive
+        elif platform in ctx.attr.archives:
+            # Earlier releases carried one linkage in each platform archive.
+            selected[platform] = platform
+    if len(selected) == 1:
+        fail("No platform archives supply the requested " + ctx.attr.linkage + " linkage")
+    for output, archive in selected.items():
         ctx.download_and_extract(
             url = "https://github.com/tetrodotoxin-dev/" + ctx.attr.project + "/releases/download/v" + ctx.attr.version + "/" + ctx.attr.library + "-" + ctx.attr.version + "-" + archive + ".zip",
-            sha256 = checksum,
-            output = archive,
+            sha256 = ctx.attr.archives[archive],
+            output = output,
         )
+    if not ctx.path("headers/include/toolchain/export.h").exists:
+        ctx.symlink(ctx.attr._export, "headers/include/toolchain/export.h")
     static_libraries = {}
     libraries = {}
     interfaces = {}
+    defines = {}
+    linkopts = {}
     for platform, condition in _PLATFORMS.items():
-        if platform not in ctx.attr.archives:
+        if platform not in selected:
             continue
         windows = platform == "windows-x86_64-msvc"
         directory = platform + "/lib/"
-        shared = directory + (ctx.attr.library + ".dll" if windows else "lib" + ctx.attr.library + ".so")
-        archive = directory + (ctx.attr.library + ".lib" if windows else "lib" + ctx.attr.library + ".a")
-
-        # A Windows import library accompanies its DLL. Without that DLL the
-        # .lib contains the implementation, just as an .a does on Linux.
-        static = ctx.path(archive).exists and not (windows and ctx.path(shared).exists)
-        if not static and not ctx.path(shared).exists:
-            fail("SDK archive contains no library for " + platform)
-        static_libraries[condition] = archive if static else None
-        libraries[condition] = None if static else shared
-        interfaces[condition] = directory + ctx.attr.library + ".lib" if windows and not static else None
-    ctx.file("BUILD.bazel", """load("@rules_cc//cc:cc_library.bzl", "cc_library")
-load("@rules_cc//cc:cc_import.bzl", "cc_import")
-package(default_visibility = ["//visibility:public"])
-cc_library(name = "headers", hdrs = glob(["headers/include/**/*.h", "headers/include/**/*.hpp"], allow_empty = True), strip_include_prefix = "headers/include", deps = %s)
-cc_import(name = "%s", static_library = select(%s), shared_library = select(%s), interface_library = select(%s), deps = [":headers"])
-filegroup(name = "build", srcs = select({key: [value] for key, value in %s.items()}))
-""" % (repr(ctx.attr.deps), ctx.attr.library, repr(static_libraries), repr(libraries), repr(interfaces), repr({key: static_libraries[key] or libraries[key] for key in libraries})))
+        manifest = ctx.path(platform + "/sdk.json")
+        metadata = {}
+        if manifest.exists:
+            metadata = json.decode(ctx.read(manifest))
+            if metadata["linkage"] != ctx.attr.linkage:
+                fail("SDK linkage disagrees with its pin for " + platform)
+            binary = platform + "/" + metadata["library"]
+            interface = platform + "/" + metadata["interface"] if metadata.get("interface") else None
+            project = metadata["project"]
+        else:
+            shared = directory + (ctx.attr.library + ".dll" if windows else "lib" + ctx.attr.library + ".so")
+            archive = directory + (ctx.attr.library + ".lib" if windows else "lib" + ctx.attr.library + ".a")
+            static = ctx.path(archive).exists and not (windows and ctx.path(shared).exists)
+            if static != (ctx.attr.linkage == "static"):
+                fail("Legacy SDK archive does not supply " + ctx.attr.linkage + " linkage for " + platform)
+            binary = archive if static else shared
+            interface = directory + ctx.attr.library + ".lib" if windows and not static else None
+            project = ctx.attr.library.upper().replace("-", "_").replace(".", "_")
+        if not ctx.path(binary).exists or (interface and not ctx.path(interface).exists):
+            fail("SDK archive is missing its declared linker output for " + platform)
+        static = ctx.attr.linkage == "static"
+        static_libraries[condition] = binary if static else None
+        libraries[condition] = None if static else binary
+        interfaces[condition] = interface
+        defines[condition] = metadata.get("defines", [project + "_STATIC=1"] if static else [])
+        linkopts[condition] = metadata.get("linkopts", [])
+    ctx.template("BUILD.bazel", ctx.attr._template, substitutions = {
+        "{dependencies}": repr(ctx.attr.deps),
+        "{library}": repr(ctx.attr.library),
+        "{static_libraries}": repr(static_libraries),
+        "{shared_libraries}": repr(libraries),
+        "{interface_libraries}": repr(interfaces),
+        "{defines}": repr(defines),
+        "{linkopts}": repr(linkopts),
+        "{binaries}": repr({key: [static_libraries[key] or libraries[key]] for key in libraries}),
+    }, executable = False)
 
 _sdk_repository = repository_rule(implementation = _sdk, attrs = {
     "library": attr.string(mandatory = True),
@@ -58,6 +96,9 @@ _sdk_repository = repository_rule(implementation = _sdk, attrs = {
     "version": attr.string(mandatory = True),
     "archives": attr.string_dict(mandatory = True),
     "deps": attr.string_list(),
+    "linkage": attr.string(default = "shared", values = ["static", "shared"]),
+    "_template": attr.label(default = Label("//source/bazel:sdk.BUILD.tpl")),
+    "_export": attr.label(default = Label("//source:toolchain/export.h")),
 })
 
 def _dependencies(ctx):
@@ -69,15 +110,22 @@ def _dependencies(ctx):
     seen = {}
     for module in ctx.modules:
         for release in module.tags.release:
-            pin = (release.project, release.version, release.archives, release.deps)
+            pin = (release.project, release.version, release.archives, release.deps, release.linkage)
             if release.name in seen:
                 if seen[release.name] != pin:
                     fail("Conflicting SDK release pins for " + release.name)
                 continue
             seen[release.name] = pin
-            _sdk_repository(name = release.name, library = release.name, project = release.project, version = release.version, archives = release.archives, deps = [str(dep) for dep in release.deps])
+            _sdk_repository(name = release.name, library = release.name, project = release.project, version = release.version, archives = release.archives, deps = [str(dep) for dep in release.deps], linkage = release.linkage)
 
-_release = tag_class(attrs = {"name": attr.string(mandatory = True), "project": attr.string(mandatory = True), "version": attr.string(mandatory = True), "archives": attr.string_dict(mandatory = True), "deps": attr.label_list()})
+_release = tag_class(attrs = {
+    "name": attr.string(mandatory = True),
+    "project": attr.string(mandatory = True),
+    "version": attr.string(mandatory = True),
+    "archives": attr.string_dict(mandatory = True),
+    "deps": attr.label_list(),
+    "linkage": attr.string(default = "shared", values = ["static", "shared"]),
+})
 dependencies = module_extension(implementation = _dependencies, tag_classes = {"release": _release})
 
 def extract_debian(ctx, archives):

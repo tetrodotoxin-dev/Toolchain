@@ -77,6 +77,9 @@ def _config(ctx):
                     "-Wl,--experimental-pic",
                     "-Wl,--unresolved-symbols=import-dynamic",
                 ])]),
+                # PIE lets hosted executables import shared modules. LLD's
+                # ordinary executable mode searches only static archives.
+                flag_set(actions = [ACTION_NAMES.cpp_link_executable], flag_groups = [flag_group(flags = ["-Wl,--pie"])]),
             ]),
         ],
         tool_paths = [tool_path(name = name, path = path) for name, path in [

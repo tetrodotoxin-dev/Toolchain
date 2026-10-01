@@ -17,12 +17,14 @@ auto Toolchain::Validation::time_ns() -> uint64_t {
   LARGE_INTEGER frequency;
   QueryPerformanceCounter(&counter);
   QueryPerformanceFrequency(&frequency);
-  const uint64_t ticks = uint64_t(counter.QuadPart);
-  const uint64_t rate = uint64_t(frequency.QuadPart);
+  const uint64_t ticks = counter.QuadPart;
+  const uint64_t rate = frequency.QuadPart;
   return ticks / rate * 1'000'000'000 + ticks % rate * 1'000'000'000 / rate;
 #else
   timespec value;
   clock_gettime(CLOCK_MONOTONIC, &value);
-  return uint64_t(value.tv_sec) * 1'000'000'000 + uint64_t(value.tv_nsec);
+  const uint64_t seconds = value.tv_sec;
+  const uint64_t nanoseconds = value.tv_nsec;
+  return seconds * 1'000'000'000 + nanoseconds;
 #endif
 }

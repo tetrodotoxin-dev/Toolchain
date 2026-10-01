@@ -11,18 +11,18 @@
 
 using namespace Toolchain::Validation;
 
-const char* clear_color = getenv("NO_COLOR") ? "" : "\x1b[0m";
-const char* heading_color = getenv("NO_COLOR") ? "" : "\x1b[38;5;124m";
-const char* dim_color = getenv("NO_COLOR") ? "" : "\x1b[38;5;246m";
-const char* pass_color = getenv("NO_COLOR") ? "" : "\x1b[38;5;34m";
-const char* fail_color = getenv("NO_COLOR") ? "" : "\x1b[38;5;160m";
-const char* skip_color = getenv("NO_COLOR") ? "" : "\x1b[38;5;178m";
+static const char* clear_color = getenv("NO_COLOR") ? "" : "\x1b[0m";
+static const char* heading_color = getenv("NO_COLOR") ? "" : "\x1b[38;5;124m";
+static const char* dim_color = getenv("NO_COLOR") ? "" : "\x1b[38;5;246m";
+static const char* pass_color = getenv("NO_COLOR") ? "" : "\x1b[38;5;34m";
+static const char* fail_color = getenv("NO_COLOR") ? "" : "\x1b[38;5;160m";
+static const char* skip_color = getenv("NO_COLOR") ? "" : "\x1b[38;5;178m";
 
 struct Instance {
   const Harness* harness;
-  const char* name;
+  Bytes<> name;
   Test::TestFunc run;
-  const char* file;
+  Bytes<> file;
   uint64_t line;
   Test::TestResult result = Test::TestResult::Pass;
   double milliseconds = 0;
@@ -35,16 +35,18 @@ static constexpr double slow_test_ms = 1000;
 // Static registration allows for easily adding tests without requiring global
 // static clean up. 4k cases should be more than enough for any realistic test
 // suite but the number can always be expanded if required.
-static Instance tests[4096];
+// Every field is initialized before registration in other translation units.
+// constinit catches a member that would reset those registrations at startup.
+static constinit Instance tests[4096] = {};
 static uint64_t count = 0;
 
 // Setup the tests in registration order, but log an error and abort if we hit
 // the test limit.
 auto Test::create(
     const Harness& harness,
-    const char* name,
+    Bytes<> name,
     TestFunc run,
-    const char* file,
+    Bytes<> file,
     uint64_t line) -> void {
   if (count == sizeof(tests) / sizeof(*tests)) {
     fputs(
@@ -62,31 +64,38 @@ static auto output_break() -> void {
       dim_color, clear_color);
 }
 
-auto Test::log_message(Bytes file, uint64_t line, Bytes message) -> void {
-  // Use the supplied lengths to write the whole diagnostic, including any
-  // bytes after an embedded zero.
-  fwrite(file.data, 1, file.size, stdout);
-  printf(":%" PRIu64 ":\n    ", line);
-  fwrite(message.data, 1, message.size, stdout);
-  fputc('\n', stdout);
+static auto output_location(const Instance& test) -> void {
+  fputs("    ", stdout);
+  Test::print_bytes(test.file, false);
+  printf(":%" PRIu64 ": ", test.line);
+  Test::print_bytes(test.harness->name, false);
+  fputs("::", stdout);
+  Test::print_bytes(test.name, false);
 }
 
-auto Test::print_bytes(Bytes value, bool hexadecimal) -> void {
-  if (!hexadecimal) {
-    fwrite(value.data, 1, value.size, stdout);
-    return;
-  }
+auto Test::print_integer(int64_t value) -> void {
+  printf("%" PRId64, value);
+}
 
-  const auto* data = static_cast<const unsigned char*>(value.data);
-  for (uint64_t i = 0; i < value.size; ++i) {
-    printf("%02x", unsigned(data[i]));
+auto Test::print_integer(uint64_t value) -> void {
+  printf("%" PRIu64, value);
+}
+
+auto Test::print_character(unsigned byte, bool different) -> void {
+  if (different) {
+    fputs(fail_color, stdout);
+  }
+  fputc(byte, stdout);
+  if (different) {
+    fputs(clear_color, stdout);
   }
 }
 
-auto Test::run(int argc, const char* const* argv) -> int {
-  const bool silent = argc == 2 && !strcmp(argv[1], "silent");
+int main(int argc, const char* argv[]) {
+  const bool silent =
+      argc == 2 && !strncmp(argv[1], "silent", sizeof("silent"));
   if (argc > 2 || (argc == 2 && !silent)) {
-    fprintf(stderr, "Usage: %s [silent]\n", argv[0]);
+    fputs("Usage: unit_tests [silent]\n", stderr);
     return 1;
   }
 
@@ -101,7 +110,7 @@ auto Test::run(int argc, const char* const* argv) -> int {
   // too cramp.
   uint64_t width = 12;
   for (uint64_t i = 0; i < count; ++i) {
-    const auto length = strlen(tests[i].name);
+    const auto length = tests[i].name.size;
     if (length > width) {
       width = length;
     }
@@ -128,7 +137,9 @@ auto Test::run(int argc, const char* const* argv) -> int {
     if (active != test.harness) {
       active = test.harness;
       if (!silent) {
-        printf("%s[ START ] %s%s\n", dim_color, active->name, clear_color);
+        printf("%s[ START ] ", dim_color);
+        Test::print_bytes(active->name, false);
+        printf("%s\n", clear_color);
       }
 
       if (active->init) {
@@ -147,7 +158,7 @@ auto Test::run(int argc, const char* const* argv) -> int {
     // default and use setting the value directly to side step injecting a bunch
     // of control flow in the test code. We create a reference here on the stack
     // to hold the value directly.
-    TestResult result = TestResult::Pass;
+    Test::TestResult result = Test::TestResult::Pass;
     test.run(result);
 
     const double milliseconds = (time_ns() - begin) / 1'000'000.0;
@@ -168,17 +179,17 @@ auto Test::run(int argc, const char* const* argv) -> int {
     const char* outcome;
     const char* color;
     switch (result) {
-    case TestResult::Pass:
+    case Test::TestResult::Pass:
       ++passed;
       outcome = "PASS";
       color = pass_color;
       break;
-    case TestResult::Failed:
+    case Test::TestResult::Failed:
       ++failed;
       outcome = "FAIL";
       color = fail_color;
       break;
-    case TestResult::Skipped:
+    case Test::TestResult::Skipped:
       ++skipped;
       outcome = "SKIP";
       color = skip_color;
@@ -190,12 +201,13 @@ auto Test::run(int argc, const char* const* argv) -> int {
       break;
     }
 
-    if (!silent || result != TestResult::Pass) {
-      // printf takes an int field width even when our counts use uint64_t.
-      const int padding = width + 2;
-      printf(
-          "%s  [ %-7s ] %-*s%s  (%g ms)%s\n", color, outcome, padding,
-          test.name, dim_color, milliseconds, clear_color);
+    if (!silent || result != Test::TestResult::Pass) {
+      printf("%s  [ %-7s ] ", color, outcome);
+      Test::print_bytes(test.name, false);
+      for (auto padding = test.name.size; padding < width + 2; ++padding) {
+        putchar(' ');
+      }
+      printf("%s  (%g ms)%s\n", dim_color, milliseconds, clear_color);
     }
   }
 
@@ -218,14 +230,17 @@ auto Test::run(int argc, const char* const* argv) -> int {
     printf(
         "%s     Skipped:  %" PRIu64 "%s\n", skipped ? skip_color : dim_color,
         skipped, clear_color);
-    printf("\n  Pass Rate:   %" PRIu64 " / %" PRIu64, passed, completed);
+    printf(
+        "\n%s  Pass Rate:%s   %" PRIu64 " / %" PRIu64, heading_color,
+        clear_color, passed, completed);
     if (completed) {
       printf(" (%.2f%%)\n", 100.0 * passed / completed);
     } else {
       printf(" (n/a)\n");
     }
 
-    printf("  Total Time:  %g ms\n\n", total_ms);
+    printf(
+        "%s  Total Time:%s  %g ms\n\n", heading_color, clear_color, total_ms);
     output_break();
   }
 
@@ -235,11 +250,10 @@ auto Test::run(int argc, const char* const* argv) -> int {
     printf("%s\n  Failed tests:%s\n", fail_color, clear_color);
     for (uint64_t i = 0; i < count; ++i) {
       const auto& test = tests[i];
-      if (test.result != TestResult::Pass &&
-          test.result != TestResult::Skipped) {
-        printf(
-            "    %s:%" PRIu64 ": %s::%s\n", test.file, test.line,
-            test.harness->name, test.name);
+      if (test.result != Test::TestResult::Pass &&
+          test.result != Test::TestResult::Skipped) {
+        output_location(test);
+        putchar('\n');
       }
     }
   }
@@ -257,9 +271,8 @@ auto Test::run(int argc, const char* const* argv) -> int {
         slow_heading = true;
       }
 
-      printf(
-          "    %s:%" PRIu64 ": %s::%s (%g ms)\n", test.file, test.line,
-          test.harness->name, test.name, test.milliseconds);
+      output_location(test);
+      printf(" (%g ms)\n", test.milliseconds);
     }
   }
 

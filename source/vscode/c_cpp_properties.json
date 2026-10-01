@@ -1,0 +1,15 @@
+{
+  "version": 4,
+  "configurations": [
+    {
+      "name": "Bazel",
+      "includePath": [
+        "${workspaceFolder}",
+        "${workspaceFolder}/source",
+        "${workspaceFolder}/.bin/bin/**"
+      ],
+      "cStandard": "c23",
+      "cppStandard": "c++26"
+    }
+  ]
+}

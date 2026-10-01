@@ -11,8 +11,7 @@ cc_library(
         "stream.hpp",
         "unit_test.hpp",
     ],
-    include_prefix = "toolchain",
-    strip_include_prefix = "/source",
+    includes = ["../.."],
 )
 
 cc_library(
@@ -31,24 +30,12 @@ cc_library(
 )
 
 cc_library(
-    name = "test_main",
-    srcs = ["test_main.cpp"],
-    deps = [":test"],
-)
-
-cc_library(
     name = "benchmark",
     srcs = ["benchmark.cpp"],
     deps = [
         ":clock",
         ":headers",
     ],
-)
-
-cc_library(
-    name = "benchmark_main",
-    srcs = ["benchmark_main.cpp"],
-    deps = [":benchmark"],
 )
 
 cc_library(

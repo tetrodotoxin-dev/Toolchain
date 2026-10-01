@@ -1,10 +1,13 @@
-load("@rules_cc//cc:cc_import.bzl", "cc_import")
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
-load("//source/bazel:library.bzl", "WINDOWS", "shared_library", "static_library")
-load("//source/bazel:validation.bzl", "test")
+load("@rules_python//python:py_test.bzl", "py_test")
+load("//source/bazel:library.bzl", "shared_library", "static_library")
+load("//source/bazel:package.bzl", "package_release")
+load("//source/bazel:validation.bzl", "benchmark", "test")
+load("//source/bazel:vscode.bzl", "vscode")
 
 package(default_visibility = ["//visibility:public"])
+
+vscode(name = "vscode")
 
 filegroup(
     name = "sources",
@@ -16,66 +19,133 @@ test(
     srcs = ["unit_test.cpp"],
 )
 
-cc_test(
+test(
     name = "reporting",
     size = "small",
     srcs = ["reporting.cpp"],
-    deps = [
-        "//source/validation:stream",
-        "//source/validation:test",
+    tags = ["manual"],
+)
+
+benchmark(
+    name = "benchmark",
+    srcs = ["benchmark.cpp"],
+)
+
+test(
+    name = "skipped",
+    size = "small",
+    srcs = ["skipped.cpp"],
+)
+
+test(
+    name = "empty",
+    size = "small",
+)
+
+# The reporting example intentionally fails. The outer test checks its exit
+# status and output after the same entrypoint used by every consumer returns.
+py_test(
+    name = "validation",
+    size = "small",
+    srcs = ["validation.py"],
+    args = [
+        "$(rlocationpath :unit_tests)",
+        "$(rlocationpath :reporting)",
+        "$(rlocationpath :benchmark)",
+        "$(rlocationpath :skipped)",
+        "$(rlocationpath :empty)",
+        "$(rlocationpath reporting.cpp)",
     ],
+    data = [
+        "reporting.cpp",
+        ":benchmark",
+        ":empty",
+        ":reporting",
+        ":skipped",
+        ":unit_tests",
+    ],
+    deps = ["@rules_python//python/runfiles"],
 )
 
 static_library(
-    name = "library",
+    name = "project_static",
+    testonly = True,
+    srcs = ["project.c"],
+    hdrs = ["project.h"],
+)
+
+shared_library(
+    name = "project_shared",
+    testonly = True,
+    srcs = ["project.c"],
+    hdrs = ["project.h"],
+)
+
+static_library(
+    name = "static_implementation",
     testonly = True,
     srcs = [
         "library.c",
         "library.cpp",
     ],
-    deps = [":library_headers"],
-)
-
-cc_library(
-    name = "library_headers",
-    testonly = True,
     hdrs = ["library.h"],
+    defines = ["TOOLCHAIN_TEST_VALUE=21"],
+    linkopts = select({
+        "//:linux": ["-Wl,--wrap=toolchain_link_probe"],
+        "//conditions:default": [],
+    }),
+    local_defines = ["TOOLCHAIN_TEST_PRIVATE=1"],
+    project = "toolchain_test",
+    deps = [":project_static"],
 )
 
 shared_library(
     name = "shared_library",
     testonly = True,
-    deps = [":library"],
+    srcs = [
+        "library.c",
+        "library.cpp",
+    ],
+    hdrs = ["library.h"],
+    defines = ["TOOLCHAIN_TEST_VALUE=21"],
+    linkopts = select({
+        "//:linux": ["-Wl,--wrap=toolchain_link_probe"],
+        "//conditions:default": [],
+    }),
+    local_defines = ["TOOLCHAIN_TEST_PRIVATE=1"],
+    project = "toolchain_test",
+    deps = [":project_shared"],
 )
 
 cc_test(
     name = "static_library",
     size = "small",
     srcs = ["library_consumer.c"],
-    deps = [":library"],
-)
-
-filegroup(
-    name = "shared_interface",
-    testonly = True,
-    srcs = [":shared_library"],
-    output_group = "interface_library",
-)
-
-cc_import(
-    name = "shared_import",
-    testonly = True,
-    interface_library = select({
-        WINDOWS: ":shared_interface",
-        "//conditions:default": None,
-    }),
-    shared_library = ":shared_library",
-    deps = [":library_headers"],
+    deps = [":static_implementation"],
 )
 
 cc_test(
     name = "shared_linkage",
     size = "small",
     srcs = ["library_consumer.c"],
-    deps = [":shared_import"],
+    deps = [":shared_library"],
+)
+
+package_release(
+    name = "sdk",
+    testonly = True,
+    project = "toolchain_test",
+    shared = ":shared_library",
+    sources = [":sources"],
+    static = ":static_implementation",
+    tags = ["manual"],
+)
+
+package_release(
+    name = "project_sdk",
+    testonly = True,
+    shared = ":project_shared",
+    sources = [":sources"],
+    static = ":project_static",
+    tags = ["manual"],
 )

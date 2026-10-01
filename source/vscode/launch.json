@@ -1,0 +1,57 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "[Debug] Unit Tests",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/.bin/bin/validation/unit_tests",
+      "cwd": "${workspaceFolder}",
+      "terminal": "integrated",
+      "preLaunchTask": "[Debug] Build All",
+      "sourceMap": {".": "${workspaceFolder}"},
+      "windows": {
+        "program": "${workspaceFolder}/.bin/bin/validation/unit_tests.exe"
+      }
+    },
+    {
+      "name": "[Release] Unit Tests",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/.bin/bin/validation/unit_tests",
+      "cwd": "${workspaceFolder}",
+      "terminal": "integrated",
+      "preLaunchTask": "[Release] Build All",
+      "sourceMap": {".": "${workspaceFolder}"},
+      "windows": {
+        "program": "${workspaceFolder}/.bin/bin/validation/unit_tests.exe"
+      }
+    },
+    {
+      "name": "[Debug] Benchmarks",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/.bin/bin/validation/benchmarks",
+      "cwd": "${workspaceFolder}",
+      "terminal": "integrated",
+      "preLaunchTask": "[Debug] Build All",
+      "sourceMap": {".": "${workspaceFolder}"},
+      "windows": {
+        "program": "${workspaceFolder}/.bin/bin/validation/benchmarks.exe"
+      }
+    },
+    {
+      "name": "[Release] Benchmarks",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/.bin/bin/validation/benchmarks",
+      "cwd": "${workspaceFolder}",
+      "terminal": "integrated",
+      "preLaunchTask": "[Release] Build All",
+      "sourceMap": {".": "${workspaceFolder}"},
+      "windows": {
+        "program": "${workspaceFolder}/.bin/bin/validation/benchmarks.exe"
+      }
+    }
+  ]
+}

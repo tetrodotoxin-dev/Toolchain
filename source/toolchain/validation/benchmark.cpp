@@ -19,22 +19,22 @@ static const char* slow_color = getenv("NO_COLOR") ? "" : "\x1b[38;5;160m";
 
 struct Instance {
   const Harness* harness;
-  const char* name;
+  Bytes<> name;
   Benchmark::BenchmarkFunc run;
 };
 
 // Static registration allows for easily adding tests without requiring global
 // static clean up. 1k cases should be more than enough for any realistic test
 // suite but the number can always be expanded if required.
-static Instance benchmarks[1024];
+// Every field is initialized before registration in other translation units.
+// constinit catches a member that would reset those registrations at startup.
+static constinit Instance benchmarks[1024] = {};
 static size_t count = 0;
 static uint64_t samples[4096];
 static uint64_t sample_start = 0;
 static uint64_t sample_end = 0;
-auto Benchmark::create(
-    const Harness& harness,
-    const char* name,
-    BenchmarkFunc run) -> void {
+auto Benchmark::create(const Harness& harness, Bytes<> name, BenchmarkFunc run)
+    -> void {
   if (count == sizeof(benchmarks) / sizeof(*benchmarks)) {
     fputs("Benchmark registration capacity exceeded.\n", stderr);
     abort();
@@ -49,10 +49,10 @@ auto Benchmark::create(
 // this simple benchmark library.
 //
 // The counter is currently set for the entire benchmark suite.
-static const char* counter_name = nullptr;
+static constinit Bytes<> counter_name;
 static Benchmark::Counter counter = nullptr;
 
-auto Benchmark::register_counter(const char* name, Counter read) -> bool {
+auto Benchmark::register_counter(Bytes<> name, Counter read) -> bool {
   if (counter) {
     return false;
   }
@@ -80,14 +80,34 @@ static auto output_break() -> void {
       dim_color, clear_color);
 }
 
-static auto matches(const char* name, const char* prefix) -> bool {
-  while (*prefix) {
-    if (!*name || ((*name++ | 0x20) != (*prefix++ | 0x20))) {
+static auto matches(Bytes<> name, Bytes<> prefix) -> bool {
+  if (prefix.size > name.size) {
+    return false;
+  }
+  for (size_t i = 0; i < prefix.size; ++i) {
+    auto left = name.data[i];
+    auto right = prefix.data[i];
+    if (left >= 'A' && left <= 'Z') {
+      left += 'a' - 'A';
+    }
+    if (right >= 'A' && right <= 'Z') {
+      right += 'a' - 'A';
+    }
+    if (left != right) {
       return false;
     }
   }
 
   return true;
+}
+
+static auto output_name(Bytes<> name, size_t width = 0) -> void {
+  if (name.size) {
+    fwrite(name.data, 1, name.size, stdout);
+  }
+  for (size_t i = name.size; i < width; ++i) {
+    putchar(' ');
+  }
 }
 
 static auto average(size_t begin, size_t end) -> double {
@@ -101,7 +121,7 @@ static auto average(size_t begin, size_t end) -> double {
   return total / (end - begin) / 1000;
 }
 
-static auto measure(const Instance& benchmark, int width) -> void {
+static auto measure(const Instance& benchmark, size_t width) -> void {
   const auto& harness = *benchmark.harness;
 
   // Run once with the same setup and teardown as a measured invocation. This
@@ -155,16 +175,18 @@ static auto measure(const Instance& benchmark, int width) -> void {
     }
   }
 
-  // Sort the measurements and report the p10, p50, and p90 states. Round each
-  // outer group down to a whole sample and keep the remainder in the middle.
+  // Sort the measurements into fast, middle and slow groups. Round each outer
+  // group down to a whole sample and keep the remainder in the middle.
   // With at least sixteen samples, all three groups are nonempty and every
   // sample contributes to exactly one mean.
   std::sort(samples, samples + sample_count);
   const size_t tenth = sample_count / 10;
+  fputs("  ", stdout);
+  output_name(benchmark.name, width);
   printf(
-      "  %-*s %s%10.3f%s %10.3f %s%10.3f%s", width, benchmark.name, fast_color,
-      average(0, tenth), clear_color, average(tenth, sample_count - tenth),
-      slow_color, average(sample_count - tenth, sample_count), clear_color);
+      " %s%10.3f%s %10.3f %s%10.3f%s", fast_color, average(0, tenth),
+      clear_color, average(tenth, sample_count - tenth), slow_color,
+      average(sample_count - tenth, sample_count), clear_color);
 
   if (counter) {
     printf(" %14.2f", 1.0 * events / sample_count);
@@ -173,9 +195,9 @@ static auto measure(const Instance& benchmark, int width) -> void {
   putchar('\n');
 }
 
-auto Benchmark::run(int argc, const char* const* argv) -> int {
+int main(int argc, const char* argv[]) {
   if (argc > 2) {
-    fprintf(stderr, "Usage: %s [name-prefix]\n", argv[0]);
+    fputs("Usage: benchmarks [name-prefix]\n", stderr);
     return 1;
   }
 
@@ -186,13 +208,23 @@ auto Benchmark::run(int argc, const char* const* argv) -> int {
   // A prefix name can be used to select either a harness or an individual
   // benchmark. Only the selected names are measured with a bad selection
   // running nothing.
-  const char* filter = argc == 2 ? argv[1] : "";
-  int width = 26;
+  // One byte past the longest registered name is enough to reject an oversized
+  // filter. argv supplies terminated strings, so short inputs stop at their
+  // zero.
+  size_t longest = 0;
+  for (size_t i = 0; i < count; ++i) {
+    longest = std::max(
+        longest,
+        std::max(benchmarks[i].name.size, benchmarks[i].harness->name.size));
+  }
+  const Bytes<> filter =
+      argc == 2 ? convert_cstring(argv[1], longest + 1) : Bytes<>{};
+  size_t width = 26;
   for (size_t i = 0; i < count; ++i) {
     const auto& benchmark = benchmarks[i];
     if (matches(benchmark.name, filter) ||
         matches(benchmark.harness->name, filter)) {
-      const int length = strlen(benchmark.name);
+      const auto length = benchmark.name.size;
       if (length > width) {
         width = length;
       }
@@ -202,13 +234,17 @@ auto Benchmark::run(int argc, const char* const* argv) -> int {
   output_break();
   printf(
       "%s  Benchmark times in microseconds.%s\n", heading_color, clear_color);
-  printf(
-      "  %-*s %10s %10s %10s", width, "Name", "Fast 10%", "Middle 80%",
-      "Slow 10%");
+  fputs("  ", stdout);
+  output_name("Name", width);
+  printf(" %10s %10s %10s", "Fast 10%", "Middle 80%", "Slow 10%");
 
   // Log a counter if one was provided.
   if (counter) {
-    printf(" %14s", counter_name);
+    putchar(' ');
+    for (size_t i = counter_name.size; i < 14; ++i) {
+      putchar(' ');
+    }
+    output_name(counter_name);
   }
 
   putchar('\n');
@@ -227,7 +263,9 @@ auto Benchmark::run(int argc, const char* const* argv) -> int {
     // and teardown belong to the individual invocations inside `measure`.
     if (active != benchmark.harness) {
       active = benchmark.harness;
-      printf("%s[ START ] %s%s\n", dim_color, active->name, clear_color);
+      printf("%s[ START ] ", dim_color);
+      output_name(active->name);
+      printf("%s\n", clear_color);
       if (active->init) {
         active->init();
       }

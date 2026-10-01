@@ -17,7 +17,7 @@ def test(name, srcs = [], deps = [], **kwargs):
     cc_test(
         name = name,
         srcs = srcs,
-        deps = deps + [Label("//source/validation:test_main")],
+        deps = deps + [Label("//source/toolchain/validation:test")],
         **kwargs
     )
 
@@ -34,6 +34,6 @@ def benchmark(name, srcs = [], deps = [], **kwargs):
         name = name,
         testonly = True,
         srcs = srcs,
-        deps = deps + [Label("//source/validation:benchmark_main")],
+        deps = deps + [Label("//source/toolchain/validation:benchmark")],
         **kwargs
     )

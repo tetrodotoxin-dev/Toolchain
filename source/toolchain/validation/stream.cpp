@@ -6,23 +6,18 @@
 #ifdef _WIN32
 #include <fcntl.h>
 #include <io.h>
+#include <share.h>
+#include <sys/stat.h>
 #include <windows.h>
 #endif
 
 using namespace Toolchain::Validation;
 
 #ifdef _WIN32
-// The CRT takes ownership only after conversion succeeds. Closing the native
-// handle on failure also removes a temporary file marked for deletion.
-static auto stream_from_handle(HANDLE handle) -> FILE* {
-  if (handle == INVALID_HANDLE_VALUE) {
-    return nullptr;
-  }
-
-  int descriptor =
-      _open_osfhandle(reinterpret_cast<intptr_t>(handle), _O_RDWR | _O_BINARY);
+// The FILE takes ownership of the descriptor on success. Closing it on failure
+// also removes a temporary file opened with the CRT's delete on close flag.
+static auto stream_from_descriptor(int descriptor) -> FILE* {
   if (descriptor < 0) {
-    CloseHandle(handle);
     return nullptr;
   }
 
@@ -47,16 +42,15 @@ auto Toolchain::Validation::temporary_stream() -> FILE* {
     return nullptr;
   }
 
-  HANDLE handle = CreateFileW(
-      path, GENERIC_READ | GENERIC_WRITE,
-      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-      OPEN_EXISTING, FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE,
-      nullptr);
-  if (handle == INVALID_HANDLE_VALUE) {
+  int descriptor = -1;
+  if (_wsopen_s(
+          &descriptor, path,
+          _O_RDWR | _O_BINARY | _O_TEMPORARY | _O_SHORT_LIVED, _SH_DENYRW,
+          _S_IREAD | _S_IWRITE)) {
     DeleteFileW(path);
   }
 
-  return stream_from_handle(handle);
+  return stream_from_descriptor(descriptor);
 #else
   return tmpfile();
 #endif
@@ -66,9 +60,11 @@ auto Toolchain::Validation::failing_stream() -> FILE* {
 #ifdef _WIN32
   // The stream permits output, but its native handle has no write access.
   // This reaches the real CRT write failure without a full disk fixture.
-  return stream_from_handle(CreateFileW(
-      L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
-      OPEN_EXISTING, 0, nullptr));
+  int descriptor = -1;
+  if (_wsopen_s(&descriptor, L"NUL", _O_RDONLY | _O_BINARY, _SH_DENYNO, 0)) {
+    return nullptr;
+  }
+  return stream_from_descriptor(descriptor);
 #else
   return fopen("/dev/full", "wb");
 #endif

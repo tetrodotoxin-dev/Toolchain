@@ -12,8 +12,7 @@ using Counter = unsigned long long (*)();
 
 // Register a body for repeated measurement. Its harness, name and callback
 // remain borrowed for the lifetime of the runner, as with unit tests.
-auto create(const Harness& harness, const char* name, BenchmarkFunc run)
-    -> void;
+auto create(const Harness& harness, Bytes<> name, BenchmarkFunc run) -> void;
 
 // The runner times the whole body by default. A body can call `start_time`
 // after local preparation and `end_time` before cleanup to measure a smaller
@@ -23,17 +22,14 @@ auto create(const Harness& harness, const char* name, BenchmarkFunc run)
 auto start_time() -> void;
 auto end_time() -> void;
 
-// Run benchmarks sequentially, selecting an optional name prefix from argv.
-// The report gives mean times for the fast, middle and slow sample groups.
-auto run(int argc, const char* const* argv) -> int;
-
-// Register one cumulative counter before `run` to report events per invocation.
+// Register one cumulative counter before `main` begins. The report shows its
+// change per invocation.
 // The name and callback remain borrowed. Once a counter is registered, another
 // registration returns false and preserves it. Reads bracket the whole body,
 // excluding fixture setup and teardown. Shortening the timed interval leaves
 // this counter interval unchanged, so time and event totals can cover different
 // amounts of work. The callback supplies the meaning of the counted events.
-auto register_counter(const char* name, Counter read) -> bool;
+auto register_counter(Bytes<> name, Counter read) -> bool;
 
 // Keep the result as an input and output of an opaque assembly statement so
 // the compiler retains the work producing it. The memory clobber also marks
@@ -45,7 +41,7 @@ inline auto prevent_optimization(T& value) -> void {
 
 class BenchmarkEntry {
  public:
-  BenchmarkEntry(const Harness& harness, const char* name, BenchmarkFunc run) {
+  BenchmarkEntry(const Harness& harness, Bytes<> name, BenchmarkFunc run) {
     create(harness, name, run);
   }
 };

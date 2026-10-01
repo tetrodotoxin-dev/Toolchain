@@ -5,6 +5,7 @@ package(default_visibility = ["//visibility:public"])
 exports_files(glob([
     "*.bzl",
     "*.py",
+    "*.tpl",
 ]))
 
 filegroup(
@@ -12,5 +13,6 @@ filegroup(
     srcs = glob([
         "*.bzl",
         "*.py",
+        "*.tpl",
     ]) + ["BUILD"],
 )

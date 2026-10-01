@@ -1,0 +1,64 @@
+{
+  "version": "2.0.0",
+  "options": {"cwd": "${workspaceFolder}"},
+  "tasks": [
+    {
+      "label": "[Debug] Build All",
+      "type": "process",
+      "command": "bazel",
+      "args": [
+        "build",
+        "//:build",
+        "//validation:unit_tests",
+        "//validation:benchmarks",
+        "--config=debug"
+      ],
+      "group": {"kind": "build", "isDefault": true},
+      "problemMatcher": "$gcc"
+    },
+    {
+      "label": "[Release] Build All",
+      "type": "process",
+      "command": "bazel",
+      "args": [
+        "build",
+        "//:build",
+        "//validation:unit_tests",
+        "//validation:benchmarks",
+        "--config=release"
+      ],
+      "group": "build",
+      "problemMatcher": "$gcc"
+    },
+    {
+      "label": "[Debug] Unit Tests",
+      "type": "process",
+      "command": "bazel",
+      "args": ["run", "//validation:unit_tests", "--config=debug"],
+      "group": "test",
+      "problemMatcher": "$gcc"
+    },
+    {
+      "label": "[Release] Unit Tests",
+      "type": "process",
+      "command": "bazel",
+      "args": ["run", "//validation:unit_tests", "--config=release"],
+      "group": "test",
+      "problemMatcher": "$gcc"
+    },
+    {
+      "label": "[Debug] Benchmarks",
+      "type": "process",
+      "command": "bazel",
+      "args": ["run", "//validation:benchmarks", "--config=debug"],
+      "problemMatcher": "$gcc"
+    },
+    {
+      "label": "[Release] Benchmarks",
+      "type": "process",
+      "command": "bazel",
+      "args": ["run", "//validation:benchmarks", "--config=release"],
+      "problemMatcher": "$gcc"
+    }
+  ]
+}

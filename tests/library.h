@@ -4,17 +4,17 @@
 #ifndef TOOLCHAIN_TEST_LIBRARY_H
 #define TOOLCHAIN_TEST_LIBRARY_H
 
+#include "toolchain/export.h"
+
+#if TOOLCHAIN_TEST_VALUE != 21
+#error The public definition must reach both the implementation and consumers.
+#endif
+
 // Both implementation languages publish ordinary C entrypoints. A consumer
 // uses the same declarations when linking the archive or loading the library.
-#ifdef __cplusplus
-extern "C" {
-#endif
-
+C_LINKAGE EXPORTED(TOOLCHAIN_TEST)
 int toolchain_c_entry(int value);
+C_LINKAGE EXPORTED(TOOLCHAIN_TEST)
 int toolchain_cpp_entry(int value);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif

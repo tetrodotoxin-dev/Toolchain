@@ -4,18 +4,18 @@ package(default_visibility = ["//visibility:public"])
 
 cc_library(
     name = "headers",
-    hdrs = ["export.h"],
-    include_prefix = "toolchain",
-    strip_include_prefix = ".",
+    hdrs = ["toolchain/export.h"],
+    includes = ["."],
 )
 
 filegroup(
     name = "sources",
     srcs = glob(["sdk/**"]) + [
         "BUILD",
-        "export.h",
+        "toolchain/export.h",
         "//source/bazel:sources",
-        "//source/validation:sources",
+        "//source/toolchain/validation:sources",
+        "//source/vscode:sources",
     ],
 )
 

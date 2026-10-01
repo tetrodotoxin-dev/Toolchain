@@ -3,12 +3,22 @@
 
 #include "tests/library.h"
 
+#if EXPECT_STATIC
+#if !TOOLCHAIN_TEST_STATIC || !TETRO_TOOLCHAIN_STATIC
+#error Static SDK consumers need both libraries' static definitions.
+#endif
+#else
+#if defined(TOOLCHAIN_TEST_STATIC) || defined(TETRO_TOOLCHAIN_STATIC)
+#error Shared SDK consumers must preserve import declarations.
+#endif
+#endif
+
 #if defined(TOOLCHAIN_TEST_EXPORT) || defined(TETRO_TOOLCHAIN_EXPORT)
-#error An implementation's export flag reached its consumer.
+#error SDK consumers must not receive export definitions.
 #endif
 
 #ifdef TOOLCHAIN_TEST_PRIVATE
-#error An implementation's private definition reached its consumer.
+#error SDK consumers must not receive private definitions.
 #endif
 
 #if defined(__linux__)
