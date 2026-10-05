@@ -1,12 +1,4 @@
 {
-  "libasan6": {
-    "path": "pool/main/g/gcc-11/libasan6_11.4.0-1ubuntu1~22.04.3_amd64.deb",
-    "sha256": "eb98f62bf6c7234132beab59113c249db40acfbd1c9965308ee612de1a6e819e"
-  },
-  "libatomic1": {
-    "path": "pool/main/g/gcc-12/libatomic1_12.3.0-1ubuntu1~22.04.3_amd64.deb",
-    "sha256": "56573c81b5dd84817882400cfea49fe671f5e6cfdd0f88b5d3a894c08b150462"
-  },
   "libc6": {
     "path": "pool/main/g/glibc/libc6_2.35-0ubuntu3.15_amd64.deb",
     "sha256": "79e35256227e16a607c154cdeb8d76ff12d20e31de286ea7fd9ad3b96fe0452d"
@@ -14,14 +6,6 @@
   "libc6-dev": {
     "path": "pool/main/g/glibc/libc6-dev_2.35-0ubuntu3.15_amd64.deb",
     "sha256": "ce51ae233a9f800a040de2d0cd5983ef86f558c623b342c80942301d7f453f48"
-  },
-  "libcrypt-dev": {
-    "path": "pool/main/libx/libxcrypt/libcrypt-dev_4.4.27-1_amd64.deb",
-    "sha256": "a79be2f6e45823dcc09e04d5e98c88ec88d07d5b8895d05b875a8ade8b345efa"
-  },
-  "libcrypt1": {
-    "path": "pool/main/libx/libxcrypt/libcrypt1_4.4.27-1_amd64.deb",
-    "sha256": "3fa566e9f861a08736cbc5a97562d9d6e4f0c00450fbeafcb6d7583423b04a98"
   },
   "libgcc-11-dev": {
     "path": "pool/main/g/gcc-11/libgcc-11-dev_11.4.0-1ubuntu1~22.04.3_amd64.deb",
@@ -31,22 +15,6 @@
     "path": "pool/main/g/gcc-12/libgcc-s1_12.3.0-1ubuntu1~22.04.3_amd64.deb",
     "sha256": "d383e642d83263147f7b4b69fb92cf1036e5246c6be3accf10b77f986684589a"
   },
-  "libgomp1": {
-    "path": "pool/main/g/gcc-12/libgomp1_12.3.0-1ubuntu1~22.04.3_amd64.deb",
-    "sha256": "870c27299185a5dd4accad3b15bf82a7409fd7073cccaa8025875307da4d0ce2"
-  },
-  "libitm1": {
-    "path": "pool/main/g/gcc-12/libitm1_12.3.0-1ubuntu1~22.04.3_amd64.deb",
-    "sha256": "80f42953fa98d3ef9d49c2fd8c580bea40e1ace953eb8850bc961eef59f211c2"
-  },
-  "liblsan0": {
-    "path": "pool/main/g/gcc-12/liblsan0_12.3.0-1ubuntu1~22.04.3_amd64.deb",
-    "sha256": "c308b0e39678a00b3ad3a9653119af4a29156e2c385111bdbd4890c96d376fa4"
-  },
-  "libquadmath0": {
-    "path": "pool/main/g/gcc-12/libquadmath0_12.3.0-1ubuntu1~22.04.3_amd64.deb",
-    "sha256": "c4c59e67e76674c8c494ce5e0415b71d770a759b48893c0d3cbabddceeb690b2"
-  },
   "libstdc++-11-dev": {
     "path": "pool/main/g/gcc-11/libstdc++-11-dev_11.4.0-1ubuntu1~22.04.3_amd64.deb",
     "sha256": "58e0cd2d1f758e75426eaa47a5e7228d1c86180500ed68d162bcbf7b0a1c5dd0"
@@ -54,14 +22,6 @@
   "libstdc++6": {
     "path": "pool/main/g/gcc-12/libstdc++6_12.3.0-1ubuntu1~22.04.3_amd64.deb",
     "sha256": "29ef3d289b272704b75141906c8f683db0f2bdb0942061366691333bfb289bdc"
-  },
-  "libtsan0": {
-    "path": "pool/main/g/gcc-11/libtsan0_11.4.0-1ubuntu1~22.04.3_amd64.deb",
-    "sha256": "2fc0cb78e86d4635c8ed17f4a2816762050c48cb928df739bbe145dfb472957a"
-  },
-  "libubsan1": {
-    "path": "pool/main/g/gcc-12/libubsan1_12.3.0-1ubuntu1~22.04.3_amd64.deb",
-    "sha256": "9e2669c014d5df3c486bf29cd18a6ec3cbed68355c366e32757fdc98d290f593"
   },
   "linux-libc-dev": {
     "path": "pool/main/l/linux/linux-libc-dev_5.15.0-194.204_amd64.deb",

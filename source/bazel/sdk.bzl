@@ -13,13 +13,9 @@ An explicitly declared SDK dependency supplies overlapping runtime libraries
 when their recorded contents match. Incompatible copies fail the import.
 """
 
-load("@host_tools//:settings.bzl", "AR")
+load(":toolchains/platforms.bzl", "PLATFORMS")
 
-_PLATFORMS = {
-    "linux-x86_64-v3": str(Label("//:linux")),
-    "windows-x86_64-msvc": str(Label("//:windows")),
-    "wasm32-emscripten": str(Label("//:web")),
-}
+_PLATFORMS = {name: str(target.condition) for name, target in PLATFORMS.items()}
 
 def _runtime(ctx, metadata, platform):
     """Reuse declared SDK dependencies before importing bundled copies.
@@ -158,7 +154,7 @@ _sdk_repository = repository_rule(implementation = _sdk, attrs = {
     "deps": attr.string_list(),
     "implementation_deps": attr.string_list(),
     "linkage": attr.string(default = "shared", values = ["static", "shared"]),
-    "_template": attr.label(default = Label("//source/bazel:sdk.BUILD.tpl")),
+    "_template": attr.label(default = Label("//source/bazel:release/sdk.BUILD.tpl")),
     "_export": attr.label(default = Label("//source:toolchain/export.h")),
 })
 
@@ -189,37 +185,3 @@ _release = tag_class(attrs = {
     "linkage": attr.string(default = "shared", values = ["static", "shared"]),
 })
 dependencies = module_extension(implementation = _dependencies, tag_classes = {"release": _release})
-
-def extract_debian(ctx, archives):
-    """Extract pinned Debian payloads into the repository without installing them.
-
-    Args:
-        ctx: Repository context receiving the extracted package files.
-        archives: Dictionary mapping package download URLs to SHA256 checksums.
-    """
-    for index, (url, checksum) in enumerate(archives.items()):
-        directory = "archives/" + str(index)
-        archive = directory + "/package.deb"
-        ctx.download(url = url, sha256 = checksum, output = archive)
-        unpack = ctx.execute([AR, "x", str(ctx.path(archive))], working_directory = str(ctx.path(directory)))
-        if unpack.return_code:
-            fail(unpack.stderr)
-        payload = [path for path in ctx.path(directory).readdir() if path.basename.startswith("data.tar.")]
-        if len(payload) != 1:
-            fail("SDK package has no unique data archive: " + url)
-        ctx.extract(payload[0])
-        ctx.delete(directory)
-
-def _debian_sdk(ctx):
-    """Extract Debian packages and expose them through the supplied BUILD file.
-
-    Args:
-        ctx: Repository context with archive pins and the BUILD file label.
-    """
-    extract_debian(ctx, ctx.attr.archives)
-    ctx.file("BUILD.bazel", ctx.read(ctx.attr.build_file))
-
-debian_sdk = repository_rule(implementation = _debian_sdk, attrs = {
-    "archives": attr.string_dict(mandatory = True),
-    "build_file": attr.label(mandatory = True, allow_single_file = True),
-})

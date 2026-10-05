@@ -2,10 +2,10 @@
 
 """Public build declarations for Toolchain consumers."""
 
-load("//source/bazel:library.bzl", _LINUX = "LINUX", _WEB = "WEB", _WINDOWS = "WINDOWS", _library = "library")
 load("//source/bazel:package.bzl", _package = "package")
-load("//source/bazel:validation.bzl", _benchmarks = "benchmarks", _tests = "tests")
-load("//source/bazel:vscode.bzl", _vscode = "vscode")
+load("//source/bazel:rules/library.bzl", _LINUX = "LINUX", _WEB = "WEB", _WINDOWS = "WINDOWS", _library = "library")
+load("//source/bazel:rules/validation.bzl", _benchmarks = "benchmarks", _tests = "tests")
+load("//source/bazel:rules/vscode.bzl", _vscode = "vscode")
 
 LINUX = _LINUX
 WEB = _WEB

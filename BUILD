@@ -1,5 +1,5 @@
 # Copyright (c) 2023-present Matt Kaes and contributors
-load("//source/bazel:targets.bzl", "toolchains")
+load("//source/bazel:toolchains/registry.bzl", "toolchains")
 load(":defs.bzl", "benchmarks", "tests")
 
 package(default_visibility = ["//visibility:public"])

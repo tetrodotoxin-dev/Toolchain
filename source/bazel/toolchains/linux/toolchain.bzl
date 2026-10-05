@@ -12,8 +12,31 @@ load("@bazel_tools//tools/build_defs/cc:action_names.bzl", "ACTION_NAMES")
 load("@bazel_tools//tools/cpp:cc_toolchain_config_lib.bzl", "feature", "flag_group", "flag_set", "tool_path")
 load("@host_tools//:settings.bzl", "AR", "COV", "CPP", "CXX", "ELF_LINKER", "HOST_SYSTEM", "NM", "OBJDUMP", "PYTHON", "RESOURCE_INCLUDE", "STRIP")
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
+load("@rules_cc//cc/toolchains:cc_toolchain.bzl", "cc_toolchain")
 load("@rules_cc//cc/toolchains:cc_toolchain_config_info.bzl", "CcToolchainConfigInfo")
-load(":sdk.bzl", "extract_debian")
+
+_TARGET_TRIPLE = "x86_64-linux-gnu"
+_GCC_DIRECTORY = "usr/lib/gcc/" + _TARGET_TRIPLE + "/11"
+
+def _extract_debian(ctx, archives):
+    """Extract pinned packages into one Linux target sysroot.
+
+    Args:
+        ctx: Repository context receiving the target filesystem.
+        archives: Package URLs mapped to their reviewed checksums.
+    """
+    for index, (url, checksum) in enumerate(archives.items()):
+        directory = "archives/" + str(index)
+        archive = directory + "/package.deb"
+        ctx.download(url = url, sha256 = checksum, output = archive)
+        unpack = ctx.execute([AR, "x", str(ctx.path(archive))], working_directory = str(ctx.path(directory)))
+        if unpack.return_code:
+            fail(unpack.stderr)
+        payload = [path for path in ctx.path(directory).readdir() if path.basename.startswith("data.tar.")]
+        if len(payload) != 1:
+            fail("Linux SDK package has no unique data archive: " + url)
+        ctx.extract(payload[0])
+        ctx.delete(directory)
 
 # A fixed target sysroot keeps releases independent of the build machine's
 # distribution. Ubuntu 22.04 supplies the existing glibc and libstdc++ model.
@@ -25,7 +48,7 @@ def _sdk(ctx):
         ctx: Repository context with package pins and the sysroot normalizer.
     """
     packages = json.decode(ctx.read(ctx.attr._packages))
-    extract_debian(ctx, {
+    _extract_debian(ctx, {
         "https://snapshot.ubuntu.com/ubuntu/20260925T000000Z/" + package["path"]: package["sha256"]
         for package in packages.values()
     })
@@ -33,9 +56,14 @@ def _sdk(ctx):
     normalized = ctx.execute([PYTHON, ctx.path("normalize.py"), "linux"])
     if normalized.return_code:
         fail(normalized.stderr)
-    ctx.file("BUILD.bazel", 'filegroup(name = "files", srcs = glob(["usr/include/**", "usr/lib/**", "lib/**", "lib64/**"], allow_empty = True), visibility = ["//visibility:public"])')
+    ctx.template(
+        "BUILD.bazel",
+        ctx.attr._build,
+        substitutions = {"__GCC_DIRECTORY__": _GCC_DIRECTORY},
+    )
 
 linux_sdk = repository_rule(implementation = _sdk, attrs = {
+    "_build": attr.label(default = Label("//source/bazel:toolchains/linux/sdk.BUILD.tpl")),
     "_packages": attr.label(default = Label("//source:sdk/linux.json")),
     "_normalize": attr.label(default = Label("//source:sdk/normalize.py")),
 })
@@ -71,7 +99,7 @@ def _impl(ctx):
         ctx = ctx,
         features = [
             feature(name = "supports_pic", enabled = True),
-            _flags("target_sdk", _COMPILE + _LINK, ["--target=x86_64-linux-gnu", "--sysroot=" + sdk, "--gcc-install-dir=" + sdk + "/usr/lib/gcc/x86_64-linux-gnu/11"]),
+            _flags("target_sdk", _COMPILE + _LINK, ["--target=" + _TARGET_TRIPLE, "--sysroot=" + sdk, "--gcc-install-dir=" + sdk + "/" + _GCC_DIRECTORY]),
             feature(name = "pic", enabled = True, flag_sets = [flag_set(actions = _COMPILE, flag_groups = [flag_group(flags = ["-fPIC"], expand_if_available = "pic")])]),
             _flags("common_compile", _COMPILE, ["-Wall", "-Werror", "-fvisibility=hidden", "-fno-exceptions", "-fno-rtti", "-march=x86-64-v3", "-mrdrnd", "-no-canonical-prefixes", "-resource-dir", RESOURCE_INCLUDE.removesuffix("/include")]),
             _flags("cpp_language", [ACTION_NAMES.cpp_compile], ["-std=c++26", "-fvisibility-inlines-hidden"]),
@@ -102,3 +130,53 @@ def _impl(ctx):
     )
 
 cc_toolchain_config = rule(implementation = _impl, attrs = {}, provides = [CcToolchainConfigInfo])
+
+# These labels form the Linux portion of Toolchain's root registration surface.
+# buildifier: disable=unnamed-macro
+def linux_targets():
+    """Declare the Linux SDK files, compiler, platform and selection key."""
+    cc_toolchain_config(name = "linux_x86_64_toolchain_config")
+
+    cc_toolchain(
+        name = "linux_x86_64_toolchain",
+        all_files = ":linux_files",
+        compiler_files = ":linux_compiler_files",
+        dwp_files = "@host_tools//:files",
+        linker_files = ":linux_linker_files",
+        objcopy_files = "@host_tools//:files",
+        strip_files = "@host_tools//:files",
+        supports_param_files = 0,
+        toolchain_config = ":linux_x86_64_toolchain_config",
+        toolchain_identifier = "linux_x86_64-toolchain",
+    )
+
+    native.filegroup(name = "linux_compiler_files", srcs = ["@host_tools//:files", "@linux_sdk//:compiler"])
+    native.filegroup(name = "linux_linker_files", srcs = ["@host_tools//:files", "@linux_sdk//:linker"])
+    native.filegroup(name = "linux_files", srcs = [":linux_compiler_files", ":linux_linker_files"])
+
+    native.toolchain(
+        name = "cc_toolchain_for_linux_x86_64",
+        exec_compatible_with = [
+            "@platforms//cpu:x86_64",
+            "@platforms//os:" + HOST_SYSTEM,
+        ],
+        target_compatible_with = [
+            "@platforms//cpu:x86_64",
+            "@platforms//os:linux",
+        ],
+        toolchain = ":linux_x86_64_toolchain",
+        toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+    )
+
+    native.platform(
+        name = "linux_x86_64",
+        constraint_values = ["@platforms//os:linux", "@platforms//cpu:x86_64"],
+    )
+
+    native.config_setting(
+        name = "linux",
+        constraint_values = [
+            "@platforms//os:linux",
+            "@platforms//cpu:x86_64",
+        ],
+    )

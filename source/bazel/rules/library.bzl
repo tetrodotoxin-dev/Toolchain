@@ -8,10 +8,11 @@ load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load("@rules_cc//cc/common:cc_shared_library_info.bzl", "CcSharedLibraryInfo")
+load(":toolchains/platforms.bzl", "PLATFORMS")
 
-LINUX = Label("//:linux")
-WEB = Label("//:web")
-WINDOWS = Label("//:windows")
+LINUX = PLATFORMS["linux-x86_64-v3"].condition
+WEB = PLATFORMS["wasm32-emscripten"].condition
+WINDOWS = PLATFORMS["windows-x86_64-msvc"].condition
 
 def library(name = None, module = None, linkage = "static", components = {}, srcs = [], hdrs = [], includes = [], deps = [], defines = [], **kwargs):
     """Compile a library and declare its component header interfaces.

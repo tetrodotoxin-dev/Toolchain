@@ -205,7 +205,7 @@ def verify(toolchain, directory):
                 verify_dependency_conflict(root, workspace, toolchain, directory,
                                            sources, values, pins["tetro_toolchain"])
         verify_runtime(root / "relocated", directory / ("toolchain_test-" + version + "-linux-x86_64-v3-shared.zip"))
-        verify_conflict(root, sources.parent / "source/bazel/package.py",
+        verify_conflict(root, sources.parent / "source/bazel/release/package.py",
                         root / "relocated/lib/libshared_library.so",
                         root / "relocated/lib/libruntime.so.1")
 

@@ -1,4 +1,3 @@
-# # Tetrodotoxin
 # Copyright (c) 2023-present Matt Kaes and contributors
 
 """Clang code generation for modules hosted by an Emscripten application."""
@@ -7,6 +6,7 @@ load("@bazel_tools//tools/build_defs/cc:action_names.bzl", "ACTION_NAMES")
 load("@bazel_tools//tools/cpp:cc_toolchain_config_lib.bzl", "feature", "flag_group", "flag_set", "tool_path")
 load("@host_tools//:settings.bzl", "AR", "COV", "CPP", "CXX", "HOST_SYSTEM", "NM", "OBJDUMP", "RESOURCE_INCLUDE", "STRIP", "WASM_LINKER")
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
+load("@rules_cc//cc/toolchains:cc_toolchain.bzl", "cc_toolchain")
 load("@rules_cc//cc/toolchains:cc_toolchain_config_info.bzl", "CcToolchainConfigInfo")
 
 def _sysroot(ctx):
@@ -23,9 +23,14 @@ def _sysroot(ctx):
         sha256 = "a06e7ddda0c168f7ad52e6e0509c98db3545dcb254d3b9052e9e6b8423eaee7d",
         strip_prefix = "install/emscripten/cache/sysroot/include",
     )
-    ctx.file("BUILD", 'filegroup(name = "headers", srcs = glob(["**"]), visibility = ["//visibility:public"])\n')
+    ctx.template("BUILD", ctx.attr._build)
 
-emscripten_sysroot = repository_rule(implementation = _sysroot)
+emscripten_sysroot = repository_rule(
+    implementation = _sysroot,
+    attrs = {
+        "_build": attr.label(default = Label("//source/bazel:toolchains/wasm/sysroot.BUILD.tpl")),
+    },
+)
 
 def _config(ctx):
     """Configure Clang and LLD for modules hosted by Emscripten.
@@ -108,3 +113,60 @@ wasm_cc_toolchain_config = rule(
     attrs = {"headers": attr.label(mandatory = True)},
     provides = [CcToolchainConfigInfo],
 )
+
+# These labels form the WebAssembly portion of Toolchain's root registration
+# surface and describe an Emscripten host rather than a native operating system.
+# buildifier: disable=unnamed-macro
+def wasm_targets():
+    """Declare the Emscripten sysroot, compiler, platform and selection key."""
+    native.platform(
+        name = "wasm32",
+        constraint_values = [
+            "@platforms//cpu:wasm32",
+            "@platforms//os:emscripten",
+        ],
+    )
+
+    wasm_cc_toolchain_config(
+        name = "wasm32_config",
+        headers = "@emscripten_sysroot//:headers",
+    )
+
+    cc_toolchain(
+        name = "wasm32_toolchain",
+        all_files = ":wasm_files",
+        ar_files = "@host_tools//:files",
+        as_files = "@host_tools//:files",
+        compiler_files = ":wasm_files",
+        dwp_files = "@host_tools//:files",
+        linker_files = "@host_tools//:files",
+        objcopy_files = "@host_tools//:files",
+        strip_files = "@host_tools//:files",
+        supports_param_files = 1,
+        toolchain_config = ":wasm32_config",
+        toolchain_identifier = "clang-wasm32",
+    )
+
+    native.filegroup(name = "wasm_files", srcs = ["@host_tools//:files", "@emscripten_sysroot//:headers"])
+
+    native.toolchain(
+        name = "cc_toolchain_for_wasm32",
+        exec_compatible_with = [
+            "@platforms//os:" + HOST_SYSTEM,
+            "@platforms//cpu:x86_64",
+        ],
+        target_compatible_with = [
+            "@platforms//cpu:wasm32",
+            "@platforms//os:emscripten",
+        ],
+        toolchain = ":wasm32_toolchain",
+        toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+    )
+
+    native.config_setting(
+        name = "web",
+        constraint_values = [
+            "@platforms//os:emscripten",
+            "@platforms//cpu:wasm32",
+        ],
+    )

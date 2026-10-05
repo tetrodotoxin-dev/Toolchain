@@ -12,12 +12,12 @@ _RUNTIME = {runtime}
 [
     cc_import(
         name = "runtime_" + str(index),
-        shared_library = select({
-            platform: libraries[index]["library"] if index < len(libraries) else None
-            for platform, libraries in _RUNTIME.items()
-        }),
         interface_library = select({
             platform: libraries[index]["interface"] if index < len(libraries) else None
+            for platform, libraries in _RUNTIME.items()
+        }),
+        shared_library = select({
+            platform: libraries[index]["library"] if index < len(libraries) else None
             for platform, libraries in _RUNTIME.items()
         }),
         visibility = ["//visibility:private"],
@@ -28,21 +28,24 @@ _RUNTIME = {runtime}
 cc_library(
     name = "headers",
     hdrs = glob(
-        ["headers/include/**/*.h", "headers/include/**/*.hpp"],
+        [
+            "headers/include/**/*.h",
+            "headers/include/**/*.hpp",
+        ],
         allow_empty = True,
     ),
-    strip_include_prefix = "headers/include",
     defines = select({defines}),
-    deps = {dependencies},
     implementation_deps = {implementation_dependencies},
+    strip_include_prefix = "headers/include",
+    deps = {dependencies},
 )
 
 cc_import(
     name = {library},
-    static_library = select({static_libraries}),
-    shared_library = select({shared_libraries}),
     interface_library = select({interface_libraries}),
     linkopts = select({linkopts}),
+    shared_library = select({shared_libraries}),
+    static_library = select({static_libraries}),
     deps = [":headers"] + select({
         platform: [":runtime_" + str(index) for index in range(len(libraries))]
         for platform, libraries in _RUNTIME.items()
@@ -62,10 +65,10 @@ _COMPONENTS = {components}
     cc_library(
         name = name,
         hdrs = select(component["headers"]),
-        strip_include_prefix = "headers/include",
         defines = select(component["defines"]),
-        deps = {dependencies},
         implementation_deps = [{library}],
+        strip_include_prefix = "headers/include",
+        deps = {dependencies},
     )
     for name, component in _COMPONENTS.items()
 ]

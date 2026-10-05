@@ -82,16 +82,23 @@ def _host(ctx):
     values["PYTHON"] = str(python).replace("\\", "/")
     values["PATH"] = ctx.os.environ.get("PATH", "")
     values["TEMP"] = ctx.os.environ.get("TEMP", "/tmp")
-    ctx.file("settings.bzl", "\n".join([key + " = " + repr(value) for key, value in values.items()]) + "\n")
+    substitutions = {
+        '"__' + name + '__"': json.encode(value)
+        for name, value in values.items()
+    }
+    tools = sorted({file: True for file in files})
+    substitutions['["__TOOLS__"]'] = repr(tools)
+    ctx.template("settings.bzl", ctx.attr._settings, substitutions = substitutions)
 
     # Individual tools let tests declare their inputs without adding the whole
     # compiler installation to their runfiles.
-    ctx.file("BUILD.bazel", '''exports_files(["settings.bzl"] + {tools})
-filegroup(
-    name = "files",
-    srcs = {tools} + glob(["llvm/lib/clang/**", "llvm/lib/libLLVM*.so*", "llvm/lib/libclang*.so*", "llvm/bin/*.dll"], allow_empty = True),
-    visibility = ["//visibility:public"],
-)
-'''.format(tools = repr(sorted({file: True for file in files}))))
+    ctx.template("BUILD.bazel", ctx.attr._build)
 
-host_tools = repository_rule(implementation = _host, environ = ["BAZEL_LLVM", "PATH", "TEMP"])
+host_tools = repository_rule(
+    implementation = _host,
+    attrs = {
+        "_build": attr.label(default = Label("//source/bazel:toolchains/host/BUILD.tpl")),
+        "_settings": attr.label(default = Label("//source/bazel:toolchains/host/settings.bzl.tpl")),
+    },
+    environ = ["BAZEL_LLVM", "PATH", "TEMP"],
+)

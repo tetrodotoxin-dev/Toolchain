@@ -5,12 +5,9 @@
 load("@host_tools//:settings.bzl", "PYTHON")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
+load(":toolchains/platforms.bzl", "PLATFORMS")
 
-_TARGETS = {
-    "linux-x86_64-v3": str(Label("//:linux_x86_64")),
-    "windows-x86_64-msvc": str(Label("//:windows_x64")),
-    "wasm32-emscripten": str(Label("//:wasm32")),
-}
+_TARGETS = {name: str(target.platform) for name, target in PLATFORMS.items()}
 
 # Bazel supplies the incoming settings even though every release selects opt.
 # buildifier: disable=unused-variable
@@ -254,7 +251,7 @@ _package_release = rule(implementation = _package, attrs = {
     "sources": attr.label_list(allow_files = True),
     "platforms": attr.string_list(mandatory = True),
     "_export": attr.label(default = Label("//source:toolchain/export.h"), allow_single_file = True),
-    "_writer": attr.label(default = Label("//source/bazel:package.py"), allow_single_file = True),
+    "_writer": attr.label(default = Label("//source/bazel:release/package.py"), allow_single_file = True),
     "_allowlist_function_transition": attr.label(default = "@bazel_tools//tools/allowlists/function_transition_allowlist"),
 })
 

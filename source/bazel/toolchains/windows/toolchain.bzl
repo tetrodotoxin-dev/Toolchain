@@ -14,6 +14,7 @@ load("@host_tools//:settings.bzl", "ARCHIVER", "CLANG", "HOST_SYSTEM", "LINKER",
 # the upstream implementation. Recheck this path when upgrading rules_cc.
 # buildifier: disable=bzl-visibility
 load("@rules_cc//cc/private/toolchain:windows_cc_toolchain_config.bzl", windows_config = "cc_toolchain_config")
+load("@rules_cc//cc/toolchains:cc_toolchain.bzl", "cc_toolchain")
 
 def _sdk(ctx):
     """Assemble MSVC and Windows SDK files from downloads or an installed SDK.
@@ -54,12 +55,10 @@ def _sdk(ctx):
 
     # Runtime DLLs support local validation without becoming part of a product's
     # release archive. In particular, the debug CRT remains a development input.
-    ctx.file("BUILD.bazel", '''package(default_visibility = ["//visibility:public"])
-filegroup(name = "files", srcs = glob(["include/**", "lib/**"]) + ["case.yaml"])
-filegroup(name = "runtime", srcs = glob(["runtime/**/*.dll"], allow_empty = True))
-''')
+    ctx.template("BUILD.bazel", ctx.attr._build)
 
 windows_sdk = repository_rule(implementation = _sdk, attrs = {
+    "_build": attr.label(default = Label("//source/bazel:toolchains/windows/sdk.BUILD.tpl")),
     "_packages": attr.label(default = Label("//source:sdk/windows.json")),
     "_normalize": attr.label(default = Label("//source:sdk/normalize.py")),
 }, environ = ["TETRO_WINDOWS_SDK", "TETRO_ACCEPT_WINDOWS_SDK_LICENSE"])
@@ -114,4 +113,67 @@ def windows_toolchain_config():
         target_system_name = "windows",
         toolchain_identifier = "clang-windows-x64",
         win32_winnt_flag = "/D_WIN32_WINNT=0x0A00",
+    )
+
+# These labels form the Windows portion of Toolchain's root registration
+# surface. The empty group represents unsupported auxiliary compiler actions.
+# buildifier: disable=unnamed-macro
+def windows_targets():
+    """Declare the Windows SDK files, compiler, platform and selection key."""
+    native.config_setting(
+        name = "windows",
+        constraint_values = [
+            "@platforms//os:windows",
+            "@platforms//cpu:x86_64",
+        ],
+    )
+
+    native.platform(
+        name = "windows_x64",
+        constraint_values = [
+            "@platforms//os:windows",
+            "@platforms//cpu:x86_64",
+        ],
+    )
+
+    # Upstream rules own the MSVC command grammar, dependency tracking and
+    # import-library flags. This configuration supplies our compiler options
+    # and SDK locations to that grammar.
+    windows_toolchain_config()
+    native.filegroup(name = "windows_empty")
+
+    cc_toolchain(
+        name = "windows_toolchain",
+        all_files = ":windows_files",
+        ar_files = ":windows_files",
+        as_files = ":windows_empty",
+        compiler_files = ":windows_files",
+        dwp_files = ":windows_empty",
+        linker_files = ":windows_files",
+        objcopy_files = ":windows_empty",
+        strip_files = ":windows_empty",
+        supports_param_files = 1,
+        toolchain_config = ":windows_config",
+    )
+
+    native.toolchain(
+        name = "cc_toolchain_for_windows_x64",
+        exec_compatible_with = [
+            "@platforms//os:" + HOST_SYSTEM,
+            "@platforms//cpu:x86_64",
+        ],
+        target_compatible_with = [
+            "@platforms//os:windows",
+            "@platforms//cpu:x86_64",
+        ],
+        toolchain = ":windows_toolchain",
+        toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+    )
+
+    native.filegroup(
+        name = "windows_files",
+        srcs = [
+            "@host_tools//:files",
+            "@windows_sdk//:files",
+        ],
     )

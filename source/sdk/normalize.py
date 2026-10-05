@@ -5,6 +5,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import sys
 
 
@@ -20,6 +21,45 @@ def linux(root):
                     destination = root / target.lstrip("/")
                 path.unlink()
                 path.symlink_to(os.path.relpath(destination, path.parent))
+
+    # The sysroot supplies headers, ABI libraries and startup objects. Locale
+    # conversion, documentation and package configuration belong to the
+    # deployed system that runs the completed binary.
+    for relative in (
+        "etc",
+        "usr/lib/x86_64-linux-gnu/gconv",
+        "usr/share",
+    ):
+        path = root / relative
+        if path.exists():
+            shutil.rmtree(path)
+
+    # Dynamic Linux links still consume libgcc builtins, glibc's nonshared
+    # support and the compatibility archives retained after glibc unified its
+    # historical component libraries. This set states that complete contract.
+    archives = {
+        "usr/lib/x86_64-linux-gnu/libanl.a",
+        "usr/lib/x86_64-linux-gnu/libc_nonshared.a",
+        "usr/lib/x86_64-linux-gnu/libdl.a",
+        "usr/lib/x86_64-linux-gnu/libpthread.a",
+        "usr/lib/x86_64-linux-gnu/librt.a",
+        "usr/lib/x86_64-linux-gnu/libutil.a",
+    }
+    archives.update(
+        path.relative_to(root).as_posix()
+        for path in root.glob("usr/lib/gcc/*/*/libgcc.a")
+    )
+    for path in root.rglob("*.a"):
+        if path.relative_to(root).as_posix() not in archives:
+            path.unlink()
+
+    for path in root.glob("usr/lib/gcc/*/*/include/sanitizer"):
+        shutil.rmtree(path)
+
+    # Every published path resolves within the retained target filesystem.
+    for path in root.rglob("*"):
+        if path.is_symlink() and not path.exists():
+            path.unlink()
 
 
 def windows(root, virtual_root):

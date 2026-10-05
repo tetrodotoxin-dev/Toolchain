@@ -3,16 +3,16 @@
 package(default_visibility = ["//visibility:public"])
 
 exports_files(glob([
-    "*.bzl",
-    "*.py",
-    "*.tpl",
+    "**/*.bzl",
+    "**/*.py",
+    "**/*.tpl",
 ]))
 
 filegroup(
     name = "sources",
     srcs = glob([
-        "*.bzl",
-        "*.py",
-        "*.tpl",
+        "**/*.bzl",
+        "**/*.py",
+        "**/*.tpl",
     ]) + ["BUILD"],
 )
