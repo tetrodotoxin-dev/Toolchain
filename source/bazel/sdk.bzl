@@ -11,6 +11,11 @@ their own SDK, while their libraries remain available to consumers.
 Bundled runtime libraries are imported from the selected archive automatically.
 An explicitly declared SDK dependency supplies overlapping runtime libraries
 when their recorded contents match. Incompatible copies fail the import.
+Component tags bind consumer-owned repository labels to one component. Sibling
+component edges come from the archive metadata and remain independent of those
+repository mappings.
+Every platform archive carries sdk.json as the complete binary, runtime,
+definition, linker-option and component schema for this importer.
 """
 
 load(":toolchains/platforms.bzl", "PLATFORMS")
@@ -35,19 +40,19 @@ def _runtime(ctx, metadata, platform):
         if manifest.exists:
             supplied = json.decode(ctx.read(manifest))
 
-            # A dependency on an SDK's headers target supplies no runtime.
-            # The library and its component targets all link the same binary.
-            if supplied.get("project") != label.name.upper().replace("-", "_").replace(".", "_") and label.name not in supplied.get("components", {}):
+            # Header targets supply their compilation interface. Library and
+            # component targets additionally carry the SDK's common binary.
+            if supplied["project"] != label.name.upper().replace("-", "_").replace(".", "_") and label.name not in supplied["components"]:
                 continue
-            for path, digest in supplied.get("sha256", {}).items():
+            for path, digest in supplied["sha256"].items():
                 if path in provided and provided[path] != digest:
                     fail("Conflicting SDK dependency contents for " + platform + "/" + path)
                 provided[path] = digest
     runtime = []
-    for library in metadata.get("runtime", []):
+    for library in metadata["runtime"]:
         if library["library"] in provided:
             for path in library.values():
-                if path and (not provided.get(path) or metadata.get("sha256", {}).get(path) != provided[path]):
+                if path and (not provided.get(path) or metadata["sha256"].get(path) != provided[path]):
                     fail("Bundled runtime disagrees with a declared SDK dependency: " + platform + "/" + path)
         else:
             runtime.append({key: platform + "/" + path if path else None for key, path in library.items()})
@@ -67,9 +72,6 @@ def _sdk(ctx):
         archive = platform + "-" + ctx.attr.linkage
         if archive in ctx.attr.archives:
             selected[platform] = archive
-        elif platform in ctx.attr.archives:
-            # Earlier releases carried one linkage in each platform archive.
-            selected[platform] = platform
     if len(selected) == 1:
         fail("No platform archives supply the requested " + ctx.attr.linkage + " linkage")
     for output, archive in selected.items():
@@ -79,7 +81,7 @@ def _sdk(ctx):
             output = output,
         )
     if not ctx.path("headers/include/toolchain/export.h").exists:
-        ctx.symlink(ctx.attr._export, "headers/include/toolchain/export.h")
+        fail("SDK headers archive is missing toolchain/export.h")
     static_libraries = {}
     libraries = {}
     interfaces = {}
@@ -91,47 +93,56 @@ def _sdk(ctx):
     for platform, condition in _PLATFORMS.items():
         if platform not in selected:
             continue
-        windows = platform == "windows-x86_64-msvc"
-        directory = platform + "/lib/"
         manifest = ctx.path(platform + "/sdk.json")
-        metadata = {}
-        if manifest.exists:
-            metadata = json.decode(ctx.read(manifest))
-            if metadata["linkage"] != ctx.attr.linkage:
-                fail("SDK linkage disagrees with its pin for " + platform)
-            binary = platform + "/" + metadata["library"]
-            interface = platform + "/" + metadata["interface"] if metadata.get("interface") else None
-            project = metadata["project"]
-        else:
-            shared = directory + (ctx.attr.library + ".dll" if windows else "lib" + ctx.attr.library + ".so")
-            archive = directory + (ctx.attr.library + ".lib" if windows else "lib" + ctx.attr.library + ".a")
-            static = ctx.path(archive).exists and not (windows and ctx.path(shared).exists)
-            if static != (ctx.attr.linkage == "static"):
-                fail("Legacy SDK archive does not supply " + ctx.attr.linkage + " linkage for " + platform)
-            binary = archive if static else shared
-            interface = directory + ctx.attr.library + ".lib" if windows and not static else None
-            project = ctx.attr.library.upper().replace("-", "_").replace(".", "_")
+        if not manifest.exists:
+            fail("SDK archive has no metadata for " + platform)
+        metadata = json.decode(ctx.read(manifest))
+        if metadata["linkage"] != ctx.attr.linkage:
+            fail("SDK linkage disagrees with its pin for " + platform)
+        binary = platform + "/" + metadata["library"]
+        interface = platform + "/" + metadata["interface"] if metadata["interface"] else None
+        project = ctx.attr.library.upper().replace("-", "_").replace(".", "_")
+        if metadata["project"] != project:
+            fail("SDK project identity disagrees with its release name for " + platform)
         if not ctx.path(binary).exists or (interface and not ctx.path(interface).exists):
             fail("SDK archive is missing its declared linker output for " + platform)
         static = ctx.attr.linkage == "static"
         static_libraries[condition] = binary if static else None
         libraries[condition] = None if static else binary
         interfaces[condition] = interface
-        defines[condition] = metadata.get("defines", [project + "_STATIC=1"] if static else [])
-        linkopts[condition] = metadata.get("linkopts", [])
-        binaries[condition] = [binary] + [platform + "/" + library["library"] for library in metadata.get("runtime", [])]
+        defines[condition] = metadata["defines"]
+        linkopts[condition] = metadata["linkopts"]
+        binaries[condition] = [binary] + [platform + "/" + library["library"] for library in metadata["runtime"]]
         runtime[condition] = _runtime(ctx, metadata, platform)
-        for name, component in metadata.get("components", {}).items():
+        for name, component in metadata["components"].items():
             if name in [ctx.attr.library, "headers", "build"] or name.startswith("runtime_"):
                 fail("SDK component conflicts with a reserved target name: " + name)
+            if "dependencies" not in component:
+                fail("SDK component has no dependency metadata: " + name)
+            sibling_dependencies = component["dependencies"]
             if name not in components:
-                components[name] = {"headers": {}, "defines": {}}
+                components[name] = {
+                    "headers": {},
+                    "defines": {},
+                    "sibling_dependencies": sibling_dependencies,
+                }
+            elif components[name]["sibling_dependencies"] != sibling_dependencies:
+                fail("SDK platforms disagree on dependencies for component " + name)
             components[name]["headers"][condition] = ["headers/include/" + path for path in component["headers"]]
             components[name]["defines"][condition] = component["defines"]
         for library in runtime[condition]:
             for path in library.values():
                 if path and not ctx.path(path).exists:
                     fail("SDK archive is missing its declared runtime file: " + path)
+    unknown = [name for name in ctx.attr.component_deps if name not in components]
+    if unknown:
+        fail("Component dependencies name components absent from the SDK: " + str(unknown))
+    for name, component in components.items():
+        siblings = component["sibling_dependencies"]
+        unknown = [dependency for dependency in siblings if dependency not in components]
+        if unknown:
+            fail("SDK component " + name + " names missing siblings: " + str(unknown))
+        component["dependencies"] = [":" + dependency for dependency in siblings] + ctx.attr.component_deps.get(name, [])
     ctx.template("BUILD.bazel", ctx.attr._template, substitutions = {
         "{dependencies}": repr(ctx.attr.deps),
         "{implementation_dependencies}": repr(ctx.attr.implementation_deps),
@@ -152,10 +163,10 @@ _sdk_repository = repository_rule(implementation = _sdk, attrs = {
     "version": attr.string(mandatory = True),
     "archives": attr.string_dict(mandatory = True),
     "deps": attr.string_list(),
+    "component_deps": attr.string_list_dict(),
     "implementation_deps": attr.string_list(),
     "linkage": attr.string(default = "shared", values = ["static", "shared"]),
     "_template": attr.label(default = Label("//source/bazel:release/sdk.BUILD.tpl")),
-    "_export": attr.label(default = Label("//source:toolchain/export.h")),
 })
 
 def _dependencies(ctx):
@@ -164,6 +175,15 @@ def _dependencies(ctx):
     Args:
         ctx: Module extension context containing the modules' release tags.
     """
+    component_deps = {}
+    for module in ctx.modules:
+        for component in module.tags.component:
+            key = (component.release, component.name)
+            dependencies = [str(dependency) for dependency in component.deps]
+            if key in component_deps and component_deps[key] != dependencies:
+                fail("Conflicting dependencies for SDK component " + component.release + ":" + component.name)
+            component_deps[key] = dependencies
+
     seen = {}
     for module in ctx.modules:
         for release in module.tags.release:
@@ -173,7 +193,15 @@ def _dependencies(ctx):
                     fail("Conflicting SDK release pins for " + release.name)
                 continue
             seen[release.name] = pin
-            _sdk_repository(name = release.name, library = release.name, project = release.project, version = release.version, archives = release.archives, deps = [str(dep) for dep in release.deps], implementation_deps = [str(dep) for dep in release.implementation_deps], linkage = release.linkage)
+            scoped = {
+                name: dependencies
+                for (owner, name), dependencies in component_deps.items()
+                if owner == release.name
+            }
+            _sdk_repository(name = release.name, library = release.name, project = release.project, version = release.version, archives = release.archives, deps = [str(dep) for dep in release.deps], component_deps = scoped, implementation_deps = [str(dep) for dep in release.implementation_deps], linkage = release.linkage)
+    unknown = [release for release, _ in component_deps if release not in seen]
+    if unknown:
+        fail("Component dependencies name undeclared SDK releases: " + str(sorted({release: True for release in unknown})))
 
 _release = tag_class(attrs = {
     "name": attr.string(mandatory = True),
@@ -184,4 +212,15 @@ _release = tag_class(attrs = {
     "implementation_deps": attr.label_list(),
     "linkage": attr.string(default = "shared", values = ["static", "shared"]),
 })
-dependencies = module_extension(implementation = _dependencies, tag_classes = {"release": _release})
+_component = tag_class(attrs = {
+    "release": attr.string(mandatory = True),
+    "name": attr.string(mandatory = True),
+    "deps": attr.label_list(),
+})
+dependencies = module_extension(
+    implementation = _dependencies,
+    tag_classes = {
+        "component": _component,
+        "release": _release,
+    },
+)

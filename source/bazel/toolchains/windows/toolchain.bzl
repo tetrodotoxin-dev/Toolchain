@@ -3,8 +3,8 @@
 """Supply the MSVC headers and libraries used with the selected LLVM tools.
 
 Pinned Microsoft archives are extracted only when a Windows target is requested.
-License acceptance is explicit. TETRO_WINDOWS_SDK selects an existing SDK in
-winsysroot layout when a developer wants to use an installed version instead.
+TETRO_WINDOWS_SDK selects an existing SDK in winsysroot layout when a developer
+wants to use an installed version instead.
 """
 
 load("@host_tools//:settings.bzl", "ARCHIVER", "CLANG", "HOST_SYSTEM", "LINKER", "PATH", "PYTHON", "RESOURCE_INCLUDE", "TEMP")
@@ -21,7 +21,7 @@ def _sdk(ctx):
 
     Args:
         ctx: Repository context with package pins, normalization tools and
-            the SDK selection and license acceptance environment variables.
+            the optional installed-SDK selection.
     """
     source = ctx.os.environ.get("TETRO_WINDOWS_SDK")
     if source:
@@ -40,8 +40,6 @@ def _sdk(ctx):
             for name, path in {path.basename.lower(): path for path in sdk.get_child("Lib/" + version + "/" + part + "/x64").readdir()}.items():
                 ctx.symlink(path, "lib/" + part + "/" + name)
     else:
-        if ctx.os.environ.get("TETRO_ACCEPT_WINDOWS_SDK_LICENSE") != "1":
-            fail("Windows SDK acquisition requires acceptance of the Microsoft Visual Studio and Windows SDK licenses. Review https://visualstudio.microsoft.com/license-terms/ and https://aka.ms/WindowsSDKLicense, then set --repo_env=TETRO_ACCEPT_WINDOWS_SDK_LICENSE=1. An installed SDK can instead be selected with TETRO_WINDOWS_SDK.")
         for index, package in enumerate(json.decode(ctx.read(ctx.attr._packages))):
             archive = "archives/" + str(index) + ".zip"
             ctx.download(url = package["url"], sha256 = package["sha256"], output = archive)
@@ -53,15 +51,15 @@ def _sdk(ctx):
     if normalized.return_code:
         fail(normalized.stderr)
 
-    # Runtime DLLs support local validation without becoming part of a product's
-    # release archive. In particular, the debug CRT remains a development input.
+    # Runtime DLLs support local validation as development inputs. Product SDK
+    # archives select runtime libraries from their declared dependency graph.
     ctx.template("BUILD.bazel", ctx.attr._build)
 
 windows_sdk = repository_rule(implementation = _sdk, attrs = {
     "_build": attr.label(default = Label("//source/bazel:toolchains/windows/sdk.BUILD.tpl")),
     "_packages": attr.label(default = Label("//source:sdk/windows.json")),
     "_normalize": attr.label(default = Label("//source:sdk/normalize.py")),
-}, environ = ["TETRO_WINDOWS_SDK", "TETRO_ACCEPT_WINDOWS_SDK_LICENSE"])
+}, environ = ["TETRO_WINDOWS_SDK"])
 
 def windows_toolchain_config():
     """Declare the windows_config target using clang-cl and the Windows SDK."""
@@ -116,7 +114,7 @@ def windows_toolchain_config():
     )
 
 # These labels form the Windows portion of Toolchain's root registration
-# surface. The empty group represents unsupported auxiliary compiler actions.
+# surface. The empty group satisfies auxiliary action slots in the MSVC rule.
 # buildifier: disable=unnamed-macro
 def windows_targets():
     """Declare the Windows SDK files, compiler, platform and selection key."""

@@ -9,7 +9,8 @@ load(":toolchains/platforms.bzl", "PLATFORMS")
 
 _TARGETS = {name: str(target.platform) for name, target in PLATFORMS.items()}
 
-# Bazel supplies the incoming settings even though every release selects opt.
+# Bazel supplies the incoming settings as part of the transition contract. Each
+# release replaces them with its platform and optimized compilation mode.
 # buildifier: disable=unused-variable
 def _targets(settings, attr):
     """Select an optimized build for each SDK platform.
@@ -63,10 +64,17 @@ def _binaries(target, project, linkage):
         fail("Windows shared release target supplies no import library: " + str(target.label))
     return struct(binary = binary, name = binary.basename, interface = interface, interface_name = binary.basename.removesuffix(".dll") + ".lib" if interface else None)
 
-_PublicHeadersInfo = provider("Declared public header paths across ordinary dependencies.", fields = {"entries": "Declared header files and their public include paths."})
+_PublicHeadersInfo = provider(
+    "Declared public header paths across ordinary dependencies.",
+    fields = {
+        "direct_defines": "Definitions declared directly by this target.",
+        "direct": "Header files declared directly by this target.",
+        "entries": "Declared header files and their public include paths.",
+    },
+)
 
 def _public_headers_impl(target, ctx):
-    """Follow public header declarations without duplicating include aliases.
+    """Follow each public header declaration through one include mapping.
 
     Args:
         target: Configured dependency whose public interface is being visited.
@@ -101,9 +109,19 @@ def _public_headers_impl(target, ctx):
         headers.append((file, path))
     dependencies = getattr(ctx.rule.attr, "deps", [])
     actual = getattr(ctx.rule.attr, "actual", None)
+    direct_dependencies = []
+    direct_defines = getattr(ctx.rule.attr, "defines", [])
     if actual:
         dependencies = dependencies + [actual]
-    return [_PublicHeadersInfo(entries = depset(headers, transitive = [dep[_PublicHeadersInfo].entries for dep in dependencies if _PublicHeadersInfo in dep]))]
+        if _PublicHeadersInfo in actual:
+            direct_dependencies.append(actual[_PublicHeadersInfo].direct)
+            direct_defines = actual[_PublicHeadersInfo].direct_defines
+    direct = depset(headers, transitive = direct_dependencies)
+    return [_PublicHeadersInfo(
+        direct = direct,
+        direct_defines = direct_defines,
+        entries = depset(transitive = [direct] + [dep[_PublicHeadersInfo].entries for dep in dependencies if _PublicHeadersInfo in dep]),
+    )]
 
 _public_headers = aspect(
     implementation = _public_headers_impl,
@@ -117,9 +135,21 @@ def _headers(target):
         target: Configured library with declared public header mappings.
 
     Returns:
-        File and include path pairs, with external SDK headers left to deps.
+        File and include path pairs owned by the release repository. External
+        SDK headers remain represented by dependency labels.
     """
     return [(file, path) for file, path in target[_PublicHeadersInfo].entries.to_list() if file.owner.workspace_root == target.label.workspace_root]
+
+def _direct_headers(target):
+    """Select headers declared directly by one released component.
+
+    Args:
+        target: Configured component with declared public header mappings.
+
+    Returns:
+        File and include path pairs owned directly by the component.
+    """
+    return [(file, path) for file, path in target[_PublicHeadersInfo].direct.to_list() if file.owner.workspace_root == target.label.workspace_root]
 
 def _runtime(target, primary):
     """Collect declared shared dependencies beside the published library.
@@ -129,7 +159,9 @@ def _runtime(target, primary):
         primary: Published binary, already included by the release rule.
 
     Returns:
-        Runtime library records and their [File, archive_path] pairs.
+        Runtime library records in archive-name order and their [File,
+        archive_path] pairs. Stable metadata lets repackaging preserve the
+        release manifest independently of Bazel's linker traversal order.
     """
     libraries = {}
     files = []
@@ -147,7 +179,7 @@ def _runtime(target, primary):
             files.append([binary, name])
             if interface:
                 files.append([interface, import_name])
-    return libraries.values(), files
+    return [libraries[name] for name in sorted(libraries)], files
 
 def _package(ctx):
     """Write source, header and platform archives with a checksum manifest.
@@ -167,6 +199,9 @@ def _package(ctx):
                 if path in headers and headers[path] != file:
                     fail("Release variants supply different headers for " + path)
                 headers[path] = file
+
+    # Every SDK carries the annotation contract used by its public declarations.
+    # setdefault preserves a project-owned copy at the same canonical path.
     headers.setdefault("toolchain/export.h", ctx.file._export)
     license = [[file.path, "LICENSE"] for file in ctx.files.sources if file.short_path == "LICENSE"]
     archives = {
@@ -188,27 +223,29 @@ def _package(ctx):
             linkopts = []
             for entry in target[CcInfo].linking_context.linker_inputs.to_list():
                 if entry.owner == target.label:
-                    # Toolchains can attach private link inputs, such as an
-                    # empty Windows DEF file. Only consumer flags make those
-                    # files a requirement of the imported SDK.
+                    # Toolchains may attach action-local inputs such as an empty
+                    # Windows DEF file. Published user flags define the inputs
+                    # that an imported SDK must carry with it.
                     if any([file.path in flag for file in entry.additional_inputs for flag in entry.user_link_flags]):
                         fail("SDK link requirements need relocatable inputs; additional linker inputs are not packaged: " + str(target.label))
                     linkopts.extend(entry.user_link_flags)
             archive = stem + "-" + platform + "-" + linkage
 
-            # Components select header interfaces over this library's binary.
-            # Their compilation contexts include their public header dependencies
-            # so SDK consumers receive the same complete include surface.
+            # Each component records only its own declarations. Sibling edges
+            # reconstruct the complete public interface in the imported SDK.
+            component_names = ctx.attr.component_names
+            component_dependencies = ctx.attr.component_dependencies
             components = {}
-            for component, name in zip(ctx.split_attr.components.get(platform, []), ctx.attr.component_names):
-                paths = {path: True for _, path in _headers(component)}
+            for component, name in zip(ctx.split_attr.components.get(platform, []), component_names):
+                paths = {path: True for _, path in _direct_headers(component)}
                 paths["toolchain/export.h"] = True
                 for path in paths:
                     if path not in headers:
                         fail("Component header is outside the released interface: " + path)
                 components[name] = {
                     "headers": sorted(paths),
-                    "defines": depset(component[CcInfo].compilation_context.defines.to_list() + ([project + "_STATIC=1"] if linkage == "static" else [])).to_list(),
+                    "defines": depset(component[_PublicHeadersInfo].direct_defines + ([project + "_STATIC=1"] if linkage == "static" else [])).to_list(),
+                    "dependencies": component_dependencies[name],
                 }
             metadata = ctx.actions.declare_file(archive + ".json")
             ctx.actions.write(metadata, json.encode({
@@ -239,13 +276,17 @@ def _package(ctx):
         outputs = outputs + [checksum],
         mnemonic = "PackageRelease",
     )
-    return [DefaultInfo(files = depset(outputs + [checksum]))]
+    return [
+        DefaultInfo(files = depset(outputs + [checksum])),
+        OutputGroupInfo(checksum = depset([checksum])),
+    ]
 
 _package_release = rule(implementation = _package, attrs = {
     "static": attr.label(cfg = _transition, providers = [CcInfo], aspects = [_public_headers]),
     "shared": attr.label(cfg = _transition, providers = [CcInfo], aspects = [_public_headers]),
     "components": attr.label_list(cfg = _transition, providers = [CcInfo], aspects = [_public_headers]),
     "component_names": attr.string_list(),
+    "component_dependencies": attr.string_list_dict(),
     "project": attr.string(mandatory = True),
     "version": attr.string(mandatory = True),
     "sources": attr.label_list(allow_files = True),
@@ -255,19 +296,20 @@ _package_release = rule(implementation = _package, attrs = {
     "_allowlist_function_transition": attr.label(default = "@bazel_tools//tools/allowlists/function_transition_allowlist"),
 })
 
-def package(name = "sdk", module = None, components = [], static = None, shared = None, linkage = None, visibility = ["//visibility:public"], tags = ["manual"], **kwargs):
+def package(name = "sdk", module = None, components = {}, static = None, shared = None, linkage = None, visibility = ["//visibility:public"], tags = ["manual"], **kwargs):
     """Publish a module's library, component interfaces and SDK target.
 
     The source package supplies //source:<module> and //source:<component>.
     Root component targets expose those header interfaces and link the common
     runtime. The SDK records the same interfaces for archive consumers.
-    These declarations set their own visibility, so a root BUILD can load
-    package directly without a separate native package declaration.
+    These declarations own their visibility, so a root BUILD can load package
+    directly as its complete publication surface.
 
     Args:
         name: SDK target name, defaulting to sdk.
         module: Published library identity, defaulting to the Bazel module name.
-        components: Component names whose header interfaces live in //source.
+        components: Component names mapped to their sibling dependencies. Each
+            component header interface lives in //source.
         static: Static runtime target. With neither variant supplied, the
             selected linkage uses //source:<module>.
         shared: Optional shared runtime target. Supply both variants to package
@@ -294,7 +336,11 @@ def package(name = "sdk", module = None, components = [], static = None, shared 
     common = {key: kwargs[key] for key in ["testonly", "target_compatible_with", "compatible_with"] if key in kwargs}
     native.alias(name = module, actual = runtime, visibility = visibility, **common)
     definitions = [module.upper().replace("-", "_").replace(".", "_") + "_STATIC=1"] if linkage == "static" else []
-    for component in components:
+    if type(components) != "dict":
+        fail("package components must map each component to its sibling dependencies")
+    component_names = components.keys()
+    component_dependencies = components
+    for component in component_names:
         cc_library(
             name = component,
             deps = ["//source:" + component],
@@ -306,7 +352,8 @@ def package(name = "sdk", module = None, components = [], static = None, shared 
     package_release(
         name = name,
         project = module,
-        components = {"//source:" + component: component for component in components},
+        components = {"//source:" + component: component for component in component_names},
+        component_dependencies = component_dependencies,
         static = static,
         shared = shared,
         visibility = visibility,
@@ -314,7 +361,7 @@ def package(name = "sdk", module = None, components = [], static = None, shared 
         **kwargs
     )
 
-def package_release(name, static = None, shared = None, project = None, platforms = None, sources = None, components = {}, **kwargs):
+def package_release(name, static = None, shared = None, project = None, platforms = None, sources = None, components = {}, component_dependencies = {}, **kwargs):
     """Package static and shared libraries with common source and headers.
 
     Called from the repository root to collect its source packages and build
@@ -327,9 +374,9 @@ def package_release(name, static = None, shared = None, project = None, platform
     platform requirements. Static dependency archives retain separate SDK pins.
     The archive writer checks repeated filenames for identical contents, so
     conflicting libraries fail packaging instead of replacing one another.
-    Linkopts must remain valid outside the build tree; linker scripts and other
-    additional linker inputs require their own distribution support. Dependency
-    SDKs provide their own link requirements through the importer's deps.
+    Linkopts must remain valid in an extracted SDK. Linker scripts and other
+    additional linker inputs require explicit distribution support. Dependency
+    SDKs provide their link requirements through the importer's deps.
 
     Args:
         name: Release packaging target name.
@@ -344,10 +391,22 @@ def package_release(name, static = None, shared = None, project = None, platform
             Each component links the release binary and exposes the selected
             target's public headers and definitions. These targets describe
             headers independently of the release's static or shared linkage.
+        component_dependencies: Public SDK component names mapped to sibling
+            components required by their headers. Supply every component name
+            when publishing the scoped dependency model.
         **kwargs: Common rule attributes such as visibility, tags and testonly.
     """
     if not static and not shared:
         fail("package_release requires a static or shared library")
+    component_names = components.values()
+    if sorted(component_dependencies.keys()) != sorted(component_names):
+        fail("component_dependencies must describe every packaged component")
+    for component, dependencies in component_dependencies.items():
+        unknown = [dependency for dependency in dependencies if dependency not in component_names]
+        if unknown:
+            fail("component " + component + " names unpackaged siblings: " + str(unknown))
+        if component in dependencies:
+            fail("component cannot depend on itself: " + component)
     selected = _TARGETS.keys() if platforms == None else platforms
     if not selected or any([platform not in _TARGETS for platform in selected]):
         fail("platforms must select supported SDK platforms: " + str(_TARGETS.keys()))
@@ -357,6 +416,7 @@ def package_release(name, static = None, shared = None, project = None, platform
         shared = shared,
         components = components.keys(),
         component_names = components.values(),
+        component_dependencies = component_dependencies,
         project = project or native.module_name(),
         platforms = selected,
         version = native.module_version(),

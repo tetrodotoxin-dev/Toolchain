@@ -4,8 +4,8 @@ load(":settings.bzl", "TOOLS")
 
 exports_files(["settings.bzl"] + TOOLS)
 
-# Individual tools let tests declare their inputs without adding the whole
-# compiler installation to their runfiles.
+# Individual labels give tests the exact host executables present in their
+# runfiles. Compiler actions receive the complete files group below.
 filegroup(
     name = "files",
     srcs = TOOLS + glob(

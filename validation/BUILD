@@ -1,237 +1,167 @@
 load("@host_tools//:settings.bzl", "NM")
-load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_python//python:py_test.bzl", "py_test")
-load("//:defs.bzl", "library", "tests", "vscode")
+load("//:defs.bzl", "benchmarks", "tests")
 load("//source/bazel:package.bzl", "package_release")
 
-package(default_visibility = ["//visibility:public"])
+package(default_visibility = ["//:__pkg__"])
 
-vscode(name = "vscode")
+tests()
+
+benchmarks()
 
 filegroup(
     name = "sources",
-    srcs = glob(["**"]),
+    srcs = glob([
+        "benchmarks/**",
+        "integration/**",
+        "tests/**",
+    ]) + [
+        "BUILD",
+        "//validation/data:sources",
+    ],
 )
 
-exports_files([
-    "benchmark.cpp",
-    "unit_test.cpp",
-])
-
-tests(
-    name = "reporting",
-    srcs = ["reporting.cpp"],
-    tags = ["manual"],
-)
-
-tests(
-    name = "skipped",
-    srcs = ["skipped.cpp"],
-)
-
-tests(
-    name = "empty",
-)
-
-# The reporting example intentionally fails. The outer test checks its exit
-# status and output after the same entrypoint used by every consumer returns.
+# The reporting fixture exercises every result path through the public runner.
+# Its process status and output preserve the contract seen by repository tests.
 py_test(
-    name = "validation",
+    name = "harness",
     size = "small",
-    srcs = ["validation.py"],
+    srcs = ["integration/harness.py"],
     args = [
-        "$(rlocationpath //:tests)",
-        "$(rlocationpath :reporting)",
-        "$(rlocationpath //:benchmarks)",
-        "$(rlocationpath :skipped)",
-        "$(rlocationpath :empty)",
-        "$(rlocationpath reporting.cpp)",
+        "$(rlocationpath :tests)",
+        "$(rlocationpath //validation/data:reporting)",
+        "$(rlocationpath :benchmarks)",
+        "$(rlocationpath //validation/data:skipped)",
+        "$(rlocationpath //validation/data:empty)",
+        "$(rlocationpath //validation/data:harness/reporting.cpp)",
     ],
     data = [
-        "reporting.cpp",
-        ":empty",
-        ":reporting",
-        ":skipped",
-        "//:benchmarks",
-        "//:tests",
+        ":benchmarks",
+        ":tests",
+        "//validation/data:empty",
+        "//validation/data:harness/reporting.cpp",
+        "//validation/data:reporting",
+        "//validation/data:skipped",
     ],
     deps = ["@rules_python//python/runfiles"],
 )
 
-library(
-    name = "project_static",
-    testonly = True,
-    srcs = ["project.c"],
-    hdrs = [
-        "private/project_detail.h",
-        "project.h",
-    ],
-    defines = ["TOOLCHAIN_PROJECT_VALUE=1"],
-    includes = ["private"],
-    deps = [":runtime"],
-)
-
-library(
-    name = "project_shared",
-    testonly = True,
-    srcs = ["project.c"],
-    hdrs = [
-        "private/project_detail.h",
-        "project.h",
-    ],
-    defines = ["TOOLCHAIN_PROJECT_VALUE=1"],
-    includes = ["private"],
-    linkage = "shared",
-    deps = [":runtime"],
-)
-
-# The SDK must carry a dependency reached through another shared library.
-library(
-    name = "runtime",
-    testonly = True,
-    srcs = ["runtime.c"],
-    hdrs = ["runtime.h"],
-    linkage = "shared",
-    module = "toolchain_runtime",
-    shared_lib_name = select({
-        "//:linux": "libruntime.so.1",
-        "//:windows": "runtime.dll",
-        "//conditions:default": "libruntime.so",
-    }),
-)
-
-cc_library(
-    name = "public",
-    hdrs = ["public.h"],
-    defines = ["TOOLCHAIN_TEST_PUBLIC=1"],
-)
-
-cc_library(
-    name = "api",
-    testonly = True,
-    hdrs = ["library.h"],
-    defines = ["TOOLCHAIN_TEST_VALUE=21"],
-    deps = [
-        ":public",
-        "//source:headers",
-    ],
-)
-
-cc_library(
-    name = "project_api",
-    hdrs = ["project.h"],
-    defines = ["TOOLCHAIN_PROJECT_VALUE=1"],
-    deps = ["//source:headers"],
-)
-
-# Shared consumers must not link this implementation archive a second time.
-library(
-    name = "private_static",
-    testonly = True,
-    srcs = ["private.c"],
-    module = "toolchain_private",
-    alwayslink = True,
-)
-
-library(
-    name = "static_implementation",
-    testonly = True,
-    srcs = [
-        "library.c",
-        "library.cpp",
-        "private.c",
-    ],
-    hdrs = [
-        "library.h",
-        "optional.h",
-    ],
-    defines = ["TOOLCHAIN_TEST_VALUE=21"],
-    implementation_deps = [":project_static"],
-    linkopts = select({
-        "//:linux": ["-Wl,--wrap=toolchain_link_probe"],
-        "//conditions:default": [],
-    }),
-    local_defines = ["TOOLCHAIN_TEST_PRIVATE=1"],
-    module = "toolchain_test",
-    deps = [":public"],
-)
-
-library(
-    name = "shared_library",
-    testonly = True,
-    srcs = [
-        "library.c",
-        "library.cpp",
-    ],
-    hdrs = [
-        "library.h",
-        "optional.h",
-    ],
-    defines = ["TOOLCHAIN_TEST_VALUE=21"],
-    implementation_deps = [
-        ":private_static",
-        ":project_shared",
-        ":runtime",
-    ],
-    linkage = "shared",
-    linkopts = select({
-        "//:linux": ["-Wl,--wrap=toolchain_link_probe"],
-        "//conditions:default": [],
-    }),
-    local_defines = ["TOOLCHAIN_TEST_PRIVATE=1"],
-    module = "toolchain_test",
-    deps = [":public"],
+# These native leaves prove the component graph and both library linkages in the
+# current checkout before archive construction adds another repository boundary.
+cc_test(
+    name = "components",
+    size = "small",
+    srcs = ["integration/components.c"],
+    deps = ["//validation/data:consumer"],
 )
 
 cc_test(
-    name = "static_library",
+    name = "static",
     size = "small",
-    srcs = ["library_consumer.c"],
-    deps = [":static_implementation"],
+    srcs = ["integration/library.c"],
+    deps = ["//validation/data:static"],
 )
 
 cc_test(
-    name = "shared_linkage",
+    name = "shared",
     size = "small",
-    srcs = ["library_consumer.c"],
-    deps = [":shared_library"],
+    srcs = ["integration/library.c"],
+    deps = ["//validation/data:shared"],
 )
 
 py_test(
-    name = "implementation_deps",
+    name = "symbols",
     size = "small",
-    srcs = ["implementation_deps.py"],
+    srcs = ["integration/symbols.py"],
     args = [
         "$(rlocationpath @host_tools//:llvm/bin/" + NM.split("/")[-1] + ")",
-        "$(rlocationpath :shared_linkage)",
-        "$(rlocationpath :shared_library_shared)",
+        "$(rlocationpath :shared)",
+        "$(rlocationpath //validation/data:binary)",
     ],
     data = [
-        ":shared_library_shared",
-        ":shared_linkage",
+        ":shared",
+        "//validation/data:binary",
         "@host_tools//:llvm/bin/" + NM.split("/")[-1],
     ],
     deps = ["@rules_python//python/runfiles"],
 )
 
+# The primary fixture publishes the component surface and the runtime graph
+# consumed by the temporary external workspace.
 package_release(
-    name = "sdk",
+    name = "fixture",
     testonly = True,
-    components = {":api": "api"},
+    component_dependencies = {
+        "api": ["public"],
+        "public": [],
+    },
+    components = {
+        "//validation/data:api": "api",
+        "//validation/data:public": "public",
+    },
     project = "toolchain_test",
-    shared = ":shared_library",
+    shared = "//validation/data:shared",
     sources = [":sources"],
-    static = ":static_implementation",
+    static = "//validation/data:static",
     tags = ["manual"],
 )
 
+# A separate release gives the consumer an explicit SDK dependency. Matching
+# runtime payloads then converge through archive metadata during import.
 package_release(
-    name = "project_sdk",
+    name = "dependency",
     testonly = True,
-    components = {":project_api": "api"},
-    shared = ":project_shared",
+    component_dependencies = {"api": []},
+    components = {"//validation/data:dependency_api": "api"},
+    shared = "//validation/data:dependency_shared",
     sources = [":sources"],
-    static = ":project_static",
+    static = "//validation/data:dependency_static",
     tags = ["manual"],
+)
+
+# The checksum output group is the release inventory consumed by sdk.py.
+filegroup(
+    name = "checksum",
+    testonly = True,
+    srcs = [":fixture"],
+    output_group = "checksum",
+)
+
+# This test creates a fresh Bazel workspace and consumes the candidate source
+# and binary archives through their public module extension.
+py_test(
+    name = "sdk",
+    size = "large",
+    srcs = ["integration/sdk.py"],
+    args = [
+        "$(rlocationpath //:sdk)",
+        "$(rlocationpath :checksum)",
+    ],
+    data = [
+        "integration/sdk.c",
+        ":checksum",
+        ":dependency",
+        ":fixture",
+        "//:sdk",
+        "//validation/data:sdk/BUILD.tpl",
+        "//validation/data:sdk/MODULE.tpl",
+        "//validation/data:sdk/dependency.tpl",
+        "//validation/data:sdk/source.tpl",
+    ],
+    deps = ["@rules_python//python/runfiles"],
+)
+
+# This target is the complete process, linkage and packaging boundary for a
+# Toolchain checkout. Its leaves stay individually runnable during diagnosis.
+test_suite(
+    name = "integration",
+    tests = [
+        ":components",
+        ":harness",
+        ":sdk",
+        ":shared",
+        ":static",
+        ":symbols",
+    ],
 )

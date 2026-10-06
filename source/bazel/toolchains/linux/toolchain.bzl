@@ -5,7 +5,7 @@
 The release CPU contract is x86-64-v3 with RDRAND. The SDK pins Ubuntu 22.04
 headers and libraries from the September 25, 2026 snapshot, using glibc 2.35
 and dynamic libstdc++. Platform implementations can select scalar algorithms
-without changing that published machine baseline.
+while preserving that published machine baseline.
 """
 
 load("@bazel_tools//tools/build_defs/cc:action_names.bzl", "ACTION_NAMES")

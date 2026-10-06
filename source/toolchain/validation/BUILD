@@ -8,7 +8,7 @@ cc_library(
         "benchmark.hpp",
         "clock.hpp",
         "harness.hpp",
-        "unit_test.hpp",
+        "test.hpp",
     ],
     includes = ["../.."],
 )
@@ -21,7 +21,7 @@ cc_library(
 
 cc_library(
     name = "test",
-    srcs = ["unit_test.cpp"],
+    srcs = ["test.cpp"],
     deps = [
         ":clock",
         ":headers",

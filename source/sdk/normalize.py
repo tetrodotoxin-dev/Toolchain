@@ -10,8 +10,8 @@ import sys
 
 
 def linux(root):
-    # Debian's absolute links describe the target filesystem. Point them into
-    # this sysroot so neither the linker nor Bazel can follow them into the host.
+    # Debian's absolute links describe the target filesystem. Repointing them
+    # into this sysroot keeps linker and Bazel resolution target-owned.
     for path in root.rglob("*"):
         if path.is_symlink():
             target = os.readlink(path)
@@ -69,8 +69,8 @@ def windows(root, virtual_root):
             path.rename(path.with_name(path.name.lower()))
 
     # Windows SDK headers use mixed spellings even within their own includes.
-    # A case insensitive compiler view preserves those names on Linux without
-    # duplicating files or changing the vendor headers.
+    # A case-insensitive compiler view preserves those names on Linux while
+    # retaining one copy of each vendor header.
     def directory(path, name):
         entries = []
         for child in sorted(path.iterdir()):

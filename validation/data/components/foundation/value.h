@@ -1,0 +1,8 @@
+// Copyright (c) 2023-present Matt Kaes and contributors
+
+#ifndef TOOLCHAIN_COMPONENTS_FOUNDATION_VALUE_H
+#define TOOLCHAIN_COMPONENTS_FOUNDATION_VALUE_H
+
+#define TOOLCHAIN_COMPONENT_FOUNDATION_VALUE 21
+
+#endif

@@ -1,5 +1,7 @@
 # Copyright (c) 2023-present Matt Kaes and contributors
 
+"""Import one packaged library and its component interfaces."""
+
 load("@rules_cc//cc:cc_import.bzl", "cc_import")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
@@ -58,7 +60,8 @@ filegroup(
 )
 
 # Components share the selected binary while keeping the aggregate header
-# interface private. Each virtual include tree contains only its own headers.
+# interface private. Scoped archives retain sibling edges and receive external
+# labels from the consuming module's component declarations.
 _COMPONENTS = {components}
 
 [
@@ -68,7 +71,7 @@ _COMPONENTS = {components}
         defines = select(component["defines"]),
         implementation_deps = [{library}],
         strip_include_prefix = "headers/include",
-        deps = {dependencies},
+        deps = component["dependencies"],
     )
     for name, component in _COMPONENTS.items()
 ]

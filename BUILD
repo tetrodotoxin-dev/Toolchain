@@ -1,6 +1,6 @@
 # Copyright (c) 2023-present Matt Kaes and contributors
 load("//source/bazel:toolchains/registry.bzl", "toolchains")
-load(":defs.bzl", "benchmarks", "tests")
+load(":defs.bzl", "vscode")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -8,9 +8,7 @@ exports_files(["defs.bzl"])
 
 toolchains()
 
-tests(srcs = ["//validation:unit_test.cpp"])
-
-benchmarks(srcs = ["//validation:benchmark.cpp"])
+vscode()
 
 filegroup(
     name = "sources",

@@ -5,52 +5,52 @@
       "name": "[Debug] Tests",
       "type": "lldb",
       "request": "launch",
-      "program": "${workspaceFolder}/.bin/bin/tests",
+      "program": "${workspaceFolder}/.bin/bin/validation/tests",
       "cwd": "${workspaceFolder}",
       "terminal": "integrated",
       "preLaunchTask": "[Debug] Build All",
       "sourceMap": {".": "${workspaceFolder}"},
       "windows": {
-        "program": "${workspaceFolder}/.bin/bin/tests.exe"
+        "program": "${workspaceFolder}/.bin/bin/validation/tests.exe"
       }
     },
     {
       "name": "[Release] Tests",
       "type": "lldb",
       "request": "launch",
-      "program": "${workspaceFolder}/.bin/bin/tests",
+      "program": "${workspaceFolder}/.bin/bin/validation/tests",
       "cwd": "${workspaceFolder}",
       "terminal": "integrated",
       "preLaunchTask": "[Release] Build All",
       "sourceMap": {".": "${workspaceFolder}"},
       "windows": {
-        "program": "${workspaceFolder}/.bin/bin/tests.exe"
+        "program": "${workspaceFolder}/.bin/bin/validation/tests.exe"
       }
     },
     {
       "name": "[Debug] Benchmarks",
       "type": "lldb",
       "request": "launch",
-      "program": "${workspaceFolder}/.bin/bin/benchmarks",
+      "program": "${workspaceFolder}/.bin/bin/validation/benchmarks",
       "cwd": "${workspaceFolder}",
       "terminal": "integrated",
       "preLaunchTask": "[Debug] Build All",
       "sourceMap": {".": "${workspaceFolder}"},
       "windows": {
-        "program": "${workspaceFolder}/.bin/bin/benchmarks.exe"
+        "program": "${workspaceFolder}/.bin/bin/validation/benchmarks.exe"
       }
     },
     {
       "name": "[Release] Benchmarks",
       "type": "lldb",
       "request": "launch",
-      "program": "${workspaceFolder}/.bin/bin/benchmarks",
+      "program": "${workspaceFolder}/.bin/bin/validation/benchmarks",
       "cwd": "${workspaceFolder}",
       "terminal": "integrated",
       "preLaunchTask": "[Release] Build All",
       "sourceMap": {".": "${workspaceFolder}"},
       "windows": {
-        "program": "${workspaceFolder}/.bin/bin/benchmarks.exe"
+        "program": "${workspaceFolder}/.bin/bin/validation/benchmarks.exe"
       }
     }
   ]

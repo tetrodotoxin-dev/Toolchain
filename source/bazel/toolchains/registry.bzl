@@ -3,7 +3,8 @@
 """Compose target-owned toolchains and the source distribution.
 
 Each target module owns its SDK repository, compiler configuration and root
-labels. This registry names the supported set without sharing their machinery.
+labels. This registry composes those public labels while each target retains its
+own machinery.
 """
 
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
@@ -11,8 +12,8 @@ load(":toolchains/linux/toolchain.bzl", "linux_targets")
 load(":toolchains/wasm/toolchain.bzl", "wasm_targets")
 load(":toolchains/windows/toolchain.bzl", "windows_targets")
 
-# The root bootstrap declares one fixed set of labels used by MODULE.bazel.
-# A caller supplied name would not control those platform and compiler labels.
+# The root bootstrap owns the fixed platform and compiler labels registered by
+# MODULE.bazel, so the declaration has one canonical name set.
 # buildifier: disable=unnamed-macro
 def toolchains():
     """Declare every supported target and the Toolchain source archive.

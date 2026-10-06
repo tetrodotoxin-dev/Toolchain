@@ -1,6 +1,6 @@
 # Copyright (c) 2023-present Matt Kaes and contributors
 
-"""Archive the exact files supplied by the release rule without running builds."""
+"""Archive the exact files already built and selected by the release rule."""
 
 import hashlib
 import json

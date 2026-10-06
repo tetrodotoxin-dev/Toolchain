@@ -2,17 +2,18 @@
 
 """Supply one LLVM distribution for the execution host and every target.
 
-Bazel verifies and caches the pinned archive. BAZEL_LLVM is an explicit local
-installation override for compiler development, with no automatic PATH fallback.
-Target SDKs remain separate inputs because the host chooses which tools run,
-while the target chooses the headers and libraries they consume.
+Bazel verifies and caches the pinned archive. BAZEL_LLVM is the explicit local
+installation override used for compiler development. Target SDKs remain
+separate inputs because the host chooses which tools run, while the target
+chooses the headers and libraries they consume.
 """
 
 _VERSION = "22.1.8"
 _RELEASE = "llvm-22.1.8-2"
 
-# These bundles contain compiler tools without choosing our target runtimes.
-# The Linux tools are static so they need no matching host development libraries.
+# These bundles own compiler executables, while each target toolchain selects
+# its runtime separately. Static Linux executables run on the supported host
+# directly.
 _DISTRIBUTIONS = {
     "linux": ("linux-amd64-musl", "7e40cc03fec925670e478abf1bf432918e7c8ef745941dbb23abbd860386f265"),
     "windows": ("windows-amd64", "5db93697f379d76fa8c97e17a9359f4e7458f0a15d8d03a7e2254a14d660a250"),
@@ -59,9 +60,9 @@ def _host(ctx):
         location = "llvm/bin/" + executable + suffix
         selected = ctx.path(location)
 
-        # llvm-ar also implements MSVC library mode under the llvm-lib name.
-        # Some distributions omit that alias. Create it outside the installation
-        # so an explicit local override remains untouched.
+        # llvm-ar implements MSVC library mode under the llvm-lib name. A local
+        # alias supplies that stable path while preserving an explicit LLVM
+        # installation exactly as selected.
         if executable == "llvm-lib" and not selected.exists:
             location = "llvm-lib" + suffix
             ctx.symlink(ctx.path("llvm/bin/llvm-ar" + suffix), location)
@@ -90,8 +91,8 @@ def _host(ctx):
     substitutions['["__TOOLS__"]'] = repr(tools)
     ctx.template("settings.bzl", ctx.attr._settings, substitutions = substitutions)
 
-    # Individual tools let tests declare their inputs without adding the whole
-    # compiler installation to their runfiles.
+    # Individual labels give tests exact executable runfiles; compiler actions
+    # receive the complete files group generated from TOOLS.
     ctx.template("BUILD.bazel", ctx.attr._build)
 
 host_tools = repository_rule(

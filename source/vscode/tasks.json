@@ -30,7 +30,7 @@
       "label": "[Debug] Tests",
       "type": "process",
       "command": "bazel",
-      "args": ["run", "//:tests", "--config=debug"],
+      "args": ["run", "//validation:tests", "--config=debug"],
       "group": "test",
       "problemMatcher": "$gcc"
     },
@@ -38,7 +38,15 @@
       "label": "[Release] Tests",
       "type": "process",
       "command": "bazel",
-      "args": ["run", "//:tests", "--config=release"],
+      "args": ["run", "//validation:tests", "--config=release"],
+      "group": "test",
+      "problemMatcher": "$gcc"
+    },
+    {
+      "label": "[Release] Integration",
+      "type": "process",
+      "command": "bazel",
+      "args": ["test", "//validation:integration", "--config=release"],
       "group": "test",
       "problemMatcher": "$gcc"
     },
@@ -46,14 +54,14 @@
       "label": "[Debug] Benchmarks",
       "type": "process",
       "command": "bazel",
-      "args": ["run", "//:benchmarks", "--config=debug"],
+      "args": ["run", "//validation:benchmarks", "--config=debug"],
       "problemMatcher": "$gcc"
     },
     {
       "label": "[Release] Benchmarks",
       "type": "process",
       "command": "bazel",
-      "args": ["run", "//:benchmarks", "--config=release"],
+      "args": ["run", "//validation:benchmarks", "--config=release"],
       "problemMatcher": "$gcc"
     }
   ]

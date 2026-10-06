@@ -14,7 +14,7 @@ LINUX = PLATFORMS["linux-x86_64-v3"].condition
 WEB = PLATFORMS["wasm32-emscripten"].condition
 WINDOWS = PLATFORMS["windows-x86_64-msvc"].condition
 
-def library(name = None, module = None, linkage = "static", components = {}, srcs = [], hdrs = [], includes = [], deps = [], defines = [], **kwargs):
+def library(name = None, module = None, linkage = "static", components = {}, component_deps = {}, srcs = [], hdrs = [], includes = [], deps = [], defines = [], **kwargs):
     """Compile a library and declare its component header interfaces.
 
     Components follow the source/<module>/<component> layout. Their dependency
@@ -27,7 +27,8 @@ def library(name = None, module = None, linkage = "static", components = {}, src
         module: Library identity and header directory, defaulting to the Bazel
             module name. Its uppercase spelling identifies EXPORTED(MODULE).
         linkage: Either static or shared, defaulting to static.
-        components: Component names mapped to their component dependencies.
+        components: Component names mapped to their sibling component dependencies.
+        component_deps: Component names mapped to external public dependencies.
         srcs: Implementation sources.
         hdrs: Public headers for the complete library.
         includes: Public include directories relative to this Bazel package.
@@ -38,6 +39,13 @@ def library(name = None, module = None, linkage = "static", components = {}, src
     module = module or native.module_name()
     if linkage not in ["static", "shared"]:
         fail("library linkage must be static or shared")
+    unknown = [component for component in component_deps if component not in components]
+    if unknown:
+        fail("component_deps names undeclared components: " + str(unknown))
+    for component, dependencies in components.items():
+        unknown = [dependency for dependency in dependencies if dependency not in components]
+        if unknown:
+            fail("component " + component + " names undeclared sibling components: " + str(unknown))
     common = {key: kwargs[key] for key in ["visibility", "testonly", "target_compatible_with", "compatible_with"] if key in kwargs}
     for component, dependencies in components.items():
         cc_library(
@@ -45,7 +53,7 @@ def library(name = None, module = None, linkage = "static", components = {}, src
             hdrs = native.glob([module + "/" + component + "/**/*.h", module + "/" + component + "/**/*.hpp"], allow_empty = True),
             includes = includes,
             defines = defines,
-            deps = [":" + dependency for dependency in dependencies] + deps + [Label("//source:headers")],
+            deps = [":" + dependency for dependency in dependencies] + component_deps.get(component, []) + [Label("//source:headers")],
             **common
         )
     compile_library = static_library if linkage == "static" else shared_library
@@ -100,7 +108,7 @@ def static_library(name, deps = [], project = None, defines = [], implementation
     )
 
 def _shared_runtime_impl(ctx):
-    """Expose the shared link's remaining dependencies without their headers.
+    """Expose the shared link's remaining binary dependencies.
 
     Args:
         ctx: Rule context selecting the completed cc_shared_library.
@@ -111,9 +119,9 @@ def _shared_runtime_impl(ctx):
     shared = ctx.attr.shared[CcSharedLibraryInfo]
     primary = ctx.attr.shared[DefaultInfo].files.to_list()
 
-    # The completed link already distinguishes embedded static code from the
-    # shared dependencies its consumers still need. Reuse that decision so an
-    # alwayslink implementation archive cannot be linked into consumers again.
+    # The completed link identifies embedded static code and the shared
+    # dependencies carried onward to consumers. Reusing that result keeps an
+    # alwayslink implementation archive inside its completed shared object.
     libraries = [library for library in shared.linker_input.libraries if (library.resolved_symlink_dynamic_library or library.dynamic_library) not in primary]
     inputs = [cc_common.create_linker_input(owner = ctx.label, libraries = depset(libraries))]
     inputs.extend([dependency.linker_input for dependency in shared.dynamic_deps.to_list()])
@@ -128,7 +136,7 @@ def shared_library(name, srcs = [], hdrs = [], deps = [], project = None, copts 
     """Compile a shared library and expose its headers and binary to consumers.
 
     PROJECT_EXPORT=1 belongs to this target's source compilation. Consumers
-    import EXPORTED(PROJECT) declarations with no additional definitions.
+    use the import form of each EXPORTED(PROJECT) declaration.
     Dependencies keep their own linkage and compilation settings.
 
     Args:
@@ -183,6 +191,11 @@ def shared_library(name, srcs = [], hdrs = [], deps = [], project = None, copts 
         visibility = ["//visibility:private"],
         **common
     )
+
+    # EXPORTED(project) defines the exact Windows export surface. This feature
+    # selection keeps annotated symbols authoritative, while the tag selects
+    # rules_cc's empty-DEF import-library path for cross builds. Linux resolves
+    # every shared symbol and finds packaged runtimes beside the primary binary.
     cc_shared_library(
         name = shared,
         deps = [":" + implementation],

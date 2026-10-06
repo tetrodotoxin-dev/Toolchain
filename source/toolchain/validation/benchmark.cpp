@@ -1,4 +1,4 @@
-// # Tetrodotoxin
+// # Toolchain
 // Copyright (c) 2023-present Matt Kaes and contributors
 
 #include "toolchain/validation/benchmark.hpp"
@@ -23,11 +23,9 @@ struct Instance {
   Benchmark::BenchmarkFunc run;
 };
 
-// Static registration allows for easily adding tests without requiring global
-// static clean up. 1k cases should be more than enough for any realistic test
-// suite but the number can always be expanded if required.
-// Every field is initialized before registration in other translation units.
-// constinit catches a member that would reset those registrations at startup.
+// Static storage gives registrations stable addresses for the process lifetime.
+// The fixed capacities bound startup and measurement work, while constinit
+// completes initialization before benchmark constructors begin registering.
 static constinit Instance benchmarks[1024] = {};
 static size_t count = 0;
 static uint64_t samples[4096];
@@ -43,12 +41,8 @@ auto Benchmark::create(const Harness& harness, Bytes<> name, BenchmarkFunc run)
   benchmarks[count++] = {&harness, name, run};
 }
 
-// Give benchmarks static storage for registering a single named counter. In the
-// future if we decide to expand this we can allow for multiple, but allowing a
-// bunch of high performance counters generically is outside of the scope of
-// this simple benchmark library.
-//
-// The counter is currently set for the entire benchmark suite.
+// One process-wide counter gives every reported row the same event unit. The
+// first registration establishes that unit for the complete benchmark suite.
 static constinit Bytes<> counter_name;
 static Benchmark::Counter counter = nullptr;
 
@@ -63,9 +57,8 @@ auto Benchmark::register_counter(Bytes<> name, Counter read) -> bool {
 }
 
 auto Benchmark::start_time() -> void {
-  // A benchmark may move its starting point past some local preparation in
-  // order to get a more focused measurement. Clear the old end as well so it
-  // cannot be paired with the replacement interval.
+  // A new start begins a focused interval and clears its end marker, pairing
+  // both timestamps with the current invocation.
   sample_start = time_ns();
   sample_end = 0;
 }
@@ -124,9 +117,8 @@ static auto average(size_t begin, size_t end) -> double {
 static auto measure(const Instance& benchmark, size_t width) -> void {
   const auto& harness = *benchmark.harness;
 
-  // Run once with the same setup and teardown as a measured invocation. This
-  // warms the code and its data before collecting the cost of repeated work.
-  // Both the warm up time and its counter changes stay outside the samples.
+  // One complete fixture invocation warms the code and data. Sample and counter
+  // collection begin with the following invocation.
   if (harness.setup) {
     harness.setup();
   }
@@ -144,14 +136,14 @@ static auto measure(const Instance& benchmark, size_t width) -> void {
       harness.setup();
     }
 
-    // Counter reads surround the whole body and stay outside its timed
-    // interval. A body can narrow that interval with `start_time` and
-    // `end_time`, while the counter still describes the full invocation.
+    // Counter reads bracket the complete body. The timed interval may select a
+    // narrower region while the event count continues to describe one complete
+    // invocation.
     const auto before = counter ? counter() : 0;
     Benchmark::start_time();
     benchmark.run();
 
-    // If no end was provided use now as the end time.
+    // A body that leaves its interval open receives its return time as the end.
     if (!sample_end) {
       Benchmark::end_time();
     }
@@ -161,8 +153,8 @@ static auto measure(const Instance& benchmark, size_t width) -> void {
       events += counter() - before;
     }
 
-    // Finish collecting the sample before tearing down its fixture. The run
-    // budget below includes fixture work, but the reported body time does not.
+    // The sample becomes final before fixture teardown. The run budget covers
+    // the complete fixture lifecycle, while the report presents the body span.
     if (harness.teardown) {
       harness.teardown();
     }
@@ -201,14 +193,10 @@ int main(int argc, const char* argv[]) {
     return 1;
   }
 
-  // Unit tests don't provide filtering to avoid bad habits around ignoring
-  // tests, but unlike unit tests a total benchmark suite can take several
-  // minutes to run.
-  //
-  // A prefix name can be used to select either a harness or an individual
-  // benchmark. Only the selected names are measured with a bad selection
-  // running nothing.
-  // One byte past the longest registered name is enough to reject an oversized
+  // An empty prefix selects the complete suite. A supplied prefix selects
+  // matching harnesses or individual benchmarks case-insensitively, and an
+  // unmatched prefix produces an empty measurement report.
+  // One byte past the longest registered name distinguishes an oversized
   // filter. argv supplies terminated strings, so short inputs stop at their
   // zero.
   size_t longest = 0;
@@ -238,7 +226,7 @@ int main(int argc, const char* argv[]) {
   output_name("Name", width);
   printf(" %10s %10s %10s", "Fast 10%", "Middle 80%", "Slow 10%");
 
-  // Log a counter if one was provided.
+  // A registered counter extends every row with its shared event unit.
   if (counter) {
     putchar(' ');
     for (size_t i = counter_name.size; i < 14; ++i) {
@@ -258,7 +246,7 @@ int main(int argc, const char* argv[]) {
       continue;
     }
 
-    // Preserve registration order. As in the unit runner, each transition to
+    // Preserve registration order. As in the test runner, each transition to
     // a different harness starts a new group and calls its `init` hook. Setup
     // and teardown belong to the individual invocations inside `measure`.
     if (active != benchmark.harness) {

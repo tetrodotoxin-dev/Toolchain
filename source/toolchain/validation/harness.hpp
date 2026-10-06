@@ -1,4 +1,4 @@
-// # Tetrodotoxin
+// # Toolchain
 // Copyright (c) 2023-present Matt Kaes and contributors
 
 #pragma once
@@ -10,8 +10,8 @@ namespace Toolchain::Validation {
 
 // Validation borrows bytes from the caller. Keeping the element type lets
 // hexadecimal reporting read those bytes through their original pointer.
-// Explicit ranges include every byte, including embedded zeros. A character
-// array lends its full extent except for a final string terminator.
+// Explicit ranges include every byte, including embedded zeros. A terminated
+// character array lends the elements preceding its terminator.
 template <typename Element = char>
   requires(__is_integral(Element) && sizeof(Element) == 1)
 struct Bytes {
@@ -48,8 +48,8 @@ constexpr auto bytes(Bytes<Element> value) -> Bytes<Element> {
 }
 
 // Assertion formatting borrows a contiguous byte observation. These overloads
-// accept a caller's byte view without making the runner depend on its type.
-// Wider elements leave formatting to the ordinary value fallback.
+// accept a caller's byte view while keeping the runner independent of its type.
+// Wider elements use the ordinary value fallback.
 template <typename T>
   requires requires(const T& value, size_t size) {
     Bytes{value.get_data(), size};

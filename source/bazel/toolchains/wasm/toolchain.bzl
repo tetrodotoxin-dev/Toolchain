@@ -16,8 +16,8 @@ def _sysroot(ctx):
         ctx: Repository context used to download and expose the headers.
     """
 
-    # Only the target headers are extracted. The compiler, linker and resource
-    # headers come from the selected LLVM distribution used for native builds.
+    # The sysroot archive contributes target headers. The selected LLVM
+    # distribution contributes the compiler, linker and resource headers.
     ctx.download_and_extract(
         url = "https://storage.googleapis.com/webassembly/emscripten-releases-builds/linux/c387d7a7e9537d0041d2c3ae71b7538cc978104e/wasm-binaries.tar.xz",
         sha256 = "a06e7ddda0c168f7ad52e6e0509c98db3545dcb254d3b9052e9e6b8423eaee7d",
@@ -73,8 +73,8 @@ def _config(ctx):
                     headers,
                 ])]),
                 flag_set(actions = [ACTION_NAMES.c_compile], flag_groups = [flag_group(flags = ["-xc", "-std=c23", "-isystem", headers])]),
-                # The embedding application supplies shared memory, table and runtime imports.
-                # Clang and LLD emit the module directly, without emcc wrappers.
+                # The embedding application supplies shared memory, table and
+                # runtime imports. Clang and LLD emit the module directly.
                 flag_set(actions = link_actions, flag_groups = [flag_group(flags = [
                     "-nostdlib",
                     "-Wl,--no-entry",
@@ -115,7 +115,7 @@ wasm_cc_toolchain_config = rule(
 )
 
 # These labels form the WebAssembly portion of Toolchain's root registration
-# surface and describe an Emscripten host rather than a native operating system.
+# surface for modules hosted by an Emscripten application.
 # buildifier: disable=unnamed-macro
 def wasm_targets():
     """Declare the Emscripten sysroot, compiler, platform and selection key."""

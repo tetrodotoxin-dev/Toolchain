@@ -1,4 +1,4 @@
-// # Tetrodotoxin
+// # Toolchain
 // Copyright (c) 2023-present Matt Kaes and contributors
 
 #pragma once
@@ -11,7 +11,7 @@ using BenchmarkFunc = void (*)();
 using Counter = unsigned long long (*)();
 
 // Register a body for repeated measurement. Its harness, name and callback
-// remain borrowed for the lifetime of the runner, as with unit tests.
+// remain borrowed for the lifetime of the runner, as with tests.
 auto create(const Harness& harness, Bytes<> name, BenchmarkFunc run) -> void;
 
 // The runner times the whole body by default. A body can call `start_time`
@@ -25,10 +25,10 @@ auto end_time() -> void;
 // Register one cumulative counter before `main` begins. The report shows its
 // change per invocation.
 // The name and callback remain borrowed. Once a counter is registered, another
-// registration returns false and preserves it. Reads bracket the whole body,
-// excluding fixture setup and teardown. Shortening the timed interval leaves
-// this counter interval unchanged, so time and event totals can cover different
-// amounts of work. The callback supplies the meaning of the counted events.
+// registration returns false and preserves it. Reads begin after fixture setup
+// and end before teardown, bracketing the whole body. A focused timed interval
+// keeps that counter interval intact, so time and event totals can cover
+// different amounts of work. The callback supplies the event meaning.
 auto register_counter(Bytes<> name, Counter read) -> bool;
 
 // Keep the result as an input and output of an opaque assembly statement so
