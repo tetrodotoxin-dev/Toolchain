@@ -64,6 +64,7 @@ VALIDATION_TEST(Reporting, failure) {
   EXPECT_EQ(false, true);
   EXPECT_EQ(1.25f, 0.0f);
   EXPECT_EQ(-2.5, 0.0);
+
   const int8_t small = -128;
   const uint64_t large = UINT64_MAX;
   EXPECT_EQ(small, 0);
@@ -71,16 +72,19 @@ VALIDATION_TEST(Reporting, failure) {
   EXPECT_EQ(SmallEnum::Negative, SmallEnum::Zero);
   EXPECT_EQ(SignedEnum::Minimum, SignedEnum::Zero);
   EXPECT_EQ(UnsignedEnum::Maximum, UnsignedEnum::Zero);
+
   const signed char actual[] = {0, 127, -1};
   const unsigned char expected[] = {0, 127, 0};
   EXPECT_HEX(
       (Bytes{actual, sizeof(actual)}), (Bytes{expected, sizeof(expected)}));
   EXPECT_TEXT("aXc!", "abc");
   EXPECT_TEXT("a\0X", "a\0b");
+
   const unsigned words[] = {1, 2};
   const Range<unsigned> range = {words, 2};
   EXPECT_EQ(range, (Range<unsigned>{words, 1}));
   EXPECT_EQ((Buffer<unsigned>{range}), (Buffer<unsigned>{{words, 1}}));
+
   const Buffer<char> text = {{"range", 5}};
   EXPECT_EQ(text, (Buffer<char>{{"other", 5}}));
   puts("continued after EXPECT");

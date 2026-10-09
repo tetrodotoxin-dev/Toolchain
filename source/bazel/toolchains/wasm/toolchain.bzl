@@ -59,6 +59,7 @@ def _config(ctx):
                     "-fvisibility=hidden",
                     "-fno-exceptions",
                     "-fno-rtti",
+                    "-Werror=missing-declarations",
                     "-msimd128",
                 ])]),
                 flag_set(actions = [ACTION_NAMES.cpp_compile], flag_groups = [flag_group(flags = [

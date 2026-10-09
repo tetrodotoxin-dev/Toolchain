@@ -6,7 +6,7 @@ exports_files(glob([
     "**/*.bzl",
     "**/*.py",
     "**/*.tpl",
-]))
+]) + ["rules/.clang-format.tpl"])
 
 filegroup(
     name = "sources",
@@ -14,5 +14,8 @@ filegroup(
         "**/*.bzl",
         "**/*.py",
         "**/*.tpl",
-    ]) + ["BUILD"],
+    ]) + [
+        "BUILD",
+        "rules/.clang-format.tpl",
+    ],
 )

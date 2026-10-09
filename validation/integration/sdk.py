@@ -17,6 +17,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import zipfile
 
@@ -104,6 +105,11 @@ def verify(toolchain, checksum_manifest):
     version = toolchain.name.removeprefix("tetro_toolchain-").removesuffix("-source.tar.gz")
     repository = Path(__file__).resolve().parents[2]
     sources = repository / "validation/data/sdk"
+    with tarfile.open(toolchain, "r:gz") as archive:
+        packaged_sources = set(archive.getnames())
+    assert "source/bazel/rules/.clang-format.tpl" in packaged_sources
+    assert ".clang-format" not in packaged_sources
+
     pins = {}
     for project in ["tetro_toolchain", "toolchain_test"]:
         prefix = project + "-" + version + "-"
@@ -168,6 +174,7 @@ def verify(toolchain, checksum_manifest):
         workspace.mkdir()
         (workspace / "source").mkdir()
         shutil.copyfile(sources / "source.tpl", workspace / "source/BUILD.bazel")
+        shutil.copyfile(sources / "style.cpp", workspace / "source/style.cpp")
         shutil.copyfile(repository / "validation/integration/sdk.c", workspace / "consumer.c")
         for linkage in ["static", "shared"]:
             values = {
@@ -183,6 +190,15 @@ def verify(toolchain, checksum_manifest):
             values["dependency_pin"] = substitute(values["dependency_pin"], values)
             for output, template in [("MODULE.bazel", "MODULE.tpl"), ("BUILD.bazel", "BUILD.tpl")]:
                 (workspace / output).write_text(substitute((sources / template).read_text(), values))
+            if linkage == "static":
+                for action in ["--all", "--check"]:
+                    subprocess.run([
+                        "bazel", "--batch", "--output_base=" + str(root / "bazel"),
+                        "run", "//:format", "--distdir=" + str(toolchain.parent),
+                        "--", action,
+                    ], cwd=workspace, check=True)
+                assert not (workspace / ".clang-format").exists()
+                print("Candidate formatter passed in the external consumer.", flush=True)
             subprocess.run([
                 "bazel", "--batch", "--output_base=" + str(root / "bazel"),
                 "test", "//:consumer", "//:component", "//:repack", "--nocache_test_results",

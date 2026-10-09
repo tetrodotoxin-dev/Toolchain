@@ -27,6 +27,21 @@
       "problemMatcher": "$gcc"
     },
     {
+      "label": "[Format] Current File",
+      "type": "process",
+      "command": "bazel",
+      "args": ["run", "//:format", "--", "${relativeFile}"],
+      "problemMatcher": "$gcc"
+    },
+    {
+      "label": "[Check] Source Style",
+      "type": "process",
+      "command": "bazel",
+      "args": ["run", "//:format", "--", "--check"],
+      "group": "test",
+      "problemMatcher": "$gcc"
+    },
+    {
       "label": "[Debug] Tests",
       "type": "process",
       "command": "bazel",

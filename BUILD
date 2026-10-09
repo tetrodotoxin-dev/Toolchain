@@ -1,12 +1,16 @@
 # Copyright (c) 2023-present Matt Kaes and contributors
 load("//source/bazel:toolchains/registry.bzl", "toolchains")
-load(":defs.bzl", "vscode")
+load(":defs.bzl", "format", "vscode")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files(["defs.bzl"])
+exports_files([
+    "defs.bzl",
+])
 
 toolchains()
+
+format()
 
 vscode()
 
@@ -15,7 +19,6 @@ filegroup(
     srcs = [
         ".bazelrc",
         ".bazelversion",
-        ".clang-format",
         "BUILD",
         "LICENSE",
         "MODULE.bazel",

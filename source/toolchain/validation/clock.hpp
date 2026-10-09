@@ -8,6 +8,9 @@
 namespace Toolchain::Validation {
 
 // Monotonic time keeps clock adjustments out of test deadlines and samples.
-auto time_ns() -> uint64_t;
+class Clock {
+ public:
+  auto time_ns() const -> uint64_t;
+};
 
 }  // namespace Toolchain::Validation

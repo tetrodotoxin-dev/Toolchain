@@ -17,6 +17,7 @@ static const char* dim_color = getenv("NO_COLOR") ? "" : "\x1b[38;5;246m";
 static const char* pass_color = getenv("NO_COLOR") ? "" : "\x1b[38;5;34m";
 static const char* fail_color = getenv("NO_COLOR") ? "" : "\x1b[38;5;160m";
 static const char* skip_color = getenv("NO_COLOR") ? "" : "\x1b[38;5;178m";
+static Clock monotonic_clock;
 
 struct Instance {
   const Harness* harness;
@@ -40,12 +41,12 @@ static uint64_t count = 0;
 
 // Registration order defines execution order. Reaching the fixed capacity is a
 // suite configuration error, so registration reports it and terminates startup.
-auto Test::create(
+Test::Test(
     const Harness& harness,
     Bytes<> name,
     TestFunc run,
     Bytes<> file,
-    uint64_t line) -> void {
+    uint64_t line) {
   if (count == sizeof(tests) / sizeof(*tests)) {
     fputs(
         "Validation registration capacity exceeded the 4096 test limit.\n",
@@ -83,6 +84,7 @@ auto Test::print_character(unsigned byte, bool different) -> void {
   if (different) {
     fputs(fail_color, stdout);
   }
+
   fputc(byte, stdout);
   if (different) {
     fputs(clear_color, stdout);
@@ -112,7 +114,7 @@ int main(int argc, const char* argv[]) {
   }
 
   const Harness* active = nullptr;
-  const uint64_t started = time_ns();
+  const uint64_t started = monotonic_clock.time_ns();
   if (!silent) {
     output_break();
     printf(
@@ -144,7 +146,7 @@ int main(int argc, const char* argv[]) {
       active->setup();
     }
 
-    const uint64_t begin = time_ns();
+    const uint64_t begin = monotonic_clock.time_ns();
 
     // Assertion macros write one stack result initialized to Pass. This keeps
     // result control flow in the runner while ASSERT may still return from the
@@ -152,7 +154,8 @@ int main(int argc, const char* argv[]) {
     Test::TestResult result = Test::TestResult::Pass;
     test.run(result);
 
-    const double milliseconds = (time_ns() - begin) / 1'000'000.0;
+    const double milliseconds =
+        (monotonic_clock.time_ns() - begin) / 1'000'000.0;
 
     // The registration already carries the test's name and source location.
     // Keep its outcome and timing there too so the final report can point to
@@ -197,6 +200,7 @@ int main(int argc, const char* argv[]) {
       for (auto padding = test.name.size; padding < width + 2; ++padding) {
         putchar(' ');
       }
+
       printf("%s  (%g ms)%s\n", dim_color, milliseconds, clear_color);
     }
   }
@@ -207,7 +211,7 @@ int main(int argc, const char* argv[]) {
 
   // Overall time includes the harness work and individual test output. Stop
   // that measurement before formatting the final report.
-  const double total_ms = (time_ns() - started) / 1'000'000.0;
+  const double total_ms = (monotonic_clock.time_ns() - started) / 1'000'000.0;
   if (!silent) {
     output_break();
 

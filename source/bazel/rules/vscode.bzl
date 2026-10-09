@@ -55,6 +55,7 @@ def vscode(name = "vscode"):
     The shared files run //validation:tests, //validation:benchmarks and
     //validation:integration. Debug and Release profiles build all targets in
     the selected mode, then launch either executable under CodeLLDB.
+    Formatting tasks use //:format so MODULE.bazel supplies SDK include order.
     IntelliSense uses source/ for the project's public include paths and
     Bazel's generated include trees under .bin/bin for dependencies.
     Repeating the command replaces these shared configuration files with the

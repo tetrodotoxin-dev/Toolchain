@@ -3,6 +3,7 @@
 """Public build declarations for Toolchain consumers."""
 
 load("//source/bazel:package.bzl", _package = "package")
+load("//source/bazel:rules/format.bzl", _format = "format")
 load("//source/bazel:rules/library.bzl", _LINUX = "LINUX", _WEB = "WEB", _WINDOWS = "WINDOWS", _library = "library")
 load("//source/bazel:rules/validation.bzl", _benchmarks = "benchmarks", _tests = "tests")
 load("//source/bazel:rules/vscode.bzl", _vscode = "vscode")
@@ -12,6 +13,7 @@ WEB = _WEB
 WINDOWS = _WINDOWS
 library = _library
 package = _package
+format = _format
 benchmarks = _benchmarks
 tests = _tests
 vscode = _vscode

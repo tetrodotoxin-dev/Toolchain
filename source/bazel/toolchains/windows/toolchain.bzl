@@ -77,6 +77,7 @@ def windows_toolchain_config():
             "/D_CRT_SECURE_NO_WARNINGS",
             "/clang:-fno-exceptions",
             "/clang:-fno-rtti",
+            "/clang:-Werror=missing-declarations",
         ] + ["/imsvc" + Label("@windows_sdk//:files").workspace_root + "/include/" + part for part in [
             "crt",
             "ucrt",

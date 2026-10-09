@@ -34,6 +34,7 @@ constexpr auto convert_cstring(const char* text, size_t capacity) -> Bytes<> {
   while (size < capacity && text[size]) {
     ++size;
   }
+
   return {text, size};
 }
 
@@ -55,7 +56,8 @@ template <typename T>
     Bytes{value.get_data(), size};
     size = value.get_size();
   }
-inline auto bytes(const T& value) {
+inline auto bytes(const T& value)
+    -> decltype(Bytes{value.get_data(), size_t{}}) {
   const size_t size = value.get_size();
   return Bytes{value.get_data(), size};
 }

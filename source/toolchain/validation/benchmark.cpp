@@ -3,9 +3,10 @@
 
 #include "toolchain/validation/benchmark.hpp"
 
-#include <algorithm>
 #include <stdio.h>
 #include <stdlib.h>
+
+#include <algorithm>
 
 #include "toolchain/validation/clock.hpp"
 
@@ -16,6 +17,7 @@ static const char* heading_color = getenv("NO_COLOR") ? "" : "\x1b[38;5;124m";
 static const char* dim_color = getenv("NO_COLOR") ? "" : "\x1b[38;5;246m";
 static const char* fast_color = getenv("NO_COLOR") ? "" : "\x1b[38;5;34m";
 static const char* slow_color = getenv("NO_COLOR") ? "" : "\x1b[38;5;160m";
+static Clock monotonic_clock;
 
 struct Instance {
   const Harness* harness;
@@ -31,8 +33,8 @@ static size_t count = 0;
 static uint64_t samples[4096];
 static uint64_t sample_start = 0;
 static uint64_t sample_end = 0;
-auto Benchmark::create(const Harness& harness, Bytes<> name, BenchmarkFunc run)
-    -> void {
+
+Benchmark::Benchmark(const Harness& harness, Bytes<> name, BenchmarkFunc run) {
   if (count == sizeof(benchmarks) / sizeof(*benchmarks)) {
     fputs("Benchmark registration capacity exceeded.\n", stderr);
     abort();
@@ -41,7 +43,7 @@ auto Benchmark::create(const Harness& harness, Bytes<> name, BenchmarkFunc run)
   benchmarks[count++] = {&harness, name, run};
 }
 
-// One process-wide counter gives every reported row the same event unit. The
+// One process wide counter gives every reported row the same event unit. The
 // first registration establishes that unit for the complete benchmark suite.
 static constinit Bytes<> counter_name;
 static Benchmark::Counter counter = nullptr;
@@ -59,12 +61,12 @@ auto Benchmark::register_counter(Bytes<> name, Counter read) -> bool {
 auto Benchmark::start_time() -> void {
   // A new start begins a focused interval and clears its end marker, pairing
   // both timestamps with the current invocation.
-  sample_start = time_ns();
+  sample_start = monotonic_clock.time_ns();
   sample_end = 0;
 }
 
 auto Benchmark::end_time() -> void {
-  sample_end = time_ns();
+  sample_end = monotonic_clock.time_ns();
 }
 
 static auto output_break() -> void {
@@ -77,15 +79,18 @@ static auto matches(Bytes<> name, Bytes<> prefix) -> bool {
   if (prefix.size > name.size) {
     return false;
   }
+
   for (size_t i = 0; i < prefix.size; ++i) {
     auto left = name.data[i];
     auto right = prefix.data[i];
     if (left >= 'A' && left <= 'Z') {
       left += 'a' - 'A';
     }
+
     if (right >= 'A' && right <= 'Z') {
       right += 'a' - 'A';
     }
+
     if (left != right) {
       return false;
     }
@@ -98,6 +103,7 @@ static auto output_name(Bytes<> name, size_t width = 0) -> void {
   if (name.size) {
     fwrite(name.data, 1, name.size, stdout);
   }
+
   for (size_t i = name.size; i < width; ++i) {
     putchar(' ');
   }
@@ -130,7 +136,7 @@ static auto measure(const Instance& benchmark, size_t width) -> void {
 
   size_t sample_count = 0;
   unsigned long long events = 0;
-  const uint64_t started = time_ns();
+  const uint64_t started = monotonic_clock.time_ns();
   while (sample_count < sizeof(samples) / sizeof(*samples)) {
     if (harness.setup) {
       harness.setup();
@@ -162,7 +168,8 @@ static auto measure(const Instance& benchmark, size_t width) -> void {
     // Check elapsed time once per sixteen samples to limit clock overhead for
     // short bodies. This is a soft budget: every invocation finishes, and at
     // least sixteen samples are collected even when a benchmark is slow.
-    if (!(sample_count & 15) && time_ns() - started >= 1'500'000'000) {
+    if (!(sample_count & 15) &&
+        monotonic_clock.time_ns() - started >= 1'500'000'000) {
       break;
     }
   }
@@ -172,6 +179,7 @@ static auto measure(const Instance& benchmark, size_t width) -> void {
   // With at least sixteen samples, all three groups are nonempty and every
   // sample contributes to exactly one mean.
   std::sort(samples, samples + sample_count);
+
   const size_t tenth = sample_count / 10;
   fputs("  ", stdout);
   output_name(benchmark.name, width);
@@ -194,7 +202,7 @@ int main(int argc, const char* argv[]) {
   }
 
   // An empty prefix selects the complete suite. A supplied prefix selects
-  // matching harnesses or individual benchmarks case-insensitively, and an
+  // matching harnesses or individual benchmarks regardless of case, and an
   // unmatched prefix produces an empty measurement report.
   // One byte past the longest registered name distinguishes an oversized
   // filter. argv supplies terminated strings, so short inputs stop at their
@@ -205,6 +213,7 @@ int main(int argc, const char* argv[]) {
         longest,
         std::max(benchmarks[i].name.size, benchmarks[i].harness->name.size));
   }
+
   const Bytes<> filter =
       argc == 2 ? convert_cstring(argv[1], longest + 1) : Bytes<>{};
   size_t width = 26;
@@ -232,6 +241,7 @@ int main(int argc, const char* argv[]) {
     for (size_t i = counter_name.size; i < 14; ++i) {
       putchar(' ');
     }
+
     output_name(counter_name);
   }
 

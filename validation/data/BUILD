@@ -6,6 +6,7 @@ package(default_visibility = ["//validation:__pkg__"])
 
 exports_files([
     "harness/reporting.cpp",
+    "sdk/style.cpp",
 ] + glob(["sdk/*.tpl"]))
 
 filegroup(

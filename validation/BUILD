@@ -47,6 +47,15 @@ py_test(
     deps = ["@rules_python//python/runfiles"],
 )
 
+py_test(
+    name = "format",
+    size = "small",
+    srcs = ["integration/format.py"],
+    args = ["$(rlocationpath //:format)"],
+    data = ["//:format"],
+    deps = ["@rules_python//python/runfiles"],
+)
+
 # These native leaves prove the component graph and both library linkages in the
 # current checkout before archive construction adds another repository boundary.
 cc_test(
@@ -148,6 +157,7 @@ py_test(
         "//validation/data:sdk/MODULE.tpl",
         "//validation/data:sdk/dependency.tpl",
         "//validation/data:sdk/source.tpl",
+        "//validation/data:sdk/style.cpp",
     ],
     deps = ["@rules_python//python/runfiles"],
 )
@@ -158,6 +168,7 @@ test_suite(
     name = "integration",
     tests = [
         ":components",
+        ":format",
         ":harness",
         ":sdk",
         ":shared",

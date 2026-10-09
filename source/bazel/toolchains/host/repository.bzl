@@ -43,6 +43,7 @@ def _host(ctx):
     executables = {
         "CXX": "clang++",
         "CLANG": "clang-cl",
+        "CLANG_FORMAT": "clang-format",
         "CPP": "clang-cpp",
         "LINKER": "lld-link",
         "ELF_LINKER": "ld.lld",

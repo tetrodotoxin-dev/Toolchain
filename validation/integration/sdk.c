@@ -55,20 +55,27 @@
 #endif
 
 #if defined(__linux__)
+
 // The public linker option redirects this declaration to the wrapper, proving
 // that release metadata carries the consumer's required link behavior.
 int toolchain_link_probe(void);
 int __wrap_toolchain_link_probe(void) {
   return TOOLCHAIN_TEST_VALUE;
 }
+
 #endif
 
 int main(void) {
   const int valid = toolchain_c_entry(20) == TOOLCHAIN_TEST_VALUE &&
                     toolchain_cpp_entry(21) == 42;
+
 #if defined(__linux__)
+
   return valid && toolchain_link_probe() == TOOLCHAIN_TEST_VALUE ? 0 : 1;
+
 #else
+
   return valid ? 0 : 1;
+
 #endif
 }

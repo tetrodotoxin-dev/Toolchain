@@ -101,7 +101,7 @@ def _impl(ctx):
             feature(name = "supports_pic", enabled = True),
             _flags("target_sdk", _COMPILE + _LINK, ["--target=" + _TARGET_TRIPLE, "--sysroot=" + sdk, "--gcc-install-dir=" + sdk + "/" + _GCC_DIRECTORY]),
             feature(name = "pic", enabled = True, flag_sets = [flag_set(actions = _COMPILE, flag_groups = [flag_group(flags = ["-fPIC"], expand_if_available = "pic")])]),
-            _flags("common_compile", _COMPILE, ["-Wall", "-Werror", "-fvisibility=hidden", "-fno-exceptions", "-fno-rtti", "-march=x86-64-v3", "-mrdrnd", "-no-canonical-prefixes", "-resource-dir", RESOURCE_INCLUDE.removesuffix("/include")]),
+            _flags("common_compile", _COMPILE, ["-Wall", "-Werror", "-Wmissing-declarations", "-fvisibility=hidden", "-fno-exceptions", "-fno-rtti", "-march=x86-64-v3", "-mrdrnd", "-no-canonical-prefixes", "-resource-dir", RESOURCE_INCLUDE.removesuffix("/include")]),
             _flags("cpp_language", [ACTION_NAMES.cpp_compile], ["-std=c++26", "-fvisibility-inlines-hidden"]),
             _flags("c_language", [ACTION_NAMES.c_compile], ["-xc", "-std=c23"]),
             _flags("opt", _COMPILE, ["-O3", "-DNDEBUG"], False),

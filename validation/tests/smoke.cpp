@@ -41,6 +41,7 @@ VALIDATION_TEST(Assertions, single_evaluation) {
   ASSERT_EQ(fixture.initializations, 1u);
   ASSERT_EQ(fixture.setups, fixture.teardowns + 1);
   ASSERT_EQ(fixture.value, 0);
+
   auto& actual = fixture.value;
   int expected = 0;
   EXPECT_EQ(++actual, ++expected);
@@ -66,6 +67,7 @@ VALIDATION_TEST(Assertions, bounded_strings) {
   EXPECT_TEXT(convert_cstring(text, 1), "a");
   EXPECT_TEXT(convert_cstring(unterminated, sizeof(unterminated)), "abc");
   EXPECT(Test::equal_bytes(convert_cstring(nullptr, 0), {}));
+
   const char embedded[] = {'a', 0, 'b'};
   EXPECT_HEX(bytes("a\0b"), (Bytes{embedded, sizeof(embedded)}));
 }

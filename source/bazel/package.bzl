@@ -420,7 +420,7 @@ def package_release(name, static = None, shared = None, project = None, platform
         project = project or native.module_name(),
         platforms = selected,
         version = native.module_version(),
-        sources = sources if sources != None else native.glob(["source/**", "validation/**"], allow_empty = True) + ["//" + package + ":sources" for package in native.subpackages(include = ["source", "validation", "tests", "benchmarks"], allow_empty = True)] + ["BUILD", "MODULE.bazel", "LICENSE", ".bazelrc", ".bazelversion", ".clang-format"],
+        sources = sources if sources != None else native.glob(["source/**", "validation/**", "toolchain.json"], allow_empty = True) + ["//" + package + ":sources" for package in native.subpackages(include = ["source", "validation", "tests", "benchmarks"], allow_empty = True)] + ["BUILD", "MODULE.bazel", "LICENSE", ".bazelrc", ".bazelversion"],
         **kwargs
     )
 

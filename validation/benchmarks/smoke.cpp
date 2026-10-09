@@ -39,9 +39,11 @@ static Harness Arithmetic = {
         if (fixture.ready) {
           ++fixture.errors;
         }
+
         for (unsigned i = 0; i < 64; ++i) {
           fixture.values[i] = i;
         }
+
         fixture.ready = true;
         ++fixture.setups;
       },
@@ -50,6 +52,7 @@ static Harness Arithmetic = {
         if (!fixture.ready) {
           ++fixture.errors;
         }
+
         fixture.ready = false;
         ++fixture.teardowns;
       },
@@ -59,10 +62,12 @@ static auto sum() -> unsigned {
   if (!fixture.ready || !registered || fixture.initializations != 1) {
     ++fixture.errors;
   }
+
   unsigned total = 0;
   for (const auto value : fixture.values) {
     total += value;
   }
+
   ++fixture.runs;
   fixture.events += 2;
   return total;
@@ -75,6 +80,7 @@ VALIDATION_BENCHMARK(Arithmetic, sum) {
 
 VALIDATION_BENCHMARK(Arithmetic, timed_sum) {
   Benchmark::start_time();
+
   auto total = sum();
   Benchmark::prevent_optimization(total);
   Benchmark::end_time();
