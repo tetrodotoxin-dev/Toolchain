@@ -34,6 +34,7 @@ PLATFORM_INCLUDE = re.compile(
     r"^\s*#\s*include\s*[<\"](?:windowsx?\.h|unistd\.h|poll\.h|dlfcn\.h|"
     r"sys/|linux/|wayland|mach/|CoreFoundation/|emscripten(?:\.h|/))"
 )
+SYSTEM_INCLUDE = re.compile(r"^\s*#\s*include\s*<([^>]+)>")
 COMMENT_PHRASES = re.compile(
     r"\b(?:simply|obvious(?:ly)?|seamless(?:ly)?|"
     r"leverag(?:e|es|ed|ing)|utiliz(?:e|es|ed|ing))\b",
@@ -378,6 +379,19 @@ def platform_header_errors(path, source):
                 errors.append(
                     f"{path}:{line}: public headers express one target independent contract"
                 )
+    return errors
+
+
+def system_include_errors(path, source, code):
+    """Keep system includes on the compact C header surface."""
+    errors = []
+    for line, text in enumerate(code.splitlines(), 1):
+        include = SYSTEM_INCLUDE.match(text)
+        if include and not include.group(1).endswith(".h"):
+            errors.append(
+                f"{path}:{line}: system includes use C headers ending in '.h'; "
+                "C++ library headers expand the compilation surface"
+            )
     return errors
 
 
@@ -1135,6 +1149,7 @@ def source_errors(path, root, raw_allocation_files, namespace_roots):
         + qualified_namespace_errors(path, source, code, namespace_roots)
         + implementation_header_errors(path, root, source)
         + platform_header_errors(path, source)
+        + system_include_errors(path, source, code)
         + comment_errors(path, source, comments)
         + declaration_errors(path, source, code)
         + trailing_return_errors(path, source, code)

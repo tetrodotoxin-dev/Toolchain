@@ -6,8 +6,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include <algorithm>
-
 #include "toolchain/validation/clock.hpp"
 
 using namespace Toolchain::Validation;
@@ -120,6 +118,23 @@ static auto average(size_t begin, size_t end) -> double {
   return total / (end - begin) / 1000;
 }
 
+static auto sort_samples(size_t size) -> void {
+  // Halving gaps keep report preparation bounded while the final unit gap
+  // establishes the exact order used by the percentile groups.
+  for (size_t gap = size / 2; gap; gap /= 2) {
+    for (size_t index = gap; index < size; ++index) {
+      const uint64_t selected = samples[index];
+      size_t cursor = index;
+      while (cursor >= gap && samples[cursor - gap] > selected) {
+        samples[cursor] = samples[cursor - gap];
+        cursor -= gap;
+      }
+
+      samples[cursor] = selected;
+    }
+  }
+}
+
 static auto measure(const Instance& benchmark, size_t width) -> void {
   const auto& harness = *benchmark.harness;
 
@@ -178,7 +193,7 @@ static auto measure(const Instance& benchmark, size_t width) -> void {
   // group down to a whole sample and keep the remainder in the middle.
   // With at least sixteen samples, all three groups are nonempty and every
   // sample contributes to exactly one mean.
-  std::sort(samples, samples + sample_count);
+  sort_samples(sample_count);
 
   const size_t tenth = sample_count / 10;
   fputs("  ", stdout);
@@ -209,9 +224,13 @@ int main(int argc, const char* argv[]) {
   // zero.
   size_t longest = 0;
   for (size_t i = 0; i < count; ++i) {
-    longest = std::max(
-        longest,
-        std::max(benchmarks[i].name.size, benchmarks[i].harness->name.size));
+    if (benchmarks[i].name.size > longest) {
+      longest = benchmarks[i].name.size;
+    }
+
+    if (benchmarks[i].harness->name.size > longest) {
+      longest = benchmarks[i].harness->name.size;
+    }
   }
 
   const Bytes<> filter =

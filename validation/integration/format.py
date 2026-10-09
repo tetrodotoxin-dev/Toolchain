@@ -59,7 +59,6 @@ if __name__ == "__main__":
         includes.write_text(
             '#include "zeta/value.hpp"\n\n'
             '#include "foundation/value.hpp"\n\n'
-            "#include <vector>\n\n"
             '#include "includes.hpp"\n\n'
             '#include "runtime/value.hpp"\n\n'
             "#include <stdio.h>\n\n"
@@ -70,13 +69,23 @@ if __name__ == "__main__":
         assert includes.read_text() == (
             '#include "includes.hpp"\n\n'
             "#include <stdio.h>\n\n"
-            "#include <vector>\n\n"
             '#include "toolchain/export.h"\n\n'
             '#include "runtime/value.hpp"\n\n'
             '#include "foundation/value.hpp"\n\n'
             '#include "alpha/value.hpp"\n'
             '#include "zeta/value.hpp"\n'
         )
+
+        cpp_system_header = source / "cpp_system_header.cpp"
+        cpp_system_header.write_text("#include <vector>\n")
+        result = run(
+            formatter,
+            root,
+            "source/cpp_system_header.cpp",
+            status=1,
+        )
+        assert "C headers ending in '.h'" in result.stderr
+        cpp_system_header.unlink()
         assert not (root / ".clang-format").exists()
 
         header = source / "valid.hpp"

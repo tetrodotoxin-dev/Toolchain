@@ -16,19 +16,17 @@ KeepEmptyLines:
   AtStartOfFile: false
 
 # Include order follows one SDK-neutral sequence: the matching header, C system
-# headers, C++ system headers, declared SDKs, then local headers. //:format
-# generates the dependency buckets from MODULE.bazel in declaration order.
+# headers, declared SDKs, then local headers. //:format generates the dependency
+# buckets from MODULE.bazel in declaration order.
 IncludeBlocks: Regroup
 # SDK dependency include buckets begin.
 IncludeCategories:
   - Regex:      '^<.*\.h>'
     Priority:   1
-  - Regex:      '^<.*>'
-    Priority:   2
   - Regex:      '^".*"'
-    Priority:   3
+    Priority:   2
   - Regex:      '.*'
-    Priority:   4
+    Priority:   3
 # SDK dependency include buckets end.
 SortIncludes: CaseSensitive
 

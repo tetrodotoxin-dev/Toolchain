@@ -111,10 +111,8 @@ def configuration(projects):
         "IncludeCategories:",
         "  - Regex:      '^<.*\\.h>'",
         "    Priority:   1",
-        "  - Regex:      '^<.*>'",
-        "    Priority:   2",
     ]
-    priority = 3
+    priority = 2
     for project in projects:
         categories.extend([
             "  - Regex:      '^\"" + re.escape(project) + "/'",

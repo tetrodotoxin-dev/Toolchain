@@ -1,8 +1,12 @@
 // # Toolchain
 // Copyright (c) 2023-present Matt Kaes and contributors
 
-#include <chrono>
-#include <thread>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <errno.h>
+#include <time.h>
+#endif
 
 #include "toolchain/validation/test.hpp"
 
@@ -52,11 +56,26 @@ static Harness Reporting = {
   .teardown = [] { ++fixture.teardowns; },
 };
 
+static auto wait_for_warning_threshold() -> void {
+
+#ifdef _WIN32
+
+  Sleep(1100);
+
+#else
+
+  timespec remaining = {.tv_sec = 1, .tv_nsec = 100'000'000};
+  while (nanosleep(&remaining, &remaining) != 0 && errno == EINTR) {
+  }
+
+#endif
+}
+
 VALIDATION_TEST(Reporting, slow_pass) {
   // Exercise the real clock with enough margin to pass the one second warning
   // threshold. The checker asserts the warning while accepting the measured
   // duration supplied by the host clock.
-  std::this_thread::sleep_for(std::chrono::milliseconds(1100));
+  wait_for_warning_threshold();
   EXPECT(true);
 }
 
