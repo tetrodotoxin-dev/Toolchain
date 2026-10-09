@@ -289,8 +289,18 @@ def namespace_errors(path, source, code):
         elif path.suffix in IMPLEMENTATIONS and not MODULE_NAMESPACE.fullmatch(
             match.group(1).strip()
         ):
+            parts = re.findall(
+                r"[A-Za-z_][A-Za-z0-9_]*", match.group(1)
+            )
+            correction = (
+                f"; replace this declaration with 'using namespace "
+                f"{parts[0]}::{parts[1]};'"
+                if len(parts) > 2
+                else ""
+            )
             errors.append(
-                f"{path}:{line}: implementation imports use 'using namespace SDK::Module;'"
+                f"{path}:{line}: implementation imports use "
+                f"'using namespace SDK::Module;'{correction}"
             )
 
     if path.suffix in IMPLEMENTATIONS:
@@ -298,6 +308,35 @@ def namespace_errors(path, source, code):
             errors.append(
                 f"{path}:{line_at(source, match.start())}: implementation namespace access uses 'using namespace SDK::Module;'"
             )
+    return errors
+
+
+def qualified_namespace_errors(path, source, code, namespace_roots):
+    """Require implementation references to enter through module imports."""
+    if path.suffix not in IMPLEMENTATIONS or not namespace_roots:
+        return []
+    imported = [match.span() for match in USING_NAMESPACE.finditer(code)]
+    roots = "|".join(re.escape(root) for root in sorted(namespace_roots))
+    qualified = re.compile(
+        r"\b(" + roots + r")\s*::\s*([A-Za-z_][A-Za-z0-9_]*)\s*::"
+    )
+    errors = []
+    reported = set()
+    for match in qualified.finditer(code):
+        if any(start <= match.start() < end for start, end in imported):
+            continue
+        module = (match.group(1), match.group(2))
+        if module in reported:
+            continue
+        reported.add(module)
+        namespace = "::".join(module)
+        errors.append(
+            f"{path}:{line_at(source, match.start())}: import '{namespace}' with "
+            f"'using namespace {namespace};' and remove the '{namespace}::' "
+            "prefix from references in this implementation. A naming collision "
+            "between module imports exposes an architectural concept collision; "
+            "rename the concept or place the conflicting class in its owning module"
+        )
     return errors
 
 
@@ -1087,12 +1126,13 @@ def format_source(path):
         path.write_text(source)
 
 
-def source_errors(path, root, raw_allocation_files):
+def source_errors(path, root, raw_allocation_files, namespace_roots):
     source = path.read_text()
     code, comments = lexical(source)
     return (
         header_identity_errors(path, source, code)
         + namespace_errors(path, source, code)
+        + qualified_namespace_errors(path, source, code, namespace_roots)
         + implementation_header_errors(path, root, source)
         + platform_header_errors(path, source)
         + comment_errors(path, source, comments)

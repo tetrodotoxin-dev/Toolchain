@@ -93,10 +93,15 @@ def sdk_projects(root):
         project = project.lower().replace("-", "_").replace(".", "_")
         if project != local and project not in projects:
             projects.append(project)
-    return projects
+    return local, projects
 
 
-def configuration(root):
+def namespace_name(project):
+    """Convert an SDK project identity to its C++ namespace root."""
+    return "".join(word[:1].upper() + word[1:] for word in project.split("_"))
+
+
+def configuration(projects):
     """Generate clang-format include buckets from the repository module."""
     source = CONFIGURATION.read_text()
     begin = source.index(BUCKETS_BEGIN)
@@ -110,7 +115,7 @@ def configuration(root):
         "    Priority:   2",
     ]
     priority = 3
-    for project in sdk_projects(root):
+    for project in projects:
         categories.extend([
             "  - Regex:      '^\"" + re.escape(project) + "/'",
             "    Priority:   " + str(priority),
@@ -200,7 +205,12 @@ def main():
         parser.error("Bazel must supply BUILD_WORKSPACE_DIRECTORY")
     root = Path(workspace).resolve()
     try:
-        expected_configuration = configuration(root)
+        local_project, dependency_projects = sdk_projects(root)
+        expected_configuration = configuration(dependency_projects)
+        namespace_roots = {
+            namespace_name(project)
+            for project in [local_project] + dependency_projects
+        }
         raw_allocation_files = policy(root)
     except (json.JSONDecodeError, OSError, SyntaxError, ValueError) as error:
         parser.error(str(error))
@@ -239,7 +249,9 @@ def main():
             format_source(path)
 
     for path in files:
-        errors.extend(source_errors(path, root, raw_allocation_files))
+        errors.extend(
+            source_errors(path, root, raw_allocation_files, namespace_roots)
+        )
     if errors:
         print("\n".join(errors), file=sys.stderr)
 

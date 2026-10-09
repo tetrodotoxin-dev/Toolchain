@@ -202,11 +202,35 @@ if __name__ == "__main__":
         masked = source / "masked.cpp"
         masked.write_text(
             'const char* text = "using namespace Example::Module::Detail;";\n'
+            'const char* qualified = "Example::Data::Form::Value";\n'
             'const char* raw = R"(namespace Example::Module {})";\n'
             "// namespace Example::Module {}\n"
+            "// Example::Data::Form::Value remains prose.\n"
             "/* namespace Example::Module::Detail appears in prose. */\n"
         )
         run(formatter, root, "source/masked.cpp")
+
+        qualified = source / "qualified.cpp"
+        qualified.write_text(
+            "using namespace Example::Concept;\n"
+            "auto representation() -> int {\n"
+            "  return Example::Data::Form::first + "
+            "Example::Data::Form::second;\n"
+            "}\n"
+        )
+        result = run(formatter, root, "source/qualified.cpp", status=1)
+        assert result.stderr.count("using namespace Example::Data;") == 1
+        assert "architectural concept collision" in result.stderr
+        qualified.unlink()
+
+        imported = source / "imported.cpp"
+        imported.write_text(
+            "using namespace Example::Data;\n"
+            "auto representation() -> int {\n"
+            "  return Form::first;\n"
+            "}\n"
+        )
+        run(formatter, root, "source/imported.cpp")
 
         paragraph = source / "paragraph.cpp"
         paragraph.write_text(
@@ -263,6 +287,8 @@ if __name__ == "__main__":
             path.write_text(content)
             result = run(formatter, root, "source/" + name, status=1)
             assert "SDK::Module" in result.stderr or "namespace ownership" in result.stderr
+            if name == "deep.cpp":
+                assert "using namespace Example::Module;" in result.stderr
             path.unlink()
 
         invalid_comments = {
