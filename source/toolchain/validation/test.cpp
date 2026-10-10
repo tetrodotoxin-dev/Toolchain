@@ -3,8 +3,6 @@
 
 #include "toolchain/validation/test.hpp"
 
-#include <inttypes.h>
-#include <stdint.h>
 #include <stdlib.h>
 
 #include "toolchain/validation/clock.hpp"
@@ -24,20 +22,20 @@ struct Instance {
   Bytes<> name;
   Test::TestFunc run;
   Bytes<> file;
-  uint64_t line;
+  U64 line;
   Test::TestResult result = Test::TestResult::Pass;
-  double milliseconds = 0;
+  R64 milliseconds = 0;
 };
 
 // The slow threshold shares the report's millisecond unit and supplements each
 // test's pass, fail or skip result.
-static constexpr double slow_test_ms = 1000;
+static constexpr R64 slow_test_ms = 1000;
 
 // Static storage gives registrations stable addresses for the process lifetime.
 // The fixed capacity bounds startup work, and constinit keeps initialization
 // complete before constructors in test translation units begin registering.
 static constinit Instance tests[4096] = {};
-static uint64_t count = 0;
+static U64 count = 0;
 
 // Registration order defines execution order. Reaching the fixed capacity is a
 // suite configuration error, so registration reports it and terminates startup.
@@ -46,7 +44,7 @@ Test::Test(
     Bytes<> name,
     TestFunc run,
     Bytes<> file,
-    uint64_t line) {
+    U64 line) {
   if (count == sizeof(tests) / sizeof(*tests)) {
     fputs(
         "Validation registration capacity exceeded the 4096 test limit.\n",
@@ -66,21 +64,21 @@ static auto output_break() -> void {
 static auto output_location(const Instance& test) -> void {
   fputs("    ", stdout);
   Test::print_bytes(test.file, false);
-  printf(":%" PRIu64 ": ", test.line);
+  printf(":%llu: ", test.line);
   Test::print_bytes(test.harness->name, false);
   fputs("::", stdout);
   Test::print_bytes(test.name, false);
 }
 
-auto Test::print_integer(int64_t value) -> void {
-  printf("%" PRId64, value);
+auto Test::print_integer(S64 value) -> void {
+  printf("%lld", value);
 }
 
-auto Test::print_integer(uint64_t value) -> void {
-  printf("%" PRIu64, value);
+auto Test::print_integer(U64 value) -> void {
+  printf("%llu", value);
 }
 
-auto Test::print_character(unsigned byte, bool different) -> void {
+auto Test::print_character(U32 byte, bool different) -> void {
   if (different) {
     fputs(fail_color, stdout);
   }
@@ -91,7 +89,7 @@ auto Test::print_character(unsigned byte, bool different) -> void {
   }
 }
 
-int main(int argc, const char* argv[]) {
+S32 main(S32 argc, const char* argv[]) {
   const bool silent =
       argc == 2 && !strncmp(argv[1], "silent", sizeof("silent"));
   if (argc > 2 || (argc == 2 && !silent)) {
@@ -99,14 +97,14 @@ int main(int argc, const char* argv[]) {
     return 1;
   }
 
-  uint64_t passed = 0;
-  uint64_t failed = 0;
-  uint64_t skipped = 0;
+  U64 passed = 0;
+  U64 failed = 0;
+  U64 skipped = 0;
 
   // Twelve columns keep short names readable. Longer registrations expand the
   // column so every duration remains aligned.
-  uint64_t width = 12;
-  for (uint64_t i = 0; i < count; ++i) {
+  U64 width = 12;
+  for (U64 i = 0; i < count; ++i) {
     const auto length = tests[i].name.size;
     if (length > width) {
       width = length;
@@ -114,15 +112,14 @@ int main(int argc, const char* argv[]) {
   }
 
   const Harness* active = nullptr;
-  const uint64_t started = monotonic_clock.time_ns();
+  const U64 started = monotonic_clock.time_ns();
   if (!silent) {
     output_break();
-    printf(
-        "%s  Tests found: %" PRIu64 "%s\n", heading_color, count, clear_color);
+    printf("%s  Tests found: %llu%s\n", heading_color, count, clear_color);
     output_break();
   }
 
-  for (uint64_t i = 0; i < count; ++i) {
+  for (U64 i = 0; i < count; ++i) {
     auto& test = tests[i];
 
     // Each contiguous run of one harness forms an initialized group. Returning
@@ -146,7 +143,7 @@ int main(int argc, const char* argv[]) {
       active->setup();
     }
 
-    const uint64_t begin = monotonic_clock.time_ns();
+    const U64 begin = monotonic_clock.time_ns();
 
     // Assertion macros write one stack result initialized to Pass. This keeps
     // result control flow in the runner while ASSERT may still return from the
@@ -154,8 +151,7 @@ int main(int argc, const char* argv[]) {
     Test::TestResult result = Test::TestResult::Pass;
     test.run(result);
 
-    const double milliseconds =
-        (monotonic_clock.time_ns() - begin) / 1'000'000.0;
+    const R64 milliseconds = (monotonic_clock.time_ns() - begin) / 1'000'000.0;
 
     // The registration already carries the test's name and source location.
     // Keep its outcome and timing there too so the final report can point to
@@ -207,25 +203,25 @@ int main(int argc, const char* argv[]) {
 
   // The pass rate describes completed tests, while skips retain their separate
   // count. A run with zero completed tests reports an inapplicable rate.
-  const uint64_t completed = passed + failed;
+  const U64 completed = passed + failed;
 
   // Overall time includes the harness work and individual test output. Stop
   // that measurement before formatting the final report.
-  const double total_ms = (monotonic_clock.time_ns() - started) / 1'000'000.0;
+  const R64 total_ms = (monotonic_clock.time_ns() - started) / 1'000'000.0;
   if (!silent) {
     output_break();
 
     printf("%s\n  Testing Completed:%s\n", heading_color, clear_color);
-    printf("%s      Passed:  %" PRIu64 "%s\n", pass_color, passed, clear_color);
+    printf("%s      Passed:  %llu%s\n", pass_color, passed, clear_color);
     printf(
-        "%s      Failed:  %" PRIu64 "%s\n", failed ? fail_color : dim_color,
-        failed, clear_color);
+        "%s      Failed:  %llu%s\n", failed ? fail_color : dim_color, failed,
+        clear_color);
     printf(
-        "%s     Skipped:  %" PRIu64 "%s\n", skipped ? skip_color : dim_color,
-        skipped, clear_color);
+        "%s     Skipped:  %llu%s\n", skipped ? skip_color : dim_color, skipped,
+        clear_color);
     printf(
-        "\n%s  Pass Rate:%s   %" PRIu64 " / %" PRIu64, heading_color,
-        clear_color, passed, completed);
+        "\n%s  Pass Rate:%s   %llu / %llu", heading_color, clear_color, passed,
+        completed);
     if (completed) {
       printf(" (%.2f%%)\n", 100.0 * passed / completed);
     } else {
@@ -241,7 +237,7 @@ int main(int argc, const char* argv[]) {
   // so terminals and editors can recognize it as a source link.
   if (failed) {
     printf("%s\n  Failed tests:%s\n", fail_color, clear_color);
-    for (uint64_t i = 0; i < count; ++i) {
+    for (U64 i = 0; i < count; ++i) {
       const auto& test = tests[i];
       if (test.result != Test::TestResult::Pass &&
           test.result != Test::TestResult::Skipped) {
@@ -254,7 +250,7 @@ int main(int argc, const char* argv[]) {
   // The slow list includes every body over the threshold, including passing
   // tests hidden by silent mode. Recorded durations cover the body itself.
   bool slow_heading = false;
-  for (uint64_t i = 0; i < count; ++i) {
+  for (U64 i = 0; i < count; ++i) {
     const auto& test = tests[i];
     if (test.milliseconds >= slow_test_ms) {
       if (!slow_heading) {

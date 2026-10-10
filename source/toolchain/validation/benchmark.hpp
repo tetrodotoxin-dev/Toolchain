@@ -10,7 +10,7 @@ namespace Toolchain::Validation {
 class Benchmark {
  public:
   using BenchmarkFunc = void (*)();
-  using Counter = unsigned long long (*)();
+  using Counter = U64 (*)();
 
   // Construction registers a body for repeated measurement. Its harness, name
   // and callback remain borrowed for the lifetime of the runner, as with tests.

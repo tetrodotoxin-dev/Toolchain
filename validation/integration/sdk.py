@@ -128,7 +128,13 @@ def verify(toolchain, checksum_manifest):
             pins[project][key] = digest
             with zipfile.ZipFile(path) as archive:
                 if key == "headers":
-                    assert "include/toolchain/export.h" in archive.namelist()
+                    for name in [
+                        "toolchain/export.h",
+                        "toolchain/memory/lifetime.hpp",
+                        "toolchain/toolchain.h",
+                        "toolchain/toolchain.hpp",
+                    ]:
+                        assert "include/" + name in archive.namelist()
                     if project == "toolchain_test":
                         assert "include/validation/data/sdk/public.h" in archive.namelist()
                         for name in ["project.h", "runtime.h", "project_detail.h"]:

@@ -43,12 +43,20 @@ if __name__ == "__main__":
             '#include "valid.hpp"\n'
             "using namespace Example::Module;\nint main(){return 0;}\n"
         )
+        result = run(
+            formatter,
+            root,
+            "--check",
+            "source/valid.cpp",
+            status=1,
+        )
+        assert "noncanonical numeric type 'int'" in result.stderr
         result = run(formatter, root, "source/valid.cpp")
         assert result.stdout == "Formatted 1 source files.\n", result.stdout
         assert valid.read_text() == (
             '#include "valid.hpp"\n'
             "using namespace Example::Module;\n"
-            "int main() {\n"
+            "S32 main() {\n"
             "  return 0;\n"
             "}\n"
         ), valid.read_text()
@@ -153,7 +161,7 @@ if __name__ == "__main__":
 
         prelude = source / "example" / "core"
         prelude.mkdir(exist_ok=True)
-        (prelude / "example.h").write_text("typedef unsigned char U8;\n")
+        (prelude / "example.h").write_text("typedef __UINT8_TYPE__ U8;\n")
         (prelude / "example.hpp").write_text(
             "#pragma once\n"
             '#include "example/core/example.h"\n'
@@ -222,7 +230,7 @@ if __name__ == "__main__":
         qualified = source / "qualified.cpp"
         qualified.write_text(
             "using namespace Example::Concept;\n"
-            "auto representation() -> int {\n"
+            "auto representation() -> S32 {\n"
             "  return Example::Data::Form::first + "
             "Example::Data::Form::second;\n"
             "}\n"
@@ -235,7 +243,7 @@ if __name__ == "__main__":
         imported = source / "imported.cpp"
         imported.write_text(
             "using namespace Example::Data;\n"
-            "auto representation() -> int {\n"
+            "auto representation() -> S32 {\n"
             "  return Form::first;\n"
             "}\n"
         )
@@ -243,10 +251,10 @@ if __name__ == "__main__":
 
         paragraph = source / "paragraph.cpp"
         paragraph.write_text(
-            "auto paragraph() -> int {\n"
-            "  int value = 0;\n"
+            "auto paragraph() -> S32 {\n"
+            "  S32 value = 0;\n"
             "  value++;\n\n"
-            "  int selected = value;\n"
+            "  S32 selected = value;\n"
             "  selected++;\n"
             "  if (selected) {\n"
             "    selected++;\n"
@@ -258,7 +266,7 @@ if __name__ == "__main__":
 
         indexed_statements = source / "indexed_statements.cpp"
         indexed_statements.write_text(
-            "auto update(int* values) -> void {\n"
+            "auto update(S32* values) -> void {\n"
             "  values[0]++;\n"
             "  values[1]++;\n"
             "}\n"
@@ -273,7 +281,7 @@ if __name__ == "__main__":
             "#endif\n\n"
             "#define FIRST 1\n"
             "#define SECOND 2\n\n"
-            "auto select() -> int {\n\n"
+            "auto select() -> S32 {\n\n"
             "#if FIRST\n\n"
             "  return FIRST;\n\n"
             "#else\n\n"
@@ -324,20 +332,20 @@ if __name__ == "__main__":
             "// A missing value has no endpoint and cannot provide storage without a\n"
             "// candidate. Compare bytes rather than addresses instead of relying on\n"
             "// pointer identity because an address is not a value identity.\n"
-            "int value;\n"
+            "S32 value;\n"
         )
         run(formatter, root, "source/accepted_comment.cpp")
         run(formatter, root, "--check", "source/accepted_comment.cpp")
 
         invalid_declarations = {
             "const_cast.cpp": (
-                "auto expose(const int* value) -> int* {\n"
-                "  return const_cast<int*>(value);\n"
+                "auto expose(const S32* value) -> S32* {\n"
+                "  return const_cast<S32*>(value);\n"
                 "}\n"
             ),
-            "mutable.hpp": "struct Value { mutable int state; };\n",
+            "mutable.hpp": "struct Value { mutable S32 state; };\n",
             "class.hpp": "class Forward;\n",
-            "enum.hpp": "enum class Forward : unsigned;\n",
+            "enum.hpp": "enum class Forward : U32;\n",
         }
         for name, content in invalid_declarations.items():
             path = source / name
@@ -351,7 +359,7 @@ if __name__ == "__main__":
             path.unlink()
 
         invalid_returns = {
-            "leading_return.cpp": "int value() { return 1; }\n",
+            "leading_return.cpp": "S32 value() { return 1; }\n",
             "deduced_return.cpp": "auto value() { return 1; }\n",
             "call_operator.cpp": (
                 "struct Callable {\n"
@@ -360,7 +368,7 @@ if __name__ == "__main__":
             ),
             "index_operator.cpp": (
                 "struct Indexed {\n"
-                "  auto operator[](int) { return 1; }\n"
+                "  auto operator[](S32) { return 1; }\n"
                 "};\n"
             ),
             "comparison_operator.cpp": (
@@ -369,8 +377,8 @@ if __name__ == "__main__":
                 "};\n"
             ),
             "digit_separator.cpp": (
-                "auto first() -> int { return 1'000; }\n"
-                "int second() { return 2; }\n"
+                "auto first() -> S32 { return 1'000; }\n"
+                "S32 second() { return 2; }\n"
             ),
         }
         for name, content in invalid_returns.items():
@@ -402,10 +410,10 @@ if __name__ == "__main__":
 
         raw_allocation = source / "raw_allocation.cpp"
         raw_allocation.write_text(
-            "auto allocate() -> int* {\n"
-            "  return new int;\n"
+            "auto allocate() -> S32* {\n"
+            "  return new S32;\n"
             "}\n"
-            "auto release(int* value) -> void {\n"
+            "auto release(S32* value) -> void {\n"
             "  delete value;\n"
             "}\n"
         )
@@ -424,6 +432,151 @@ if __name__ == "__main__":
         run(formatter, root, "source/raw_allocation.cpp")
         run(formatter, root, "--check", "source/raw_allocation.cpp")
 
+        fixed_aliases = {
+            "int8_t": "S8",
+            "int16_t": "S16",
+            "int32_t": "S32",
+            "int64_t": "S64",
+            "uint8_t": "U8",
+            "uint16_t": "U16",
+            "uint32_t": "U32",
+            "uint64_t": "U64",
+        }
+        fixed_alias = source / "fixed_alias.cpp"
+        fixed_alias.write_text(
+            "".join(
+                f"{alias} {canonical.lower()}_value = 0;\n"
+                for alias, canonical in fixed_aliases.items()
+            )
+            + "std::uint64_t qualified_u64 = 0;\n"
+        )
+        result = run(
+            formatter,
+            root,
+            "--check",
+            "source/fixed_alias.cpp",
+            status=1,
+        )
+        for alias in fixed_aliases:
+            assert f"noncanonical numeric type '{alias}'" in result.stderr
+        run(formatter, root, "source/fixed_alias.cpp")
+        run(formatter, root, "--check", "source/fixed_alias.cpp")
+        canonical = fixed_alias.read_text()
+        for alias, replacement in fixed_aliases.items():
+            assert alias not in canonical
+            assert replacement in canonical
+        assert "std::U64" not in canonical
+        assert "U64 qualified_u64" in canonical
+
+        standard_headers = source / "standard_headers.cpp"
+        standard_headers.write_text(
+            "#include <stdint.h>\n"
+            '#include "inttypes.h"\n\n'
+            'const char* text = "#include <stdint.h>";\n'
+            "// #include <inttypes.h> remains source text.\n"
+            "S32 value = 0;\n"
+        )
+        result = run(
+            formatter,
+            root,
+            "--check",
+            "source/standard_headers.cpp",
+            status=1,
+        )
+        assert result.stderr.count("standard integer header") == 2
+        run(formatter, root, "source/standard_headers.cpp")
+        run(formatter, root, "--check", "source/standard_headers.cpp")
+        canonical = standard_headers.read_text()
+        assert '#include "inttypes.h"' not in canonical
+        assert canonical.count("#include <stdint.h>") == 1
+        assert "// #include <inttypes.h> remains source text." in canonical
+
+        standard_macro = source / "standard_macro.cpp"
+        standard_macro.write_text(
+            "auto format(U64 value) -> void {\n"
+            '  printf("%" PRIu64, value);\n'
+            "}\n"
+        )
+        result = run(
+            formatter,
+            root,
+            "source/standard_macro.cpp",
+            status=1,
+        )
+        assert "standard integer macro 'PRIu64'" in result.stderr
+
+        noncanonical_integer_types = [
+            "int_least8_t",
+            "int_least16_t",
+            "int_least32_t",
+            "int_least64_t",
+            "uint_least8_t",
+            "uint_least16_t",
+            "uint_least32_t",
+            "uint_least64_t",
+            "int_fast8_t",
+            "int_fast16_t",
+            "int_fast32_t",
+            "int_fast64_t",
+            "uint_fast8_t",
+            "uint_fast16_t",
+            "uint_fast32_t",
+            "uint_fast64_t",
+            "intptr_t",
+            "uintptr_t",
+            "intmax_t",
+            "uintmax_t",
+        ]
+        flexible_type = source / "flexible_type.cpp"
+        flexible_type.write_text(
+            "S32 canonical = 0;\n"
+            "int flexible_int = 0;\n"
+            "short flexible_short = 0;\n"
+            "long flexible_long = 0;\n"
+            "float flexible_float = 0;\n"
+            "double flexible_double = 0;\n"
+            "signed flexible_signed = 0;\n"
+            "unsigned flexible_unsigned = 0;\n"
+            "size_t flexible_size = 0;\n"
+            "ptrdiff_t flexible_difference = 0;\n"
+            + "".join(
+                f"{name} integer_value_{index} = 0;\n"
+                for index, name in enumerate(noncanonical_integer_types)
+            )
+        )
+        result = run(
+            formatter,
+            root,
+            "source/flexible_type.cpp",
+            status=1,
+        )
+        for name in [
+            "int",
+            "short",
+            "long",
+            "float",
+            "double",
+            "signed",
+            "unsigned",
+            "size_t",
+            "ptrdiff_t",
+        ] + noncanonical_integer_types:
+            assert f"noncanonical numeric type '{name}'" in result.stderr
+        (root / "toolchain.json").write_text(
+            '{\n  "flexible_type_files": [\n'
+            '    "source/flexible_type.cpp"\n'
+            "  ],\n"
+            '  "raw_allocation_files": [\n'
+            '    "source/raw_allocation.cpp"\n'
+            "  ],\n"
+            '  "standard_integer_files": [\n'
+            '    "source/standard_macro.cpp"\n'
+            "  ]\n}\n"
+        )
+        run(formatter, root, "source/flexible_type.cpp")
+        run(formatter, root, "--check", "source/flexible_type.cpp")
+        run(formatter, root, "--check", "source/standard_macro.cpp")
+
         unregistered_allocation = source / "unregistered_allocation.cpp"
         unregistered_allocation.write_text(
             "auto release(void* value) -> void {\n"
@@ -440,7 +593,7 @@ if __name__ == "__main__":
         unregistered_allocation.unlink()
 
         allocation_macro = source / "allocation_macro.cpp"
-        allocation_macro.write_text("#define ALLOCATE() new int\n")
+        allocation_macro.write_text("#define ALLOCATE() new S32\n")
         result = run(
             formatter,
             root,
@@ -452,15 +605,15 @@ if __name__ == "__main__":
 
         repairable_paragraphs = {
             "statement_declaration.cpp": (
-                "auto value() -> int {\n"
-                "  int value = 0;\n"
+                "auto value() -> S32 {\n"
+                "  S32 value = 0;\n"
                 "  value++;\n"
-                "  int selected = value;\n"
+                "  S32 selected = value;\n"
                 "  return selected;\n"
                 "}\n"
             ),
             "block_statement.cpp": (
-                "auto value(bool ready) -> int {\n"
+                "auto value(bool ready) -> S32 {\n"
                 "  if (ready) {\n"
                 "    return 1;\n"
                 "  }\n"
@@ -468,7 +621,7 @@ if __name__ == "__main__":
                 "}\n"
             ),
             "block_block.cpp": (
-                "auto value(bool first, bool second) -> int {\n"
+                "auto value(bool first, bool second) -> S32 {\n"
                 "  if (first) {\n"
                 "    return 1;\n"
                 "  }\n"
@@ -491,11 +644,11 @@ if __name__ == "__main__":
 
         independent_blocks = source / "independent_blocks.cpp"
         independent_blocks.write_text(
-            "auto select(bool first, bool second) -> int {\n"
+            "auto select(bool first, bool second) -> S32 {\n"
             "  if (first) {\n"
             "    second = false;\n"
             "  }\n"
-            "  for (int index = 0; index < 1; ++index) {\n"
+            "  for (S32 index = 0; index < 1; ++index) {\n"
             "    second = true;\n"
             "  }\n"
             "  while (second) {\n"
@@ -541,7 +694,7 @@ if __name__ == "__main__":
 
         attached_else = source / "attached_else.cpp"
         attached_else.write_text(
-            "auto select(bool first, bool second) -> int {\n"
+            "auto select(bool first, bool second) -> S32 {\n"
             "  if (first) {\n"
             "    return 1;\n"
             "  } else if (second) {\n"
@@ -559,7 +712,7 @@ if __name__ == "__main__":
 
         repairable_preprocessor = {
             "conditional.cpp": (
-                "auto select() -> int {\n"
+                "auto select() -> S32 {\n"
                 "#if FIRST\n"
                 "  return FIRST;\n"
                 "#else\n"
@@ -567,7 +720,7 @@ if __name__ == "__main__":
                 "#endif\n"
                 "}\n"
             ),
-            "definition.cpp": "int value;\n#define VALUE 1\nint selected;\n",
+            "definition.cpp": "S32 value;\n#define VALUE 1\nS32 selected;\n",
         }
         for name, content in repairable_preprocessor.items():
             path = source / name

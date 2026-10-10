@@ -27,10 +27,10 @@ struct Instance {
 // The fixed capacities bound startup and measurement work, while constinit
 // completes initialization before benchmark constructors begin registering.
 static constinit Instance benchmarks[1024] = {};
-static size_t count = 0;
-static uint64_t samples[4096];
-static uint64_t sample_start = 0;
-static uint64_t sample_end = 0;
+static CppSize count = 0;
+static U64 samples[4096];
+static U64 sample_start = 0;
+static U64 sample_end = 0;
 
 Benchmark::Benchmark(const Harness& harness, Bytes<> name, BenchmarkFunc run) {
   if (count == sizeof(benchmarks) / sizeof(*benchmarks)) {
@@ -78,7 +78,7 @@ static auto matches(Bytes<> name, Bytes<> prefix) -> bool {
     return false;
   }
 
-  for (size_t i = 0; i < prefix.size; ++i) {
+  for (CppSize i = 0; i < prefix.size; ++i) {
     auto left = name.data[i];
     auto right = prefix.data[i];
     if (left >= 'A' && left <= 'Z') {
@@ -97,34 +97,34 @@ static auto matches(Bytes<> name, Bytes<> prefix) -> bool {
   return true;
 }
 
-static auto output_name(Bytes<> name, size_t width = 0) -> void {
+static auto output_name(Bytes<> name, CppSize width = 0) -> void {
   if (name.size) {
     fwrite(name.data, 1, name.size, stdout);
   }
 
-  for (size_t i = name.size; i < width; ++i) {
+  for (CppSize i = name.size; i < width; ++i) {
     putchar(' ');
   }
 }
 
-static auto average(size_t begin, size_t end) -> double {
+static auto average(CppSize begin, CppSize end) -> R64 {
   // Average in nanoseconds before converting to microseconds so a short
   // operation keeps its fractional time in the report.
-  double total = 0;
-  for (size_t i = begin; i < end; ++i) {
+  R64 total = 0;
+  for (CppSize i = begin; i < end; ++i) {
     total += samples[i];
   }
 
   return total / (end - begin) / 1000;
 }
 
-static auto sort_samples(size_t size) -> void {
+static auto sort_samples(CppSize size) -> void {
   // Halving gaps keep report preparation bounded while the final unit gap
   // establishes the exact order used by the percentile groups.
-  for (size_t gap = size / 2; gap; gap /= 2) {
-    for (size_t index = gap; index < size; ++index) {
-      const uint64_t selected = samples[index];
-      size_t cursor = index;
+  for (CppSize gap = size / 2; gap; gap /= 2) {
+    for (CppSize index = gap; index < size; ++index) {
+      const U64 selected = samples[index];
+      CppSize cursor = index;
       while (cursor >= gap && samples[cursor - gap] > selected) {
         samples[cursor] = samples[cursor - gap];
         cursor -= gap;
@@ -135,7 +135,7 @@ static auto sort_samples(size_t size) -> void {
   }
 }
 
-static auto measure(const Instance& benchmark, size_t width) -> void {
+static auto measure(const Instance& benchmark, CppSize width) -> void {
   const auto& harness = *benchmark.harness;
 
   // One complete fixture invocation warms the code and data. Sample and counter
@@ -149,9 +149,9 @@ static auto measure(const Instance& benchmark, size_t width) -> void {
     harness.teardown();
   }
 
-  size_t sample_count = 0;
-  unsigned long long events = 0;
-  const uint64_t started = monotonic_clock.time_ns();
+  CppSize sample_count = 0;
+  U64 events = 0;
+  const U64 started = monotonic_clock.time_ns();
   while (sample_count < sizeof(samples) / sizeof(*samples)) {
     if (harness.setup) {
       harness.setup();
@@ -195,7 +195,7 @@ static auto measure(const Instance& benchmark, size_t width) -> void {
   // sample contributes to exactly one mean.
   sort_samples(sample_count);
 
-  const size_t tenth = sample_count / 10;
+  const CppSize tenth = sample_count / 10;
   fputs("  ", stdout);
   output_name(benchmark.name, width);
   printf(
@@ -210,7 +210,7 @@ static auto measure(const Instance& benchmark, size_t width) -> void {
   putchar('\n');
 }
 
-int main(int argc, const char* argv[]) {
+S32 main(S32 argc, const char* argv[]) {
   if (argc > 2) {
     fputs("Usage: benchmarks [name-prefix]\n", stderr);
     return 1;
@@ -222,8 +222,8 @@ int main(int argc, const char* argv[]) {
   // One byte past the longest registered name distinguishes an oversized
   // filter. argv supplies terminated strings, so short inputs stop at their
   // zero.
-  size_t longest = 0;
-  for (size_t i = 0; i < count; ++i) {
+  CppSize longest = 0;
+  for (CppSize i = 0; i < count; ++i) {
     if (benchmarks[i].name.size > longest) {
       longest = benchmarks[i].name.size;
     }
@@ -235,8 +235,8 @@ int main(int argc, const char* argv[]) {
 
   const Bytes<> filter =
       argc == 2 ? convert_cstring(argv[1], longest + 1) : Bytes<>{};
-  size_t width = 26;
-  for (size_t i = 0; i < count; ++i) {
+  CppSize width = 26;
+  for (CppSize i = 0; i < count; ++i) {
     const auto& benchmark = benchmarks[i];
     if (matches(benchmark.name, filter) ||
         matches(benchmark.harness->name, filter)) {
@@ -257,7 +257,7 @@ int main(int argc, const char* argv[]) {
   // A registered counter extends every row with its shared event unit.
   if (counter) {
     putchar(' ');
-    for (size_t i = counter_name.size; i < 14; ++i) {
+    for (CppSize i = counter_name.size; i < 14; ++i) {
       putchar(' ');
     }
 
@@ -268,7 +268,7 @@ int main(int argc, const char* argv[]) {
   output_break();
 
   const Harness* active = nullptr;
-  for (size_t i = 0; i < count; ++i) {
+  for (CppSize i = 0; i < count; ++i) {
     const auto& benchmark = benchmarks[i];
     if (!matches(benchmark.name, filter) &&
         !matches(benchmark.harness->name, filter)) {

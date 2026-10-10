@@ -4,7 +4,12 @@ package(default_visibility = ["//visibility:public"])
 
 cc_library(
     name = "headers",
-    hdrs = ["toolchain/export.h"],
+    hdrs = [
+        "toolchain/export.h",
+        "toolchain/memory/lifetime.hpp",
+        "toolchain/toolchain.h",
+        "toolchain/toolchain.hpp",
+    ],
     includes = ["."],
 )
 
@@ -13,6 +18,9 @@ filegroup(
     srcs = glob(["sdk/**"]) + [
         "BUILD",
         "toolchain/export.h",
+        "toolchain/memory/lifetime.hpp",
+        "toolchain/toolchain.h",
+        "toolchain/toolchain.hpp",
         "//source/bazel:sources",
         "//source/toolchain/validation:sources",
         "//source/vscode:sources",

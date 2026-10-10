@@ -9,6 +9,6 @@
 #error A dependent library's export flag reached this implementation.
 #endif
 
-C_LINKAGE int toolchain_project_entry(int value) {
+C_LINKAGE S32 toolchain_project_entry(S32 value) {
   return toolchain_runtime_entry(value);
 }

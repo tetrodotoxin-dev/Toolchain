@@ -14,14 +14,25 @@ import sys
 import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from format_policy import contains_raw_allocation, format_source, source_errors
+from format_policy import (
+    canonicalize_source,
+    contains_flexible_type,
+    contains_raw_allocation,
+    contains_standard_integer,
+    format_source,
+    source_errors,
+)
 
 
 CLANG_FORMAT = __CLANG_FORMAT__
 CONFIGURATION = Path(__file__).with_name("__CONFIGURATION__")
 DIRECTORIES = ("source", "validation", "examples", "tests", "benchmarks")
 EXTENSIONS = {".c", ".cpp", ".h", ".hpp"}
-POLICY_KEYS = {"raw_allocation_files"}
+POLICY_KEYS = {
+    "flexible_type_files",
+    "raw_allocation_files",
+    "standard_integer_files",
+}
 BUCKETS_BEGIN = "# SDK dependency include buckets begin."
 BUCKETS_END = "# SDK dependency include buckets end."
 
@@ -158,7 +169,7 @@ def policy(root):
     """Load exact source-policy exceptions registered by the repository."""
     configuration = root / "toolchain.json"
     if not configuration.exists():
-        return set()
+        return set(), set(), set()
     value = json.loads(configuration.read_text())
     if not isinstance(value, dict):
         raise ValueError("toolchain.json contains one policy object")
@@ -167,22 +178,35 @@ def policy(root):
         raise ValueError(
             "toolchain.json contains unknown policies: " + ", ".join(sorted(unknown))
         )
-    names = value.get("raw_allocation_files", [])
-    if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
-        raise ValueError("toolchain.json raw_allocation_files is a list of paths")
-    if names != sorted(set(names)):
-        raise ValueError("toolchain.json raw_allocation_files is sorted and unique")
-    files = set()
-    for name in names:
-        path = (root / name).resolve()
-        if not path.is_relative_to(root):
-            raise ValueError(f"Raw allocation path leaves the workspace: {name}")
-        if not path.is_file() or path.suffix not in EXTENSIONS:
-            raise ValueError(f"Raw allocation path is not a source file: {name}")
-        if not contains_raw_allocation(path):
-            raise ValueError(f"Raw allocation path contains no allocation: {name}")
-        files.add(name)
-    return files
+    policies = []
+    for key, description, contains in [
+        ("raw_allocation_files", "Raw allocation", contains_raw_allocation),
+        ("flexible_type_files", "Flexible type", contains_flexible_type),
+        (
+            "standard_integer_files",
+            "Standard integer",
+            contains_standard_integer,
+        ),
+    ]:
+        names = value.get(key, [])
+        if not isinstance(names, list) or not all(
+            isinstance(name, str) for name in names
+        ):
+            raise ValueError(f"toolchain.json {key} is a list of paths")
+        if names != sorted(set(names)):
+            raise ValueError(f"toolchain.json {key} is sorted and unique")
+        files = set()
+        for name in names:
+            path = (root / name).resolve()
+            if not path.is_relative_to(root):
+                raise ValueError(f"{description} path leaves the workspace: {name}")
+            if not path.is_file() or path.suffix not in EXTENSIONS:
+                raise ValueError(f"{description} path is not a source file: {name}")
+            if not contains(path):
+                raise ValueError(f"{description} path contains no violation: {name}")
+            files.add(name)
+        policies.append(files)
+    return tuple(policies)
 
 
 def main():
@@ -209,7 +233,11 @@ def main():
             namespace_name(project)
             for project in [local_project] + dependency_projects
         }
-        raw_allocation_files = policy(root)
+        (
+            raw_allocation_files,
+            flexible_type_files,
+            standard_integer_files,
+        ) = policy(root)
     except (json.JSONDecodeError, OSError, SyntaxError, ValueError) as error:
         parser.error(str(error))
     if arguments.all and (arguments.check or arguments.files):
@@ -227,6 +255,10 @@ def main():
         parser.error("the selected source set is empty")
 
     errors = []
+
+    if not arguments.check:
+        for path in files:
+            canonicalize_source(path, root, standard_integer_files)
 
     with tempfile.TemporaryDirectory(prefix="toolchain-format-") as temporary:
         generated = Path(temporary) / ".clang-format"
@@ -248,7 +280,14 @@ def main():
 
     for path in files:
         errors.extend(
-            source_errors(path, root, raw_allocation_files, namespace_roots)
+            source_errors(
+                path,
+                root,
+                raw_allocation_files,
+                flexible_type_files,
+                standard_integer_files,
+                namespace_roots,
+            )
         )
     if errors:
         print("\n".join(errors), file=sys.stderr)

@@ -12,19 +12,22 @@
 
 using namespace Toolchain::Validation;
 
-enum class SmallEnum : int8_t { Zero, Negative = -7 };
-enum class SignedEnum : int64_t { Zero, Minimum = INT64_MIN };
-enum class UnsignedEnum : uint64_t { Zero, Maximum = UINT64_MAX };
+enum class SmallEnum : S8 { Zero, Negative = -7 };
+enum class SignedEnum : S64 {
+  Zero,
+  Minimum = S64(-9223372036854775807LL - 1),
+};
+enum class UnsignedEnum : U64 { Zero, Maximum = U64(-1) };
 
 // A range of words has the same accessors as a byte range. Comparability is
 // sufficient for EXPECT_EQ, while the diagnostic uses its generic value form.
 template <typename Element>
 struct Range {
   const Element* data;
-  size_t size;
+  CppSize size;
 
   auto get_data() const -> const Element* { return data; }
-  auto get_size() const -> size_t { return size; }
+  auto get_size() const -> CppSize { return size; }
   auto operator==(const Range&) const -> bool = default;
 };
 
@@ -39,8 +42,8 @@ struct Buffer {
 // The process checker observes destruction after main returns. The fixture
 // records whether failed and skipped bodies still receive their teardown.
 struct Fixture {
-  unsigned setups = 0;
-  unsigned teardowns = 0;
+  U32 setups = 0;
+  U32 teardowns = 0;
 
   Fixture() { puts("report fixture constructed"); }
   ~Fixture() {
@@ -84,25 +87,25 @@ VALIDATION_TEST(Reporting, failure) {
   EXPECT_EQ(1.25f, 0.0f);
   EXPECT_EQ(-2.5, 0.0);
 
-  const int8_t small = -128;
-  const uint64_t large = UINT64_MAX;
+  const S8 small = -128;
+  const U64 large = U64(-1);
   EXPECT_EQ(small, 0);
   EXPECT_EQ(large, 0u);
   EXPECT_EQ(SmallEnum::Negative, SmallEnum::Zero);
   EXPECT_EQ(SignedEnum::Minimum, SignedEnum::Zero);
   EXPECT_EQ(UnsignedEnum::Maximum, UnsignedEnum::Zero);
 
-  const signed char actual[] = {0, 127, -1};
-  const unsigned char expected[] = {0, 127, 0};
+  const S8 actual[] = {0, 127, -1};
+  const U8 expected[] = {0, 127, 0};
   EXPECT_HEX(
       (Bytes{actual, sizeof(actual)}), (Bytes{expected, sizeof(expected)}));
   EXPECT_TEXT("aXc!", "abc");
   EXPECT_TEXT("a\0X", "a\0b");
 
-  const unsigned words[] = {1, 2};
-  const Range<unsigned> range = {words, 2};
-  EXPECT_EQ(range, (Range<unsigned>{words, 1}));
-  EXPECT_EQ((Buffer<unsigned>{range}), (Buffer<unsigned>{{words, 1}}));
+  const U32 words[] = {1, 2};
+  const Range<U32> range = {words, 2};
+  EXPECT_EQ(range, (Range<U32>{words, 1}));
+  EXPECT_EQ((Buffer<U32>{range}), (Buffer<U32>{{words, 1}}));
 
   const Buffer<char> text = {{"range", 5}};
   EXPECT_EQ(text, (Buffer<char>{{"other", 5}}));

@@ -3,6 +3,6 @@
 
 #include "validation/data/sdk/runtime.h"
 
-C_LINKAGE int toolchain_runtime_entry(int value) {
+C_LINKAGE S32 toolchain_runtime_entry(S32 value) {
   return value;
 }

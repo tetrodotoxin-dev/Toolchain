@@ -4,9 +4,9 @@
 #ifndef TOOLCHAIN_TEST_PROJECT_H
 #define TOOLCHAIN_TEST_PROJECT_H
 
-#include "toolchain/export.h"
+#include "toolchain/toolchain.h"
 
 C_LINKAGE EXPORTED(TETRO_TOOLCHAIN)
-int toolchain_project_entry(int value);
+S32 toolchain_project_entry(S32 value);
 
 #endif

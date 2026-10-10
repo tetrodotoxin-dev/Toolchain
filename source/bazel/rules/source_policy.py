@@ -35,6 +35,20 @@ PLATFORM_INCLUDE = re.compile(
     r"sys/|linux/|wayland|mach/|CoreFoundation/|emscripten(?:\.h|/))"
 )
 SYSTEM_INCLUDE = re.compile(r"^\s*#\s*include\s*<([^>]+)>")
+STANDARD_INTEGER_INCLUDE = re.compile(
+    r'^[ \t]*#[ \t]*include[ \t]*[<"](?:inttypes|stdint)\.h[>"]'
+    r"[ \t]*(?://.*)?(?:\r?\n|$)",
+    re.MULTILINE,
+)
+STANDARD_INTEGER_MACRO = re.compile(
+    r"\b(?:"
+    r"(?:PRI|SCN)[diouxX](?:8|16|32|64|LEAST(?:8|16|32|64)|"
+    r"FAST(?:8|16|32|64)|MAX|PTR)|"
+    r"(?:U?INT(?:8|16|32|64)|U?INT_(?:LEAST|FAST)(?:8|16|32|64)|"
+    r"U?INTPTR|U?INTMAX|SIZE|PTRDIFF|SIG_ATOMIC|WCHAR|WINT)_"
+    r"(?:MIN|MAX|C)"
+    r")\b"
+)
 COMMENT_PHRASES = re.compile(
     r"\b(?:simply|obvious(?:ly)?|seamless(?:ly)?|"
     r"leverag(?:e|es|ed|ing)|utiliz(?:e|es|ed|ing))\b",
@@ -105,6 +119,51 @@ RAW_ALLOCATORS = {
     "posix_memalign",
     "realloc",
 }
+CANONICAL_TYPE_SUBSTITUTIONS = {
+    "int8_t": "S8",
+    "int16_t": "S16",
+    "int32_t": "S32",
+    "int64_t": "S64",
+    "uint8_t": "U8",
+    "uint16_t": "U16",
+    "uint32_t": "U32",
+    "uint64_t": "U64",
+}
+NONCANONICAL_INTEGER_TYPES = {
+    "int_least8_t",
+    "int_least16_t",
+    "int_least32_t",
+    "int_least64_t",
+    "uint_least8_t",
+    "uint_least16_t",
+    "uint_least32_t",
+    "uint_least64_t",
+    "int_fast8_t",
+    "int_fast16_t",
+    "int_fast32_t",
+    "int_fast64_t",
+    "uint_fast8_t",
+    "uint_fast16_t",
+    "uint_fast32_t",
+    "uint_fast64_t",
+    "intptr_t",
+    "uintptr_t",
+    "intmax_t",
+    "uintmax_t",
+}
+FLEXIBLE_TYPES = (
+    set(CANONICAL_TYPE_SUBSTITUTIONS) | NONCANONICAL_INTEGER_TYPES | {
+        "double",
+        "float",
+        "int",
+        "long",
+        "ptrdiff_t",
+        "short",
+        "signed",
+        "size_t",
+        "unsigned",
+    }
+)
 
 
 def lexical(source):
@@ -244,6 +303,7 @@ def header_identity_errors(path, source, code):
     if not identity:
         return []
     expected_namespace, expected_object = identity
+    prelude = compiler_prelude(path, expected_object, source)
     errors = []
     if not re.search(r"^#pragma\s+once\s*$", source, re.MULTILINE):
         errors.append(f"{path}:1: public C++ headers begin with '#pragma once'")
@@ -256,7 +316,7 @@ def header_identity_errors(path, source, code):
             errors.append(
                 f"{path}:{line_at(source, declaration.start())}: public header namespaces match '{expected_namespace}'"
             )
-    if not namespaces:
+    if not namespaces and not prelude:
         errors.append(
             f"{path}:1: public header namespace is '{expected_namespace}'"
         )
@@ -272,7 +332,7 @@ def header_identity_errors(path, source, code):
         and namespace_owns(code, declaration, object_declaration)
         for declaration in namespaces
     )
-    if not owns_object and not compiler_prelude(path, expected_object, source):
+    if not owns_object and not prelude:
         errors.append(
             f"{path}:1: public header primary object is '{expected_object}'"
         )
@@ -824,6 +884,114 @@ def contains_raw_allocation(path):
     return bool(raw_allocation_offsets(source, code))
 
 
+def flexible_type_offsets(source, code):
+    """Locate noncanonical numeric vocabulary."""
+    tokens = [
+        (match.group(0), match.start(), match.end())
+        for match in TOKENS.finditer(code)
+    ]
+    offsets = []
+    for index, (token, start, _) in enumerate(tokens):
+        if token not in FLEXIBLE_TYPES:
+            continue
+        offsets.append((token, start))
+    return offsets
+
+
+def canonicalize_types(source, code):
+    """Replace exact width compiler aliases with the project vocabulary."""
+    tokens = list(TOKENS.finditer(code))
+    replacements = []
+    for index, match in enumerate(tokens):
+        token = match.group(0)
+        replacement = CANONICAL_TYPE_SUBSTITUTIONS.get(token)
+        if (
+            token == "int"
+            and index + 2 < len(tokens)
+            and tokens[index + 1].group(0) == "main"
+            and tokens[index + 2].group(0) == "("
+        ):
+            replacement = "S32"
+        if replacement is None:
+            continue
+        start = match.start()
+        if (
+            index >= 2
+            and tokens[index - 2].group(0) == "std"
+            and tokens[index - 1].group(0) == "::"
+        ):
+            start = tokens[index - 2].start()
+        replacements.append(
+            (start, match.end(), replacement)
+        )
+    for start, end, replacement in reversed(replacements):
+        source = source[:start] + replacement + source[end:]
+    return source
+
+
+def flexible_type_errors(path, root, source, code, allowed):
+    relative = path.relative_to(root).as_posix()
+    if relative in allowed:
+        return []
+    contract = (
+        "uses the fixed width project vocabulary; select U*, S*, R*, Count, "
+        "or CppSize according to the value contract"
+    )
+    return [
+        f"{path}:{line_at(source, offset)}: noncanonical numeric type '{token}' {contract}"
+        for token, offset in flexible_type_offsets(source, code)
+    ]
+
+
+def contains_flexible_type(path):
+    source = path.read_text()
+    code, _ = lexical(source)
+    return bool(flexible_type_offsets(source, code))
+
+
+def standard_integer_includes(source, code):
+    matches = []
+    for match in STANDARD_INTEGER_INCLUDE.finditer(source):
+        start = source.rfind("\n", 0, match.start()) + 1
+        end = source.find("\n", match.start())
+        end = len(source) if end < 0 else end
+        if directive(code[start:end]) == "include":
+            matches.append(match)
+    return matches
+
+
+def standard_integer_errors(path, root, source, code, allowed):
+    """Keep standard integer headers and macros outside canonical sources."""
+    relative = path.relative_to(root).as_posix()
+    if relative in allowed:
+        return []
+    errors = [
+        f"{path}:{line_at(source, match.start())}: Toolchain supplies the canonical integer vocabulary; remove this standard integer header"
+        for match in standard_integer_includes(source, code)
+    ]
+    errors.extend(
+        f"{path}:{line_at(source, match.start())}: standard integer macro '{match.group(0)}' requires a canonical project expression"
+        for match in STANDARD_INTEGER_MACRO.finditer(code)
+    )
+    return errors
+
+
+def contains_standard_integer(path):
+    source = path.read_text()
+    code, _ = lexical(source)
+    return bool(
+        standard_integer_includes(source, code)
+        or STANDARD_INTEGER_MACRO.search(code)
+    )
+
+
+def remove_standard_integer_headers(source, code):
+    matches = standard_integer_includes(source, code)
+    for match in reversed(matches):
+        source = source[:match.start()] + source[match.end():]
+    return source
+
+
 def directive(line):
     match = re.match(r"\s*#\s*([A-Za-z_][A-Za-z0-9_]*)", line)
     return match.group(1) if match else None
@@ -1120,6 +1288,19 @@ def line_starts(source):
     return starts
 
 
+def canonicalize_source(path, root, standard_integer_files):
+    """Apply mechanical vocabulary and include substitutions before Clang."""
+    source = path.read_text()
+    code, _ = lexical(source)
+    canonical = canonicalize_types(source, code)
+    relative = path.relative_to(root).as_posix()
+    if relative not in standard_integer_files:
+        canonical_code, _ = lexical(canonical)
+        canonical = remove_standard_integer_headers(canonical, canonical_code)
+    if canonical != source:
+        path.write_text(canonical)
+
+
 def format_source(path):
     """Insert source-policy boundaries whose repair is purely lexical."""
     source = path.read_text()
@@ -1140,7 +1321,14 @@ def format_source(path):
         path.write_text(source)
 
 
-def source_errors(path, root, raw_allocation_files, namespace_roots):
+def source_errors(
+    path,
+    root,
+    raw_allocation_files,
+    flexible_type_files,
+    standard_integer_files,
+    namespace_roots,
+):
     source = path.read_text()
     code, comments = lexical(source)
     return (
@@ -1155,6 +1343,12 @@ def source_errors(path, root, raw_allocation_files, namespace_roots):
         + trailing_return_errors(path, source, code)
         + raw_allocation_errors(
             path, root, source, code, raw_allocation_files
+        )
+        + flexible_type_errors(
+            path, root, source, code, flexible_type_files
+        )
+        + standard_integer_errors(
+            path, root, source, code, standard_integer_files
         )
         + preprocessor_errors(path, source)
         + paragraph_errors(path, source, code)

@@ -4,9 +4,9 @@
 #ifndef TOOLCHAIN_TEST_RUNTIME_H
 #define TOOLCHAIN_TEST_RUNTIME_H
 
-#include "toolchain/export.h"
+#include "toolchain/toolchain.h"
 
 C_LINKAGE EXPORTED(TOOLCHAIN_RUNTIME)
-int toolchain_runtime_entry(int value);
+S32 toolchain_runtime_entry(S32 value);
 
 #endif

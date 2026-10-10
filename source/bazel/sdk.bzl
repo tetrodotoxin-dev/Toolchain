@@ -80,8 +80,14 @@ def _sdk(ctx):
             sha256 = ctx.attr.archives[archive],
             output = output,
         )
-    if not ctx.path("headers/include/toolchain/export.h").exists:
-        fail("SDK headers archive is missing toolchain/export.h")
+    for path in [
+        "toolchain/export.h",
+        "toolchain/memory/lifetime.hpp",
+        "toolchain/toolchain.h",
+        "toolchain/toolchain.hpp",
+    ]:
+        if not ctx.path("headers/include/" + path).exists:
+            fail("SDK headers archive is missing " + path)
     static_libraries = {}
     libraries = {}
     interfaces = {}

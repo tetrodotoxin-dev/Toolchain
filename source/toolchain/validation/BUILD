@@ -11,6 +11,7 @@ cc_library(
         "test.hpp",
     ],
     includes = ["../.."],
+    deps = ["//source:headers"],
 )
 
 cc_library(

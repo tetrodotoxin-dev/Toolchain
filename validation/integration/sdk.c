@@ -1,7 +1,10 @@
 // # Toolchain
 // Copyright (c) 2023-present Matt Kaes and contributors
 
+#include "toolchain/toolchain.h"
 #include "validation/data/sdk/library.h"
+
+TOOLCHAIN_ASSERT(sizeof(Count) == sizeof(U64), "Count uses the SDK width");
 
 #if EXPECT_COMPONENT
 #include "validation/data/sdk/project.h"
@@ -58,15 +61,15 @@
 
 // The public linker option redirects this declaration to the wrapper, proving
 // that release metadata carries the consumer's required link behavior.
-int toolchain_link_probe(void);
-int __wrap_toolchain_link_probe(void) {
+S32 toolchain_link_probe(void);
+S32 __wrap_toolchain_link_probe(void) {
   return TOOLCHAIN_TEST_VALUE;
 }
 
 #endif
 
-int main(void) {
-  const int valid = toolchain_c_entry(20) == TOOLCHAIN_TEST_VALUE &&
+S32 main(void) {
+  const S32 valid = toolchain_c_entry(20) == TOOLCHAIN_TEST_VALUE &&
                     toolchain_cpp_entry(21) == 42;
 
 #if defined(__linux__)

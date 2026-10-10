@@ -8,10 +8,10 @@ using namespace Toolchain::Validation;
 // Construction and destruction messages let the external checker verify the
 // ordinary executable lifecycle, including cleanup after its final test.
 struct Fixture {
-  unsigned initializations = 0;
-  unsigned setups = 0;
-  unsigned teardowns = 0;
-  int value = -1;
+  U32 initializations = 0;
+  U32 setups = 0;
+  U32 teardowns = 0;
+  S32 value = -1;
 
   Fixture() { puts("test fixture constructed"); }
   ~Fixture() {
@@ -43,7 +43,7 @@ VALIDATION_TEST(Assertions, single_evaluation) {
   ASSERT_EQ(fixture.value, 0);
 
   auto& actual = fixture.value;
-  int expected = 0;
+  S32 expected = 0;
   EXPECT_EQ(++actual, ++expected);
   ASSERT_EQ(actual, 1);
   ASSERT_EQ(expected, 1);
@@ -73,8 +73,8 @@ VALIDATION_TEST(Assertions, bounded_strings) {
 }
 
 VALIDATION_TEST(Assertions, byte_types) {
-  const unsigned char unsigned_bytes[] = {0, 127, 255};
-  const signed char signed_bytes[] = {0, 127, -1};
+  const U8 unsigned_bytes[] = {0, 127, 255};
+  const S8 signed_bytes[] = {0, 127, -1};
   EXPECT_HEX(
       (Bytes{unsigned_bytes, sizeof(unsigned_bytes)}),
       (Bytes{signed_bytes, sizeof(signed_bytes)}));

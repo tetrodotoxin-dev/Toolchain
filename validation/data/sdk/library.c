@@ -14,14 +14,14 @@
 #error A dependency's export flag reached this implementation.
 #endif
 
-C_LINKAGE HIDDEN int toolchain_private_entry(int value);
+C_LINKAGE HIDDEN S32 toolchain_private_entry(S32 value);
 
 // External linkage makes this helper a useful check of the visibility default.
 // It participates in the linked implementation with local symbol visibility.
-int toolchain_c_helper(int value) {
+S32 toolchain_c_helper(S32 value) {
   return toolchain_private_entry(toolchain_project_entry(value)) + 1;
 }
 
-C_LINKAGE int toolchain_c_entry(int value) {
+C_LINKAGE S32 toolchain_c_entry(S32 value) {
   return toolchain_c_helper(value);
 }

@@ -23,6 +23,7 @@ filegroup(
         "LICENSE",
         "MODULE.bazel",
         "defs.bzl",
+        "toolchain.json",
         "//source:sources",
         "//validation:sources",
     ],

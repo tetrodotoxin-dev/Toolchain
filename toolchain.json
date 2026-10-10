@@ -1,0 +1,8 @@
+{
+  "flexible_type_files": [
+    "source/toolchain/toolchain.h"
+  ],
+  "raw_allocation_files": [
+    "source/toolchain/memory/lifetime.hpp"
+  ]
+}

@@ -3,8 +3,6 @@
 
 #pragma once
 
-#include <inttypes.h>
-#include <stdint.h>
 #include <stdio.h>
 
 #include "toolchain/validation/harness.hpp"
@@ -23,16 +21,16 @@ class Test {
       Bytes<> name,
       TestFunc run,
       Bytes<> file,
-      uint64_t line);
+      U64 line);
 
   // Signed and unsigned values use separate overloads so their full ranges
   // reach the formatter. Decimal formatting is compiled with the runner.
-  static auto print_integer(int64_t value) -> void;
-  static auto print_integer(uint64_t value) -> void;
+  static auto print_integer(S64 value) -> void;
+  static auto print_integer(U64 value) -> void;
 
   // Text comparisons mark each differing byte and restore the output color
   // afterward, so the next assertion starts with ordinary terminal text.
-  static auto print_character(unsigned byte, bool different) -> void;
+  static auto print_character(U32 byte, bool different) -> void;
 
   // The byte element type stays available until formatting. Text writes use the
   // supplied extent, including bytes after a zero, and hex writes use indexing
@@ -47,27 +45,26 @@ class Test {
       return;
     }
 
-    for (size_t i = 0; i < value.size; ++i) {
-      const unsigned byte = value.data[i] & 0xff;
+    for (CppSize i = 0; i < value.size; ++i) {
+      const U32 byte = value.data[i] & 0xff;
       printf("%02X ", byte);
     }
   }
 
   template <typename Left, typename Right>
   static auto print_difference(Bytes<Left> value, Bytes<Right> other) -> void {
-    for (size_t i = 0; i < value.size; ++i) {
-      const unsigned byte = value.data[i] & 0xff;
+    for (CppSize i = 0; i < value.size; ++i) {
+      const U32 byte = value.data[i] & 0xff;
       const bool different = i >= other.size || byte != (other.data[i] & 0xffu);
       print_character(byte, different);
     }
   }
 
   template <typename File, typename Message>
-  static auto
-      log_message(Bytes<File> file, uint64_t line, Bytes<Message> message)
-          -> void {
+  static auto log_message(Bytes<File> file, U64 line, Bytes<Message> message)
+      -> void {
     print_bytes(file, false);
-    printf(":%" PRIu64 ":\n    ", line);
+    printf(":%llu:\n    ", line);
     print_bytes(message, false);
     fputc('\n', stdout);
   }
@@ -88,24 +85,24 @@ class Test {
       using Integer = __underlying_type(T);
       const auto integer = static_cast<Integer>(value);
       if constexpr (__is_signed(Integer)) {
-        const int64_t promoted = integer;
+        const S64 promoted = integer;
         print_integer(promoted);
       } else {
-        const uint64_t promoted = integer;
+        const U64 promoted = integer;
         print_integer(promoted);
       }
     } else if constexpr (__is_same(T, bool)) {
       fputs(value ? "true" : "false", stdout);
     } else if constexpr (__is_integral(T)) {
       if constexpr (__is_signed(T)) {
-        const int64_t promoted = value;
+        const S64 promoted = value;
         print_integer(promoted);
       } else {
-        const uint64_t promoted = value;
+        const U64 promoted = value;
         print_integer(promoted);
       }
     } else if constexpr (__is_floating_point(T)) {
-      const double promoted = value;
+      const R64 promoted = value;
       printf("%.17g", promoted);
     } else if constexpr (requires { bytes(value); }) {
       print_bytes(bytes(value), false);

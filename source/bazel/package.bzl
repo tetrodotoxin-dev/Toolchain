@@ -181,6 +181,14 @@ def _runtime(target, primary):
                 files.append([interface, import_name])
     return [libraries[name] for name in sorted(libraries)], files
 
+def _toolchain_header_path(file):
+    """Return the public include path of one Toolchain compiler header."""
+    marker = "source/toolchain/"
+    start = file.short_path.find(marker)
+    if start < 0:
+        fail("Toolchain compiler header has no canonical source path: " + file.short_path)
+    return file.short_path[start + len("source/"):]
+
 def _package(ctx):
     """Write source, header and platform archives with a checksum manifest.
 
@@ -200,9 +208,10 @@ def _package(ctx):
                     fail("Release variants supply different headers for " + path)
                 headers[path] = file
 
-    # Every SDK carries the annotation contract used by its public declarations.
-    # setdefault preserves a project-owned copy at the same canonical path.
-    headers.setdefault("toolchain/export.h", ctx.file._export)
+    # Every SDK carries Toolchain's compiler vocabulary and annotation
+    # contract. setdefault preserves a project owned copy at the same path.
+    for file in ctx.files._toolchain_headers:
+        headers.setdefault(_toolchain_header_path(file), file)
     license = [[file.path, "LICENSE"] for file in ctx.files.sources if file.short_path == "LICENSE"]
     archives = {
         stem + "-headers.zip": [[file.path, "include/" + path] for path, file in headers.items()] + license,
@@ -238,7 +247,8 @@ def _package(ctx):
             components = {}
             for component, name in zip(ctx.split_attr.components.get(platform, []), component_names):
                 paths = {path: True for _, path in _direct_headers(component)}
-                paths["toolchain/export.h"] = True
+                for file in ctx.files._toolchain_headers:
+                    paths[_toolchain_header_path(file)] = True
                 for path in paths:
                     if path not in headers:
                         fail("Component header is outside the released interface: " + path)
@@ -291,7 +301,15 @@ _package_release = rule(implementation = _package, attrs = {
     "version": attr.string(mandatory = True),
     "sources": attr.label_list(allow_files = True),
     "platforms": attr.string_list(mandatory = True),
-    "_export": attr.label(default = Label("//source:toolchain/export.h"), allow_single_file = True),
+    "_toolchain_headers": attr.label_list(
+        default = [
+            Label("//source:toolchain/export.h"),
+            Label("//source:toolchain/memory/lifetime.hpp"),
+            Label("//source:toolchain/toolchain.h"),
+            Label("//source:toolchain/toolchain.hpp"),
+        ],
+        allow_files = True,
+    ),
     "_writer": attr.label(default = Label("//source/bazel:release/package.py"), allow_single_file = True),
     "_allowlist_function_transition": attr.label(default = "@bazel_tools//tools/allowlists/function_transition_allowlist"),
 })
