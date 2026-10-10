@@ -4,7 +4,17 @@
 #include "toolchain/toolchain.h"
 #include "validation/data/sdk/library.h"
 
-TOOLCHAIN_ASSERT(sizeof(Count) == sizeof(U64), "Count uses the SDK width");
+_Static_assert(sizeof(U8) == 1, "U8 requires one byte");
+_Static_assert(sizeof(U16) == 2, "U16 requires two bytes");
+_Static_assert(sizeof(U32) == 4, "U32 requires four bytes");
+_Static_assert(sizeof(U64) == 8, "U64 requires eight bytes");
+_Static_assert(sizeof(S8) == 1, "S8 requires one byte");
+_Static_assert(sizeof(S16) == 2, "S16 requires two bytes");
+_Static_assert(sizeof(S32) == 4, "S32 requires four bytes");
+_Static_assert(sizeof(S64) == 8, "S64 requires eight bytes");
+_Static_assert(sizeof(R32) == 4, "R32 requires four bytes");
+_Static_assert(sizeof(R64) == 8, "R64 requires eight bytes");
+_Static_assert(sizeof(Count) == sizeof(U64), "Count uses the SDK width");
 
 #if EXPECT_COMPONENT
 #include "validation/data/sdk/project.h"
