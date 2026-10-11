@@ -38,6 +38,24 @@ if __name__ == "__main__":
         source = root / "source"
         source.mkdir()
 
+        configuration = root / ".vscode/.clang-format"
+        result = run(
+            formatter,
+            root,
+            "--export-configuration",
+            ".vscode/.clang-format",
+        )
+        assert result.stdout == (
+            "Generated format configuration at .vscode/.clang-format.\n"
+        ), result.stdout
+        generated = configuration.read_text()
+        toolchain = generated.index("'^\"toolchain/")
+        runtime = generated.index("'^\"runtime/")
+        foundation = generated.index("'^\"foundation/")
+        local = generated.index("'^\".*\"'")
+        assert toolchain < runtime < foundation < local
+        assert not (root / ".clang-format").exists()
+
         valid = source / "valid.cpp"
         valid.write_text(
             '#include "valid.hpp"\n'

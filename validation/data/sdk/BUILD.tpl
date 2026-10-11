@@ -1,9 +1,10 @@
 """Consume and repackage the generated Toolchain validation SDK."""
 
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
-load("@tetro_toolchain//:defs.bzl", "format", "package")
+load("@tetro_toolchain//:defs.bzl", "format", "package", "vscode")
 
 format()
+vscode()
 
 package(
     name = "repack",

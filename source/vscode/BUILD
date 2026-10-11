@@ -4,6 +4,7 @@ exports_files([
     "c_cpp_properties.json",
     "extensions.json",
     "launch.json",
+    "settings.json",
     "tasks.json",
 ])
 

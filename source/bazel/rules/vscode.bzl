@@ -2,7 +2,11 @@
 
 """Install the shared VS Code configuration for native validation."""
 
-load("@host_tools//:settings.bzl", "HOST_SYSTEM")
+load("@host_tools//:settings.bzl", "CLANG_FORMAT", "HOST_SYSTEM")
+
+def _json(value):
+    """Escape one host path for a generated JSON string."""
+    return value.replace("\\", "\\\\").replace("\"", "\\\"")
 
 def _install(ctx):
     """Prepare the shared JSON files and a host command that copies them.
@@ -17,7 +21,11 @@ def _install(ctx):
     outputs = []
     for source in ctx.files._configuration:
         output = ctx.actions.declare_file(directory + "/" + source.basename)
-        ctx.actions.expand_template(template = source, output = output, substitutions = {})
+        ctx.actions.expand_template(
+            template = source,
+            output = output,
+            substitutions = {"__CLANG_FORMAT__": _json(CLANG_FORMAT)},
+        )
         outputs.append(output)
 
     if HOST_SYSTEM == "windows":
@@ -25,6 +33,7 @@ def _install(ctx):
         command = '@echo off\r\nif not exist "%BUILD_WORKSPACE_DIRECTORY%\\.vscode" mkdir "%BUILD_WORKSPACE_DIRECTORY%\\.vscode"\r\n'
         for source in outputs:
             command += 'copy /Y "%%~dp0%s\\%s" "%%BUILD_WORKSPACE_DIRECTORY%%\\.vscode\\%s" >nul\r\nif errorlevel 1 exit /b 1\r\n' % (directory.replace("%", "%%"), source.basename, source.basename)
+        command += 'call "%%~dp0%s" --export-configuration "%%BUILD_WORKSPACE_DIRECTORY%%\\.vscode\\.clang-format"\r\nif errorlevel 1 exit /b 1\r\n' % ctx.executable.formatter.basename
     else:
         executable = ctx.actions.declare_file(ctx.label.name + ".sh")
         command = '#!/bin/sh\nset -eu\ndestination="$BUILD_WORKSPACE_DIRECTORY/.vscode"\nmkdir -p "$destination"\n'
@@ -32,9 +41,12 @@ def _install(ctx):
 
         # Bazel outputs are read only, including copies from an earlier install.
         command += 'cp -f "$source_directory/"*.json "$destination/"\n'
+        command += '"$(dirname "$0")/%s" --export-configuration "$destination/.clang-format"\n' % ctx.executable.formatter.basename
     ctx.actions.write(executable, command, is_executable = True)
     outputs.append(executable)
-    return [DefaultInfo(executable = executable, files = depset(outputs), runfiles = ctx.runfiles(files = outputs))]
+    runfiles = ctx.runfiles(files = outputs)
+    runfiles = runfiles.merge(ctx.attr.formatter[DefaultInfo].default_runfiles)
+    return [DefaultInfo(executable = executable, files = depset(outputs), runfiles = runfiles)]
 
 _vscode = rule(
     implementation = _install,
@@ -42,10 +54,12 @@ _vscode = rule(
     attrs = {
         "_configuration": attr.label_list(default = [
             Label("//source/vscode:c_cpp_properties.json"),
+            Label("//source/vscode:settings.json"),
             Label("//source/vscode:launch.json"),
             Label("//source/vscode:tasks.json"),
             Label("//source/vscode:extensions.json"),
         ], allow_files = True),
+        "formatter": attr.label(executable = True, cfg = "target", mandatory = True),
     },
 )
 
@@ -64,4 +78,6 @@ def vscode(name = "vscode"):
     Args:
         name: Installer target name, defaulting to vscode at the project root.
     """
-    _vscode(name = name)
+    if native.package_name():
+        fail("vscode must be declared from the repository root BUILD file")
+    _vscode(name = name, formatter = ":format")

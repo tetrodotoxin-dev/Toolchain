@@ -219,6 +219,11 @@ def main():
         action="store_true",
         help="verify formatting and source policy",
     )
+    parser.add_argument(
+        "--export-configuration",
+        metavar="PATH",
+        help="write the generated clang-format configuration inside the workspace",
+    )
     parser.add_argument("files", nargs="*", help="exact source files to format or check")
     arguments = parser.parse_args()
 
@@ -240,6 +245,20 @@ def main():
         ) = policy(root)
     except (json.JSONDecodeError, OSError, SyntaxError, ValueError) as error:
         parser.error(str(error))
+    if arguments.export_configuration:
+        if arguments.all or arguments.check or arguments.files:
+            parser.error("--export-configuration selects one generated output")
+        destination = (root / arguments.export_configuration).resolve()
+        if not destination.is_relative_to(root):
+            parser.error("Generated configuration path leaves the workspace")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(expected_configuration)
+        print(
+            "Generated format configuration at "
+            + str(destination.relative_to(root))
+            + "."
+        )
+        return 0
     if arguments.all and (arguments.check or arguments.files):
         parser.error("--all selects the complete mutable source set")
     if arguments.all or (arguments.check and not arguments.files):

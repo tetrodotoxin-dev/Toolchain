@@ -99,6 +99,48 @@ def verify_dependency_conflict(root, workspace, toolchain, directory, sources, v
     print("Incompatible SDK dependency was rejected during import.", flush=True)
 
 
+def verify_vscode(root, workspace, toolchain, directory):
+    subprocess.run([
+        "bazel", "--batch", "--output_base=" + str(root / "bazel"),
+        "run", "//:vscode", "--distdir=" + str(toolchain.parent),
+        "--distdir=" + str(directory),
+    ], cwd=workspace, check=True)
+    generated = workspace / ".vscode"
+    assert {path.name for path in generated.iterdir()} == {
+        ".clang-format",
+        "c_cpp_properties.json",
+        "extensions.json",
+        "launch.json",
+        "settings.json",
+        "tasks.json",
+    }
+    settings = json.loads((generated / "settings.json").read_text())
+    assert settings["[c]"]["editor.defaultFormatter"] == "ms-vscode.cpptools"
+    assert settings["[c]"]["editor.formatOnSave"] is True
+    assert settings["[cpp]"]["editor.defaultFormatter"] == "ms-vscode.cpptools"
+    assert settings["[cpp]"]["editor.formatOnSave"] is True
+    assert settings["C_Cpp.formatting"] == "clangFormat"
+    assert settings["C_Cpp.clang_format_fallbackStyle"] == "none"
+    assert settings["C_Cpp.clang_format_style"] == (
+        "file:${workspaceFolder}/.vscode/.clang-format"
+    )
+    formatter = Path(settings["C_Cpp.clang_format_path"])
+    assert formatter.is_file()
+    result = subprocess.run(
+        [
+            str(formatter),
+            "--style=file:" + str(generated / ".clang-format"),
+            "--assume-filename=" + str(workspace / "source/style.cpp"),
+        ],
+        input="S32 main(){return 0;}\n",
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert result.stdout == "S32 main() {\n  return 0;\n}\n", result.stdout
+    print("VS Code uses the candidate Clang binary and generated style.", flush=True)
+
+
 def verify(toolchain, checksum_manifest):
     toolchain = Path(toolchain).resolve()
     directory = Path(checksum_manifest).resolve().parent
@@ -205,6 +247,7 @@ def verify(toolchain, checksum_manifest):
                     ], cwd=workspace, check=True)
                 assert not (workspace / ".clang-format").exists()
                 print("Candidate formatter passed in the external consumer.", flush=True)
+                verify_vscode(root, workspace, toolchain, directory)
             subprocess.run([
                 "bazel", "--batch", "--output_base=" + str(root / "bazel"),
                 "test", "//:consumer", "//:component", "//:repack", "--nocache_test_results",
