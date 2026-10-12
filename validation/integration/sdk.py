@@ -2,7 +2,7 @@
 
 """Consume Toolchain's built SDK fixtures through the real repository importer.
 
-The //validation:sdk test supplies the candidate source and
+The //validation/integration:sdk test supplies the candidate source and
 fixture archives through Bazel runfiles. Bazel's distdir serves those exact
 files under their release URLs, testing packaging before publication while the
 consumer retains fixed dependency pins. The validator builds Linux, Windows
@@ -149,6 +149,10 @@ def verify(toolchain, checksum_manifest):
     sources = repository / "validation/data/sdk"
     with tarfile.open(toolchain, "r:gz") as archive:
         packaged_sources = set(archive.getnames())
+        project_files = {
+            name: archive.extractfile(name).read()
+            for name in [".bazelrc", ".bazelversion", "LICENSE"]
+        }
     assert "source/bazel/rules/.clang-format.tpl" in packaged_sources
     assert ".clang-format" not in packaged_sources
 
@@ -165,10 +169,10 @@ def verify(toolchain, checksum_manifest):
             path = directory / name
             assert checksum(path) == digest, path
             key = path.name.removeprefix(prefix).removesuffix(".zip")
-            if key == "source":
-                continue
+            assert key != "source", name
             pins[project][key] = digest
             with zipfile.ZipFile(path) as archive:
+                assert "LICENSE" in archive.namelist(), archive.namelist()
                 if key == "headers":
                     for name in [
                         "toolchain/export.h",
@@ -221,6 +225,8 @@ def verify(toolchain, checksum_manifest):
         root = Path(temporary)
         workspace = root / "consumer"
         workspace.mkdir()
+        for name, content in project_files.items():
+            (workspace / name).write_bytes(content)
         (workspace / "source").mkdir()
         shutil.copyfile(sources / "source.tpl", workspace / "source/BUILD.bazel")
         shutil.copyfile(sources / "style.cpp", workspace / "source/style.cpp")
@@ -237,7 +243,7 @@ def verify(toolchain, checksum_manifest):
                 "dependencies": repr(["@dependency//:tetro_toolchain"]),
             }
             values["dependency_pin"] = substitute(values["dependency_pin"], values)
-            for output, template in [("MODULE.bazel", "MODULE.tpl"), ("BUILD.bazel", "BUILD.tpl")]:
+            for output, template in [("MODULE.bazel", "MODULE.tpl"), ("BUILD", "BUILD.tpl")]:
                 (workspace / output).write_text(substitute((sources / template).read_text(), values))
             if linkage == "static":
                 for action in ["--all", "--check"]:
@@ -255,8 +261,12 @@ def verify(toolchain, checksum_manifest):
                 "--distdir=" + str(toolchain.parent), "--distdir=" + str(directory),
             ], cwd=workspace, check=True)
             print(linkage + " SDK consumer passed", flush=True)
+            output_directory = workspace / ".bin/bin"
+            if not output_directory.exists():
+                output_directory = workspace / "bazel-bin"
+            assert not list(output_directory.glob("*-source.zip"))
             original = directory / ("toolchain_test-" + version + "-linux-x86_64-v3-" + linkage + ".zip")
-            repacked = workspace / "bazel-bin" / original.name
+            repacked = output_directory / original.name
             with zipfile.ZipFile(original) as before, zipfile.ZipFile(repacked) as after:
                 before_components = json.loads(before.read("sdk.json"))["components"]
                 after_components = json.loads(after.read("sdk.json"))["components"]

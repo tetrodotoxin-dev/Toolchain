@@ -15,7 +15,6 @@ package(
     linkage = "{linkage}",
     module = "toolchain_test",
     platforms = ["linux-x86_64-v3"],
-    sources = [],
 )
 
 cc_test(

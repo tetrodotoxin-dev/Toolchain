@@ -1,6 +1,6 @@
 # Copyright (c) 2023-present Matt Kaes and contributors
 
-"""Package one project's source, headers and every target's linker outputs."""
+"""Package one project's headers and target linker outputs."""
 
 load("@host_tools//:settings.bzl", "PYTHON")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
@@ -190,10 +190,10 @@ def _toolchain_header_path(file):
     return file.short_path[start + len("source/"):]
 
 def _package(ctx):
-    """Write source, header and platform archives with a checksum manifest.
+    """Write header and platform archives with a checksum manifest.
 
     Args:
-        ctx: Rule context with source files and libraries split by platform.
+        ctx: Rule context with public headers and libraries split by platform.
 
     Returns:
         A list containing DefaultInfo for the archives and checksum file.
@@ -212,12 +212,11 @@ def _package(ctx):
     # contract. setdefault preserves a project owned copy at the same path.
     for file in ctx.files._toolchain_headers:
         headers.setdefault(_toolchain_header_path(file), file)
-    license = [[file.path, "LICENSE"] for file in ctx.files.sources if file.short_path == "LICENSE"]
+    license = [[ctx.file.license.path, "LICENSE"]]
     archives = {
         stem + "-headers.zip": [[file.path, "include/" + path] for path, file in headers.items()] + license,
-        stem + "-source.zip": [[file.path, file.short_path] for file in ctx.files.sources],
     }
-    inputs = headers.values() + ctx.files.sources
+    inputs = headers.values() + [ctx.file.license]
     for linkage, targets in variants.items():
         for platform, target in targets.items():
             files = _binaries(target, ctx.attr.project, linkage)
@@ -299,7 +298,7 @@ _package_release = rule(implementation = _package, attrs = {
     "component_dependencies": attr.string_list_dict(),
     "project": attr.string(mandatory = True),
     "version": attr.string(mandatory = True),
-    "sources": attr.label_list(allow_files = True),
+    "license": attr.label(mandatory = True, allow_single_file = True),
     "platforms": attr.string_list(mandatory = True),
     "_toolchain_headers": attr.label_list(
         default = [
@@ -318,7 +317,7 @@ _package_release = rule(implementation = _package, attrs = {
 def package(name = "sdk", module = None, components = {}, static = None, shared = None, linkage = None, visibility = ["//visibility:public"], tags = ["manual"], **kwargs):
     """Publish a module's library, component interfaces and SDK target.
 
-    The source package supplies //source:<module> and //source:<component>.
+    The //source package supplies //source:<module> and //source:<component>.
     Root component targets expose those header interfaces and link the common
     runtime. The SDK records the same interfaces for archive consumers.
     These declarations own their visibility, so a root BUILD can load package
@@ -338,7 +337,7 @@ def package(name = "sdk", module = None, components = {}, static = None, shared 
         visibility: Visibility of the published targets, defaulting to public.
         tags: SDK target tags. The default manual tag keeps cross compilation
             out of wildcard builds while permitting an explicit :sdk build.
-        **kwargs: Additional release attributes such as platforms and sources.
+        **kwargs: Additional release attributes such as selected platforms.
     """
     module = module or native.module_name()
     linkage = linkage or ("shared" if shared and not static else "static")
@@ -380,13 +379,13 @@ def package(name = "sdk", module = None, components = {}, static = None, shared 
         **kwargs
     )
 
-def package_release(name, static = None, shared = None, project = None, platforms = None, sources = None, components = {}, component_dependencies = {}, **kwargs):
-    """Package static and shared libraries with common source and headers.
+def package_release(name, static = None, shared = None, project = None, platforms = None, components = {}, component_dependencies = {}, **kwargs):
+    """Package static and shared libraries with their public headers.
 
-    Called from the repository root to collect its source packages and build
-    each supplied target for the selected SDK platforms. Binary archives end
-    in -static.zip or -shared.zip. Static Windows archives use _static.lib so
-    they can share an installation directory with the DLL's import library.
+    Called from the repository root to build each supplied target for the
+    selected SDK platforms. Binary archives end in -static.zip or -shared.zip.
+    Static Windows archives use _static.lib so they can share an installation
+    directory with the DLL's import library.
     Each archive preserves public definitions and the target's linkopts.
     Declared transitive shared libraries and their import libraries accompany
     either linkage in lib/. System libraries supplied by the platform remain
@@ -404,8 +403,6 @@ def package_release(name, static = None, shared = None, project = None, platform
         project: Published name and EXPORTED identifier before uppercasing,
             defaulting to the module name. Match the library macros' project.
         platforms: Platform names to publish, defaulting to all SDK platforms.
-        sources: Source archive inputs. Omit at the repository root to collect
-            its standard source packages and build configuration.
         components: Header interface targets mapped to public SDK target names.
             Each component links the release binary and exposes the selected
             target's public headers and definitions. These targets describe
@@ -439,18 +436,6 @@ def package_release(name, static = None, shared = None, project = None, platform
         project = project or native.module_name(),
         platforms = selected,
         version = native.module_version(),
-        sources = sources if sources != None else native.glob(["source/**", "validation/**"], allow_empty = True) + ["//" + package + ":sources" for package in native.subpackages(include = ["source", "validation", "tests", "benchmarks"], allow_empty = True)] + ["BUILD", "MODULE.bazel", "LICENSE", ".bazelrc", ".bazelversion"],
+        license = "//:LICENSE",
         **kwargs
-    )
-
-def source_files(name = "sources"):
-    """Collect package sources and the sources targets of descendant packages.
-
-    Args:
-        name: Filegroup target name, defaulting to the release's sources label.
-    """
-    native.filegroup(
-        name = name,
-        srcs = native.glob(["**"], allow_empty = True) + ["//" + native.package_name() + "/" + package + ":sources" for package in native.subpackages(include = ["**"], allow_empty = True)],
-        visibility = ["//visibility:public"],
     )

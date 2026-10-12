@@ -22,8 +22,8 @@ model.
 ## Components and SDKs
 
 Toolchain exposes canonical Bazel rules for compiling libraries and packaging
-SDKs. Components drive those rules so source builds and release archives expose
-the same public module graph.
+SDKs. Components drive those rules so source builds and binary SDKs expose the
+same public module graph.
 
 Components divide a library's public headers into modules with explicit
 dependencies. Define one component map and load it from the source and root
@@ -54,25 +54,42 @@ the downstream release for every supported target.
 
 ## Development
 
+Call `validation()` and `snapshot()` from the root `BUILD` file. Validation
+links the project library and compiles the sources under `validation/tests` and
+`validation/benchmarks` into the `:tests` and `:benchmarks` programs. Both
+programs receive the artifacts under `validation/data`.
+
 Repositories using Toolchain share this development workflow:
 
 ```sh
 bazel run :format
 bazel build ...
-bazel run //validation:tests
-bazel run //validation:benchmarks --config=release
+bazel run :tests
+bazel run :benchmarks --config=release
 ```
 
 The format target applies canonical source formatting, structural policy and
-comment quality checks. The validation rules collect standalone test and
+comment quality checks. The validation rule collects standalone test and
 benchmark programs from their standard directories.
 
-The recursive build covers the project while leaving release packaging
-explicit. Build the release SDK for every configured target with:
+The recursive build covers the project while leaving release artifacts
+explicit. Library projects build binary SDKs for every configured target with:
 
 ```sh
 bazel build :sdk --config=release
 ```
+
+Every project creates its source snapshot from a clean Git commit with:
+
+```sh
+bazel run :snapshot
+```
+
+The SDK contains public headers, libraries, runtime dependencies, metadata and
+the license. The snapshot contains the complete committed repository so it can
+rebuild the project and run its validation. Toolchain publishes only the
+snapshot because Bazel consumes its Starlark and compiler declarations as
+source.
 
 For a full VS Code setup, run `bazel run :vscode` to generate a
 Toolchain-compatible folder environment. It's optional but greatly

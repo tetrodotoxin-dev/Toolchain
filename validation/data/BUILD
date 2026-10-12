@@ -2,18 +2,16 @@ load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//:defs.bzl", "library")
 
-package(default_visibility = ["//validation:__pkg__"])
+package(default_visibility = [
+    "//:__pkg__",
+    "//validation/integration:__pkg__",
+])
 
 exports_files([
     "comment_quality/corpus.jsonl",
     "harness/reporting.cpp",
     "sdk/style.cpp",
 ] + glob(["sdk/*.tpl"]))
-
-filegroup(
-    name = "sources",
-    srcs = glob(["**"]),
-)
 
 cc_binary(
     name = "reporting",

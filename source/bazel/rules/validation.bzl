@@ -2,8 +2,8 @@
 
 """Canonical compiled validation runners shared by every project.
 
-Repositories collect their native and process-boundary checks under
-//validation:integration. Tests and benchmarks remain runnable programs because
+Repositories collect their native checks under validation/tests and
+validation/benchmarks. Tests and benchmarks remain runnable programs because
 their reports and filters are part of the developer interface.
 """
 
@@ -12,49 +12,52 @@ load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 _SOURCE_EXTENSIONS = ["c", "cpp", "h", "hpp"]
 
 def _sources(directory):
-    if native.package_name() != "validation":
-        fail(directory + " must be declared from //validation:BUILD")
+    if native.package_name():
+        fail(directory + " must be declared from the repository root BUILD file")
     sources = native.glob(
-        [directory + "/**/*." + extension for extension in _SOURCE_EXTENSIONS],
+        ["validation/" + directory + "/**/*." + extension for extension in _SOURCE_EXTENSIONS],
         allow_empty = True,
     )
     if not sources:
         fail("validation/" + directory + " must contain validation sources")
     return sources
 
-def tests(deps = [], **kwargs):
-    """Declare //validation:tests from validation/tests sources.
-
-    Fixture paths are relative to the working directory. Repositories use
-    `run --run_in_cwd` so Bazel and direct execution share that directory.
-
-    Args:
-        deps: C++ dependencies required by the tests.
-        **kwargs: Additional attributes forwarded to cc_binary.
-    """
-    if "name" in kwargs or "srcs" in kwargs:
-        fail("tests owns the //validation:tests name and validation/tests source set")
+def _tests(deps, data):
     cc_binary(
         name = "tests",
         testonly = True,
         srcs = _sources("tests"),
         deps = deps + [Label("//source/toolchain/validation:test")],
-        **kwargs
+        data = data,
     )
 
-def benchmarks(deps = [], **kwargs):
-    """Declare //validation:benchmarks from validation/benchmarks sources.
-
-    Args:
-        deps: C++ dependencies required by the benchmarks.
-        **kwargs: Additional attributes forwarded to cc_binary.
-    """
-    if "name" in kwargs or "srcs" in kwargs:
-        fail("benchmarks owns the //validation:benchmarks name and validation/benchmarks source set")
+def _benchmarks(deps, data):
     cc_binary(
         name = "benchmarks",
         testonly = True,
         srcs = _sources("benchmarks"),
         deps = deps + [Label("//source/toolchain/validation:benchmark")],
-        **kwargs
+        data = data,
     )
+
+def validation(deps = None, test_deps = [], benchmark_deps = []):
+    """Declare the canonical validation programs from the repository root.
+
+    The project library supplies the common dependency by default. Tests and
+    benchmarks can add the distinct dependencies required by their workloads.
+    Both programs receive the artifacts under validation/data. Fixture paths
+    remain relative to the working directory so Bazel and direct execution
+    share one data model.
+
+    Args:
+        deps: Dependencies shared by both programs, defaulting to the root
+            target named by the Bazel module.
+        test_deps: Additional dependencies required only by tests.
+        benchmark_deps: Additional dependencies required only by benchmarks.
+    """
+    if native.package_name():
+        fail("validation must be declared from the repository root BUILD file")
+    common = ["//:" + native.module_name()] if deps == None else deps
+    data = native.glob(["validation/data/**"], allow_empty = True)
+    _tests(common + test_deps, data)
+    _benchmarks(common + benchmark_deps, data)

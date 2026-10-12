@@ -1,6 +1,7 @@
 # Copyright (c) 2023-present Matt Kaes and contributors
 load("//source/bazel:toolchains/registry.bzl", "toolchains")
-load(":defs.bzl", "format", "vscode")
+load("//validation/integration:candidate.bzl", "candidate_snapshot")
+load(":defs.bzl", "format", "snapshot", "validation", "vscode")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -12,18 +13,12 @@ toolchains()
 
 format()
 
+snapshot()
+
+validation(deps = [])
+
 vscode()
 
-filegroup(
-    name = "sources",
-    srcs = [
-        ".bazelrc",
-        ".bazelversion",
-        "BUILD",
-        "LICENSE",
-        "MODULE.bazel",
-        "defs.bzl",
-        "//source:sources",
-        "//validation:sources",
-    ],
-)
+# The external-consumer test needs the live Starlark changes before they form a
+# clean Git snapshot. This private archive is test input and never a release.
+candidate_snapshot()

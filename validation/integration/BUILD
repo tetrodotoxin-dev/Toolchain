@@ -1,19 +1,14 @@
 load("@host_tools//:settings.bzl", "CXX", "NM")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_python//python:py_test.bzl", "py_test")
-load("//:defs.bzl", "benchmarks", "tests")
 load("//source/bazel:package.bzl", "package_release")
 
 package(default_visibility = ["//:__pkg__"])
 
-tests()
-
-benchmarks()
-
 py_test(
     name = "comment_quality",
     size = "small",
-    srcs = ["integration/comment_quality.py"],
+    srcs = ["comment_quality.py"],
     args = [
         "$(rlocationpath //source/bazel:rules/comment_quality.py)",
         "$(rlocationpath //validation/data:comment_quality/corpus.jsonl)",
@@ -28,7 +23,7 @@ py_test(
 py_test(
     name = "const_allocation",
     size = "small",
-    srcs = ["integration/const_allocation.py"],
+    srcs = ["const_allocation.py"],
     args = [
         "$(rlocationpath @host_tools//:llvm/bin/" + CXX.split("/")[-1] + ")",
         "$(rlocationpath //source:const_allocation_header)",
@@ -41,35 +36,23 @@ py_test(
     deps = ["@rules_python//python/runfiles"],
 )
 
-filegroup(
-    name = "sources",
-    srcs = glob([
-        "benchmarks/**",
-        "integration/**",
-        "tests/**",
-    ]) + [
-        "BUILD",
-        "//validation/data:sources",
-    ],
-)
-
 # The reporting fixture exercises every result path through the public runner.
 # Its process status and output preserve the contract seen by repository tests.
 py_test(
     name = "harness",
     size = "small",
-    srcs = ["integration/harness.py"],
+    srcs = ["harness.py"],
     args = [
-        "$(rlocationpath :tests)",
+        "$(rlocationpath //:tests)",
         "$(rlocationpath //validation/data:reporting)",
-        "$(rlocationpath :benchmarks)",
+        "$(rlocationpath //:benchmarks)",
         "$(rlocationpath //validation/data:skipped)",
         "$(rlocationpath //validation/data:empty)",
         "$(rlocationpath //validation/data:harness/reporting.cpp)",
     ],
     data = [
-        ":benchmarks",
-        ":tests",
+        "//:benchmarks",
+        "//:tests",
         "//validation/data:empty",
         "//validation/data:harness/reporting.cpp",
         "//validation/data:reporting",
@@ -81,7 +64,7 @@ py_test(
 py_test(
     name = "format",
     size = "small",
-    srcs = ["integration/format.py"],
+    srcs = ["format.py"],
     args = ["$(rlocationpath //:format)"],
     data = ["//:format"],
     deps = ["@rules_python//python/runfiles"],
@@ -92,28 +75,28 @@ py_test(
 cc_test(
     name = "components",
     size = "small",
-    srcs = ["integration/components.c"],
+    srcs = ["components.c"],
     deps = ["//validation/data:consumer"],
 )
 
 cc_test(
     name = "static",
     size = "small",
-    srcs = ["integration/library.c"],
+    srcs = ["library.c"],
     deps = ["//validation/data:static"],
 )
 
 cc_test(
     name = "shared",
     size = "small",
-    srcs = ["integration/library.c"],
+    srcs = ["library.c"],
     deps = ["//validation/data:shared"],
 )
 
 py_test(
     name = "symbols",
     size = "small",
-    srcs = ["integration/symbols.py"],
+    srcs = ["symbols.py"],
     args = [
         "$(rlocationpath @host_tools//:llvm/bin/" + NM.split("/")[-1] + ")",
         "$(rlocationpath :shared)",
@@ -124,6 +107,15 @@ py_test(
         "//validation/data:binary",
         "@host_tools//:llvm/bin/" + NM.split("/")[-1],
     ],
+    deps = ["@rules_python//python/runfiles"],
+)
+
+py_test(
+    name = "snapshot",
+    size = "small",
+    srcs = ["snapshot.py"],
+    args = ["$(rlocationpath //:snapshot)"],
+    data = ["//:snapshot"],
     deps = ["@rules_python//python/runfiles"],
 )
 
@@ -142,7 +134,6 @@ package_release(
     },
     project = "toolchain_test",
     shared = "//validation/data:shared",
-    sources = [":sources"],
     static = "//validation/data:static",
     tags = ["manual"],
 )
@@ -155,7 +146,6 @@ package_release(
     component_dependencies = {"api": []},
     components = {"//validation/data:dependency_api": "api"},
     shared = "//validation/data:dependency_shared",
-    sources = [":sources"],
     static = "//validation/data:dependency_static",
     tags = ["manual"],
 )
@@ -173,17 +163,17 @@ filegroup(
 py_test(
     name = "sdk",
     size = "medium",
-    srcs = ["integration/sdk.py"],
+    srcs = ["sdk.py"],
     args = [
-        "$(rlocationpath //:sdk)",
+        "$(rlocationpath //:_candidate_snapshot)",
         "$(rlocationpath :checksum)",
     ],
     data = [
-        "integration/sdk.c",
+        "sdk.c",
         ":checksum",
         ":dependency",
         ":fixture",
-        "//:sdk",
+        "//:_candidate_snapshot",
         "//validation/data:sdk/BUILD.tpl",
         "//validation/data:sdk/MODULE.tpl",
         "//validation/data:sdk/dependency.tpl",
@@ -205,6 +195,7 @@ test_suite(
         ":harness",
         ":sdk",
         ":shared",
+        ":snapshot",
         ":static",
         ":symbols",
     ],
