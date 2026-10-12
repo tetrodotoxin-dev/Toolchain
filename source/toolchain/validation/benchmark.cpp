@@ -38,7 +38,8 @@ Benchmark::Benchmark(const Harness& harness, Bytes<> name, BenchmarkFunc run) {
     abort();
   }
 
-  benchmarks[count++] = {&harness, name, run};
+  benchmarks[count] = {&harness, name, run};
+  ++count;
 }
 
 // One process wide counter gives every reported row the same event unit. The
@@ -57,8 +58,9 @@ auto Benchmark::register_counter(Bytes<> name, Counter read) -> bool {
 }
 
 auto Benchmark::start_time() -> void {
-  // A new start begins a focused interval and clears its end marker, pairing
-  // both timestamps with the current invocation.
+  // A zero end marks the interval as open. Clearing the previous value lets a
+  // repeated start select the latest interval, while `measure` supplies the
+  // body return time only when that interval remains open.
   sample_start = monotonic_clock.time_ns();
   sample_end = 0;
 }
@@ -138,8 +140,9 @@ static auto sort_samples(CppSize size) -> void {
 static auto measure(const Instance& benchmark, CppSize width) -> void {
   const auto& harness = *benchmark.harness;
 
-  // One complete fixture invocation warms the code and data. Sample and counter
-  // collection begin with the following invocation.
+  // One complete fixture lifecycle establishes lazy code and data state before
+  // measurement. Sampling and counter accumulation then begin from the same
+  // warmed state.
   if (harness.setup) {
     harness.setup();
   }
@@ -164,7 +167,9 @@ static auto measure(const Instance& benchmark, CppSize width) -> void {
     Benchmark::start_time();
     benchmark.run();
 
-    // A body that leaves its interval open receives its return time as the end.
+    // Benchmarks are allowed to perform their own internal sampling manually.
+    // If the benchmark did not manually mark an end point then create a sample
+    // from the last `start_time` call to ensure we have a proper sample.
     if (!sample_end) {
       Benchmark::end_time();
     }
@@ -219,9 +224,10 @@ S32 main(S32 argc, const char* argv[]) {
   // An empty prefix selects the complete suite. A supplied prefix selects
   // matching harnesses or individual benchmarks regardless of case, and an
   // unmatched prefix produces an empty measurement report.
+  //
   // One byte past the longest registered name distinguishes an oversized
-  // filter. argv supplies terminated strings, so short inputs stop at their
-  // zero.
+  // filter. Each `argv` entry is null terminated, so conversion stops at its
+  // first null byte when the prefix is shorter than that bound.
   CppSize longest = 0;
   for (CppSize i = 0; i < count; ++i) {
     if (benchmarks[i].name.size > longest) {
@@ -254,7 +260,9 @@ S32 main(S32 argc, const char* argv[]) {
   output_name("Name", width);
   printf(" %10s %10s %10s", "Fast 10%", "Middle 80%", "Slow 10%");
 
-  // A registered counter extends every row with its shared event unit.
+  // A registered counter appends one event column to every benchmark row. The
+  // 14 byte width keeps its heading aligned with the decimal values printed
+  // below it.
   if (counter) {
     putchar(' ');
     for (CppSize i = counter_name.size; i < 14; ++i) {
@@ -270,6 +278,11 @@ S32 main(S32 argc, const char* argv[]) {
   const Harness* active = nullptr;
   for (CppSize i = 0; i < count; ++i) {
     const auto& benchmark = benchmarks[i];
+
+    // Count is published only after the complete entry is stored. Every
+    // selected benchmark therefore retains the Harness reference accepted by
+    // construction.
+    __builtin_assume(benchmark.harness != nullptr);
     if (!matches(benchmark.name, filter) &&
         !matches(benchmark.harness->name, filter)) {
       continue;

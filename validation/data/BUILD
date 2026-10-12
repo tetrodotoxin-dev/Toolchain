@@ -5,6 +5,7 @@ load("//:defs.bzl", "library")
 package(default_visibility = ["//validation:__pkg__"])
 
 exports_files([
+    "comment_quality/corpus.jsonl",
     "harness/reporting.cpp",
     "sdk/style.cpp",
 ] + glob(["sdk/*.tpl"]))

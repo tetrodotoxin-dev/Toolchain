@@ -16,11 +16,12 @@ class Benchmark {
   // and callback remain borrowed for the lifetime of the runner, as with tests.
   Benchmark(const Harness& harness, Bytes<> name, BenchmarkFunc run);
 
-  // The runner times the whole body by default. A body can call `start_time`
-  // after local preparation and `end_time` before cleanup to measure a smaller
-  // interval. Each start clears the earlier end. If the body leaves the
-  // interval open, the runner closes it when the body returns. Timing calls
-  // govern the current invocation and run on the same thread as the body.
+  // The runner times the whole body by default. `start_time` begins or restarts
+  // a focused interval, and `end_time` records the end paired with the latest
+  // start. An open interval receives the body return time as its end. Timing
+  // calls govern the current invocation and run on the same thread as the body.
+  // The benchmark owns consistency across invocations by selecting the same
+  // logical region whenever its samples need to remain comparable.
   static auto start_time() -> void;
   static auto end_time() -> void;
 

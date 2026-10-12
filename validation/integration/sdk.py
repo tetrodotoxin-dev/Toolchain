@@ -172,6 +172,7 @@ def verify(toolchain, checksum_manifest):
                 if key == "headers":
                     for name in [
                         "toolchain/export.h",
+                        "toolchain/memory/const_allocation.hpp",
                         "toolchain/memory/lifetime.hpp",
                         "toolchain/toolchain.h",
                         "toolchain/toolchain.hpp",

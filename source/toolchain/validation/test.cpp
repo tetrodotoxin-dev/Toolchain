@@ -52,7 +52,8 @@ Test::Test(
     abort();
   }
 
-  tests[count++] = {&harness, name, run, file, line};
+  tests[count] = {&harness, name, run, file, line};
+  ++count;
 }
 
 static auto output_break() -> void {
@@ -122,6 +123,11 @@ S32 main(S32 argc, const char* argv[]) {
   for (U64 i = 0; i < count; ++i) {
     auto& test = tests[i];
 
+    // Count is published only after the complete entry is stored. Every
+    // selected test therefore retains the Harness reference accepted by
+    // construction.
+    __builtin_assume(test.harness != nullptr);
+
     // Each contiguous run of one harness forms an initialized group. Returning
     // to an earlier harness starts another group and invokes its initializer
     // again, preserving registration order as the complete scheduling rule.
@@ -138,7 +144,9 @@ S32 main(S32 argc, const char* argv[]) {
       }
     }
 
-    // Body timing begins after harness setup completes.
+    // Fixture setup establishes the body's starting state before timing begins.
+    // Reported milliseconds therefore describe the registered test body even
+    // when preparing each iteration requires substantial work.
     if (active->setup) {
       active->setup();
     }
@@ -159,12 +167,16 @@ S32 main(S32 argc, const char* argv[]) {
     test.result = result;
     test.milliseconds = milliseconds;
 
-    // Every completed body is paired with its harness teardown.
+    // Teardown closes the fixture lifecycle after the body result and duration
+    // are recorded. Every completed body therefore receives one cleanup while
+    // its reported time remains limited to body execution.
     if (active->teardown) {
       active->teardown();
     }
 
-    // One result selects the aggregate count, report label and display color.
+    // One switch derives the aggregate count, row label and color from the body
+    // result. An unrecognized value follows the failure path so process status
+    // remains conservative and the row remains visibly incomplete.
     const char* outcome;
     const char* color;
     switch (result) {
@@ -233,8 +245,9 @@ S32 main(S32 argc, const char* argv[]) {
     output_break();
   }
 
-  // These lists remain useful in silent runs. Keep each file:line: together
-  // so terminals and editors can recognize it as a source link.
+  // Failed test locations remain visible in silent runs. Keeping each
+  // `file:line:` token intact lets terminals and editors recognize it as a
+  // source link.
   if (failed) {
     printf("%s\n  Failed tests:%s\n", fail_color, clear_color);
     for (U64 i = 0; i < count; ++i) {

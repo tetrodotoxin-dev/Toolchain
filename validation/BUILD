@@ -1,4 +1,4 @@
-load("@host_tools//:settings.bzl", "NM")
+load("@host_tools//:settings.bzl", "CXX", "NM")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_python//python:py_test.bzl", "py_test")
 load("//:defs.bzl", "benchmarks", "tests")
@@ -9,6 +9,37 @@ package(default_visibility = ["//:__pkg__"])
 tests()
 
 benchmarks()
+
+py_test(
+    name = "comment_quality",
+    size = "small",
+    srcs = ["integration/comment_quality.py"],
+    args = [
+        "$(rlocationpath //source/bazel:rules/comment_quality.py)",
+        "$(rlocationpath //validation/data:comment_quality/corpus.jsonl)",
+    ],
+    data = [
+        "//source/bazel:rules/comment_quality.py",
+        "//validation/data:comment_quality/corpus.jsonl",
+    ],
+    deps = ["@rules_python//python/runfiles"],
+)
+
+py_test(
+    name = "const_allocation",
+    size = "small",
+    srcs = ["integration/const_allocation.py"],
+    args = [
+        "$(rlocationpath @host_tools//:llvm/bin/" + CXX.split("/")[-1] + ")",
+        "$(rlocationpath //source:const_allocation_header)",
+    ],
+    data = [
+        "//source:const_allocation_dependencies",
+        "//source:const_allocation_header",
+        "@host_tools//:llvm/bin/" + CXX.split("/")[-1],
+    ],
+    deps = ["@rules_python//python/runfiles"],
+)
 
 filegroup(
     name = "sources",
@@ -141,7 +172,7 @@ filegroup(
 # and binary archives through their public module extension.
 py_test(
     name = "sdk",
-    size = "large",
+    size = "medium",
     srcs = ["integration/sdk.py"],
     args = [
         "$(rlocationpath //:sdk)",
@@ -167,7 +198,9 @@ py_test(
 test_suite(
     name = "integration",
     tests = [
+        ":comment_quality",
         ":components",
+        ":const_allocation",
         ":format",
         ":harness",
         ":sdk",

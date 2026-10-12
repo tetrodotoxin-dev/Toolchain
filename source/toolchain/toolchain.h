@@ -26,7 +26,8 @@ typedef signed char S8;
 typedef signed short int S16;
 typedef signed long long S64;
 
-// Handle the LP32 edge case between int and long.
+// LP32 targets use a 16 bit `int` and a 32 bit `long`. Selecting `long` keeps
+// U32 and S32 on the fixed ABI width shared by every target.
 #ifdef __LP32__
 
 typedef unsigned long U32;

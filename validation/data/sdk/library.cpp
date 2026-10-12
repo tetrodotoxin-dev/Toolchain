@@ -27,8 +27,15 @@ static_assert([] {
   return storage.value.value == 42;
 }());
 
-// The C++ helper keeps native linkage. The entrypoint has C linkage and an
-// independent export annotation for hosts that discover it by name.
+static_assert([] {
+  ConstAllocation<Fixture> values(2);
+  values.get_data()[1].value = 42;
+  return values.get_data()[0].value == 0 && values.get_data()[1].value == 42;
+}());
+
+// The native helper remains a private C++ symbol while the header publishes
+// the C entrypoint. Exercising both in one translation unit proves export
+// annotations preserve implementation privacy.
 HIDDEN auto toolchain_cpp_helper(S32 value) -> S32 {
   alignas(Fixture) U8 storage[sizeof(Fixture)];
 

@@ -15,6 +15,7 @@ def _format_impl(ctx):
     """
     driver = ctx.actions.declare_file(ctx.label.name + ".py")
     policy = ctx.actions.declare_file("format_policy.py")
+    comment_quality = ctx.actions.declare_file("comment_quality.py")
     configuration = ctx.actions.declare_file(ctx.label.name + ".clang-format")
     ctx.actions.expand_template(
         template = ctx.file._driver,
@@ -32,6 +33,11 @@ def _format_impl(ctx):
         substitutions = {},
     )
     ctx.actions.expand_template(
+        template = ctx.file._comment_quality,
+        output = comment_quality,
+        substitutions = {},
+    )
+    ctx.actions.expand_template(
         template = ctx.file._configuration,
         output = configuration,
         substitutions = {},
@@ -44,7 +50,7 @@ def _format_impl(ctx):
         executable = ctx.actions.declare_file(ctx.label.name + ".sh")
         command = "#!/bin/sh\nset -eu\ndirectory=${0%%/*}\nexec '%s' \"$directory/%s\" \"$@\"\n" % (PYTHON.replace("'", "'\\''"), driver.basename)
     ctx.actions.write(executable, command, is_executable = True)
-    files = [executable, driver, policy, configuration]
+    files = [executable, driver, policy, comment_quality, configuration]
     return [DefaultInfo(
         executable = executable,
         files = depset([executable]),
@@ -57,6 +63,10 @@ _format = rule(
     attrs = {
         "_configuration": attr.label(
             default = Label("//source/bazel:rules/.clang-format.tpl"),
+            allow_single_file = True,
+        ),
+        "_comment_quality": attr.label(
+            default = Label("//source/bazel:rules/comment_quality.py"),
             allow_single_file = True,
         ),
         "_driver": attr.label(
@@ -73,14 +83,16 @@ _format = rule(
 def format():
     """Declare the canonical //:format target from the repository root.
 
-    Exact file arguments select a review-sized mutable set. --all explicitly
-    selects every C and C++ file under the standard source directories. --check
-    validates the selected files, or the complete standard tree when used by
-    itself, and enforces the SDK::Module import shape. Mutable runs generate the
-    repository's include buckets from MODULE.bazel; checks verify that generated
-    configuration together with namespace structure, comment vocabulary,
-    complete declarations, state ownership, preprocessor boundaries and lexical
-    paragraph order in the selected sources.
+    A call without arguments formats every C and C++ file under the standard
+    source directories. Exact file arguments select a review-sized mutable set,
+    while --all states the complete selection explicitly. --check validates the
+    selected files, or the complete standard tree when used by itself, and
+    enforces the SDK::Module import shape. Every source scan prints aggregate
+    comment quality status, rejects quality failures and reports comments that
+    need human review. Mutable runs generate the repository's include buckets
+    from MODULE.bazel. Checks verify that generated configuration together with
+    namespace structure, complete declarations, state ownership, preprocessor
+    boundaries and lexical paragraph order in the selected sources.
     """
     if native.package_name():
         fail("format must be declared from the repository root BUILD file")

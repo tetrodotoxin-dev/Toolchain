@@ -24,6 +24,17 @@ def run(program, root, *arguments, status=0):
     return result
 
 
+def comment_status(scanned, approved, warning, rejected, mean):
+    return (
+        "Comment quality:\n"
+        f"  Scanned: {scanned}\n"
+        f"  Approved: {approved}\n"
+        f"  Warning: {warning}\n"
+        f"  Rejected: {rejected}\n"
+        f"  Mean comment score: {mean:.2f}/100\n"
+    )
+
+
 if __name__ == "__main__":
     resolver = runfiles.Create()
     formatter = resolver.Rlocation(sys.argv[1])
@@ -70,7 +81,10 @@ if __name__ == "__main__":
         )
         assert "noncanonical numeric type 'int'" in result.stderr
         result = run(formatter, root, "source/valid.cpp")
-        assert result.stdout == "Formatted 1 source files.\n", result.stdout
+        assert result.stdout == (
+            comment_status(0, 0, 0, 0, 0)
+            + "Formatted 1 source files.\n"
+        ), result.stdout
         assert valid.read_text() == (
             '#include "valid.hpp"\n'
             "using namespace Example::Module;\n"
@@ -79,7 +93,10 @@ if __name__ == "__main__":
             "}\n"
         ), valid.read_text()
         result = run(formatter, root, "--check", "source/valid.cpp")
-        assert result.stdout == "Checked 1 source files.\n", result.stdout
+        assert result.stdout == (
+            comment_status(0, 0, 0, 0, 0)
+            + "Checked 1 source files.\n"
+        ), result.stdout
 
         includes = source / "includes.cpp"
         includes.write_text(
@@ -239,9 +256,9 @@ if __name__ == "__main__":
             'const char* text = "using namespace Example::Module::Detail;";\n'
             'const char* qualified = "Example::Data::Form::Value";\n'
             'const char* raw = R"(namespace Example::Module {})";\n'
-            "// namespace Example::Module {}\n"
+            "// namespace Example::Module\n\n"
             "// Example::Data::Form::Value remains prose.\n"
-            "/* namespace Example::Module::Detail appears in prose. */\n"
+            "/* namespace Example::Module::Detail */\n"
         )
         run(formatter, root, "source/masked.cpp")
 
@@ -327,22 +344,63 @@ if __name__ == "__main__":
             path.unlink()
 
         invalid_comments = {
-            "hyphen.cpp": "// Author-owned language.\nint value;\n",
-            "semicolon.cpp": "// One clause; another clause.\nint value;\n",
-            "em_dash.cpp": "// One clause — another clause.\nint value;\n",
-            "en_dash.cpp": "// One clause – another clause.\nint value;\n",
-            "filler.cpp": "// This simply returns the value.\nint value;\n",
-            "obvious.cpp": "// This obviously preserves the value.\nint value;\n",
-            "seamless.cpp": "// This seamlessly preserves the value.\nint value;\n",
-            "leverage.cpp": "// Leverage the value here.\nint value;\n",
-            "utilize.cpp": "// Utilize the value here.\nint value;\n",
+            "hyphen.cpp": "// Author-owned language.\nS32 value;\n",
+            "semicolon.cpp": "// One clause; another clause.\nS32 value;\n",
+            "em_dash.cpp": "// One clause — another clause.\nS32 value;\n",
+            "en_dash.cpp": "// One clause – another clause.\nS32 value;\n",
+            "filler.cpp": "// This simply returns the value.\nS32 value;\n",
+            "obvious.cpp": "// This obviously preserves the value.\nS32 value;\n",
+            "seamless.cpp": "// This seamlessly preserves the value.\nS32 value;\n",
         }
         for name, content in invalid_comments.items():
             path = source / name
             path.write_text(content)
             result = run(formatter, root, "source/" + name, status=1)
-            assert "comments" in result.stderr or "filler phrase" in result.stderr
+            assert "comment quality Reject" in result.stderr
             path.unlink()
+
+        warned_comment = source / "warned_comment.cpp"
+        warned_comment.write_text(
+            "// The buffer stores each value.\n"
+            "S32 value;\n"
+        )
+        result = run(formatter, root, "source/warned_comment.cpp")
+        assert "comment quality Warn" in result.stderr
+        assert comment_status(1, 0, 1, 0, 45) in result.stderr
+        assert result.stdout == "Formatted 1 source files.\n", result.stdout
+        warned_comment.unlink()
+
+        rejected_comment = source / "rejected_comment.cpp"
+        rejected_comment.write_text(
+            "// This helper simply provides a robust and\n"
+            "// flexible solution.\n"
+            "S32 value;\n"
+        )
+        result = run(
+            formatter,
+            root,
+            "source/rejected_comment.cpp",
+            status=1,
+        )
+        assert result.stderr.count("comment quality Reject") == 1
+        assert "  Scanned: 1\n" in result.stderr
+        assert "  Rejected: 1\n" in result.stderr
+        rejected_comment.unlink()
+
+        inline_comment = source / "inline_comment.cpp"
+        inline_comment.write_text(
+            "S32 value; // This helper simply provides a robust solution.\n"
+        )
+        result = run(
+            formatter,
+            root,
+            "source/inline_comment.cpp",
+            status=1,
+        )
+        assert "comment quality Reject" in result.stderr
+        assert "  Scanned: 1\n" in result.stderr
+        assert "  Rejected: 1\n" in result.stderr
+        inline_comment.unlink()
 
         accepted_comment = source / "accepted_comment.cpp"
         accepted_comment.write_text(
@@ -441,14 +499,113 @@ if __name__ == "__main__":
             "source/raw_allocation.cpp",
             status=1,
         )
-        assert "exact path registration" in result.stderr
+        assert "approved in Toolchain's source policy" in result.stderr
         (root / "toolchain.json").write_text(
             '{\n  "raw_allocation_files": [\n'
             '    "source/raw_allocation.cpp"\n'
             "  ]\n}\n"
         )
-        run(formatter, root, "source/raw_allocation.cpp")
-        run(formatter, root, "--check", "source/raw_allocation.cpp")
+        result = run(
+            formatter,
+            root,
+            "source/raw_allocation.cpp",
+            status=2,
+        )
+        assert (
+            "Toolchain source policy owns exceptional project paths"
+            in result.stderr
+        )
+        (root / "toolchain.json").unlink()
+        raw_allocation.unlink()
+
+        copied_path = source / "perimortem/memory/allocator/global.cpp"
+        copied_path.parent.mkdir(parents=True)
+        copied_path.write_text(
+            "auto allocate() -> void* {\n"
+            "  return malloc(1);\n"
+            "}\n"
+        )
+        result = run(
+            formatter,
+            root,
+            "source/perimortem/memory/allocator/global.cpp",
+            status=1,
+        )
+        assert "approved in Toolchain's source policy" in result.stderr
+        copied_path.unlink()
+
+        toolchain_root = root / "toolchain_policy"
+        lifetime = toolchain_root / "source/toolchain/memory/lifetime.hpp"
+        lifetime.parent.mkdir(parents=True)
+        (toolchain_root / "MODULE.bazel").write_text(
+            'module(name = "tetro_toolchain")\n'
+        )
+        toolchain_configuration = toolchain_root / ".vscode/.clang-format"
+        run(
+            formatter,
+            toolchain_root,
+            "--export-configuration",
+            ".vscode/.clang-format",
+        )
+        assert toolchain_configuration.exists()
+
+        lifetime.write_text(
+            "// # Toolchain\n"
+            "// Copyright (c) 2023-present Matt Kaes and contributors\n\n"
+            "#pragma once\n\n"
+            "namespace Toolchain {\n"
+            "auto allocate() -> S32* { return new S32; }\n"
+            "}\n"
+        )
+        result = run(
+            formatter,
+            toolchain_root,
+            "source/toolchain/memory/lifetime.hpp",
+            status=1,
+        )
+        assert "approved in Toolchain's source policy" in result.stderr
+
+        lifetime.write_text(
+            "// # Toolchain\n"
+            "// Copyright (c) 2023-present Matt Kaes and contributors\n\n"
+            "#pragma once\n\n"
+            "namespace Toolchain::Memory {\n\n"
+            "// Lifetime begins values in storage supplied by the caller.\n"
+            "class Lifetime {\n"
+            " public:\n"
+            "  static constexpr auto construct(void* allocation) -> S32* {\n"
+            "    return new (allocation) S32();\n"
+            "  }\n"
+            "};\n\n"
+            "}  // namespace Toolchain::Memory\n"
+        )
+        result = run(
+            formatter,
+            toolchain_root,
+            "source/toolchain/memory/lifetime.hpp",
+            status=1,
+        )
+        assert "approved in Toolchain's source policy" in result.stderr
+
+        lifetime.write_text(
+            "// # Toolchain\n"
+            "// Copyright (c) 2023-present Matt Kaes and contributors\n\n"
+            "#pragma once\n\n"
+            "namespace Toolchain::Memory {\n\n"
+            "// Lifetime begins values in storage supplied by the caller.\n"
+            "class Lifetime {\n"
+            " public:\n"
+            "  static constexpr auto construct(void* address) -> S32* {\n"
+            "    return new (address) S32();\n"
+            "  }\n"
+            "};\n\n"
+            "}  // namespace Toolchain::Memory\n"
+        )
+        run(
+            formatter,
+            toolchain_root,
+            "source/toolchain/memory/lifetime.hpp",
+        )
 
         fixed_aliases = {
             "int8_t": "S8",
@@ -491,7 +648,8 @@ if __name__ == "__main__":
             "#include <stdint.h>\n"
             '#include "inttypes.h"\n\n'
             'const char* text = "#include <stdint.h>";\n'
-            "// #include <inttypes.h> remains source text.\n"
+            "// The literal `#include <inttypes.h>` remains source text because\n"
+            "// lexical policy masks comments.\n"
             "S32 value = 0;\n"
         )
         result = run(
@@ -507,7 +665,7 @@ if __name__ == "__main__":
         canonical = standard_headers.read_text()
         assert '#include "inttypes.h"' not in canonical
         assert canonical.count("#include <stdint.h>") == 1
-        assert "// #include <inttypes.h> remains source text." in canonical
+        assert "// The literal `#include <inttypes.h>` remains source text" in canonical
 
         standard_macro = source / "standard_macro.cpp"
         standard_macro.write_text(
@@ -580,20 +738,8 @@ if __name__ == "__main__":
             "ptrdiff_t",
         ] + noncanonical_integer_types:
             assert f"noncanonical numeric type '{name}'" in result.stderr
-        (root / "toolchain.json").write_text(
-            '{\n  "flexible_type_files": [\n'
-            '    "source/flexible_type.cpp"\n'
-            "  ],\n"
-            '  "raw_allocation_files": [\n'
-            '    "source/raw_allocation.cpp"\n'
-            "  ],\n"
-            '  "standard_integer_files": [\n'
-            '    "source/standard_macro.cpp"\n'
-            "  ]\n}\n"
-        )
-        run(formatter, root, "source/flexible_type.cpp")
-        run(formatter, root, "--check", "source/flexible_type.cpp")
-        run(formatter, root, "--check", "source/standard_macro.cpp")
+        flexible_type.unlink()
+        standard_macro.unlink()
 
         unregistered_allocation = source / "unregistered_allocation.cpp"
         unregistered_allocation.write_text(
@@ -607,7 +753,7 @@ if __name__ == "__main__":
             "source/unregistered_allocation.cpp",
             status=1,
         )
-        assert "exact path registration" in result.stderr
+        assert "approved in Toolchain's source policy" in result.stderr
         unregistered_allocation.unlink()
 
         allocation_macro = source / "allocation_macro.cpp"
@@ -618,7 +764,7 @@ if __name__ == "__main__":
             "source/allocation_macro.cpp",
             status=1,
         )
-        assert "exact path registration" in result.stderr
+        assert "approved in Toolchain's source policy" in result.stderr
         allocation_macro.unlink()
 
         repairable_paragraphs = {
@@ -752,8 +898,17 @@ if __name__ == "__main__":
         run(formatter, root, "--all")
         run(formatter, root, "--check")
         assert not (root / ".clang-format").exists()
-        result = run(formatter, root, status=2)
-        assert "pass exact source files, --all, or --check" in result.stderr
+
+        default_source = source / "default.cpp"
+        default_source.write_text("auto value()->S32{return 1;}\n")
+        result = run(formatter, root)
+        assert default_source.read_text() == (
+            "auto value() -> S32 {\n"
+            "  return 1;\n"
+            "}\n"
+        )
+        assert "Comment quality:\n" in result.stdout + result.stderr
+        assert "Formatted " in result.stdout
         result = run(formatter, root, "../outside.cpp", status=2)
         assert "Source path leaves the workspace" in result.stderr
         result = run(formatter, root, "source", status=2)

@@ -33,4 +33,5 @@ def toolchains():
         mode = "0644",
         strip_prefix = ".",
         stamp = 0,
+        tags = ["manual"],
     )

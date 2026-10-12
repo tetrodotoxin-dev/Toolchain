@@ -7,7 +7,10 @@
 
 namespace Toolchain::Validation {
 
-// Monotonic time keeps clock adjustments out of test deadlines and samples.
+// Clock reads the host monotonic counter in nanoseconds. Values share an
+// unspecified epoch and support elapsed time subtraction within one process.
+// Wall clock adjustments therefore cannot move validation deadlines or
+// benchmark samples.
 class Clock {
  public:
   auto time_ns() const -> U64;

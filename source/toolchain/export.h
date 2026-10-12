@@ -12,8 +12,9 @@
 #define C_LINKAGE
 #endif
 
-// A shared library exports its public declarations, and consumers import
-// those declarations. Static consumers use ordinary declarations.
+// Export annotations give every SDK one public symbol vocabulary. ELF uses
+// default visibility while Windows uses `__declspec` so the library publishes
+// the same interface without a separate `.def` file.
 #if defined(_WIN32)
 #define TOOLCHAIN_EXPORT __declspec(dllexport)
 #define TOOLCHAIN_IMPORT __declspec(dllimport)
@@ -23,7 +24,7 @@
 #endif
 
 // Hidden symbols remain available throughout their own executable or shared
-// library. ELF binds those references locally. Windows keeps declarations
+// library. ELF binds those references locally while Windows keeps declarations
 // private by omitting export annotations and using explicit export tables.
 #if defined(_WIN32)
 #define HIDDEN
@@ -43,10 +44,12 @@
 #define TOOLCHAIN_DETAIL_EXPORT_1 0, TOOLCHAIN_EXPORT
 #define TOOLCHAIN_DETAIL_STATIC_1 0,
 
-// EXPORTED(TTX) imports by default. Compile the shared implementation with
-// TTX_EXPORT=1 to export its declarations. TTX_STATIC=1 selects ordinary
-// declarations for both a static implementation and its consumers, taking
-// precedence over TTX_EXPORT. Each flag governs only its named library.
+// EXPORTED(TTX) imports by default but allows for an SDKs to selectively
+// export their own symbols without requiring a dedicated macro for each SDK.
+// Compile the shared implementation with `TTX_EXPORT=1` to export this SDK's
+// symbols at compile time. `TTX_STATIC=1` selects ordinary declarations for
+// both a static implementation and its consumers, taking precedence over
+// `TTX_EXPORT`. Each flag governs only its named library.
 #define EXPORTED(project)                         \
   TOOLCHAIN_DETAIL_LOOKUP(                        \
       TOOLCHAIN_DETAIL_STATIC_, project##_STATIC, \

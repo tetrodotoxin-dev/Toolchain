@@ -304,6 +304,7 @@ _package_release = rule(implementation = _package, attrs = {
     "_toolchain_headers": attr.label_list(
         default = [
             Label("//source:toolchain/export.h"),
+            Label("//source:toolchain/memory/const_allocation.hpp"),
             Label("//source:toolchain/memory/lifetime.hpp"),
             Label("//source:toolchain/toolchain.h"),
             Label("//source:toolchain/toolchain.hpp"),
@@ -438,7 +439,7 @@ def package_release(name, static = None, shared = None, project = None, platform
         project = project or native.module_name(),
         platforms = selected,
         version = native.module_version(),
-        sources = sources if sources != None else native.glob(["source/**", "validation/**", "toolchain.json"], allow_empty = True) + ["//" + package + ":sources" for package in native.subpackages(include = ["source", "validation", "tests", "benchmarks"], allow_empty = True)] + ["BUILD", "MODULE.bazel", "LICENSE", ".bazelrc", ".bazelversion"],
+        sources = sources if sources != None else native.glob(["source/**", "validation/**"], allow_empty = True) + ["//" + package + ":sources" for package in native.subpackages(include = ["source", "validation", "tests", "benchmarks"], allow_empty = True)] + ["BUILD", "MODULE.bazel", "LICENSE", ".bazelrc", ".bazelversion"],
         **kwargs
     )
 

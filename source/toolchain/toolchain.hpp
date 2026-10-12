@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "toolchain/memory/const_allocation.hpp"
 #include "toolchain/memory/lifetime.hpp"
 #include "toolchain/toolchain.h"
 

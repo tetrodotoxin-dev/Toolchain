@@ -82,6 +82,7 @@ def _sdk(ctx):
         )
     for path in [
         "toolchain/export.h",
+        "toolchain/memory/const_allocation.hpp",
         "toolchain/memory/lifetime.hpp",
         "toolchain/toolchain.h",
         "toolchain/toolchain.hpp",

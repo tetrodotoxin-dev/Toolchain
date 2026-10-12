@@ -1,4 +1,6 @@
 .bin/
+__pycache__/
+*.py[cod]
 bazel-*
 .bazelrc.local
 MODULE.bazel.lock

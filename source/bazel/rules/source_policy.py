@@ -49,11 +49,6 @@ STANDARD_INTEGER_MACRO = re.compile(
     r"(?:MIN|MAX|C)"
     r")\b"
 )
-COMMENT_PHRASES = re.compile(
-    r"\b(?:simply|obvious(?:ly)?|seamless(?:ly)?|"
-    r"leverag(?:e|es|ed|ing)|utiliz(?:e|es|ed|ing))\b",
-    re.IGNORECASE,
-)
 CONDITIONAL_DIRECTIVES = {
     "if",
     "ifdef",
@@ -119,6 +114,20 @@ RAW_ALLOCATORS = {
     "posix_memalign",
     "realloc",
 }
+# Toolchain owns exceptional source paths so each foundational capability is
+# reviewed together with the policy that protects it.
+APPROVED_RAW_ALLOCATION_FILES = {
+    ("perimortem", "source/perimortem/memory/allocator/bibliotheca.cpp"),
+    ("perimortem", "source/perimortem/memory/allocator/global.cpp"),
+    ("toolchain", "source/toolchain/memory/const_allocation.hpp"),
+}
+APPROVED_PLACEMENT_NEW_FILES = {
+    ("toolchain", "source/toolchain/memory/lifetime.hpp"),
+}
+APPROVED_FLEXIBLE_TYPE_FILES = {
+    ("toolchain", "source/toolchain/toolchain.h"),
+}
+APPROVED_STANDARD_INTEGER_FILES = set()
 CANONICAL_TYPE_SUBSTITUTIONS = {
     "int8_t": "S8",
     "int16_t": "S16",
@@ -175,12 +184,12 @@ def lexical(source):
         if source.startswith("//", index):
             end = source.find("\n", index + 2)
             end = len(source) if end < 0 else end
-            comments.append((index, source[index + 2:end]))
+            comments.append((index, end, source[index + 2:end]))
         elif source.startswith("/*", index):
             end = source.find("*/", index + 2)
             end = len(source) if end < 0 else end + 2
             content_end = end - 2 if source[end - 2:end] == "*/" else end
-            comments.append((index, source[index + 2:content_end]))
+            comments.append((index, end, source[index + 2:content_end]))
         else:
             raw = RAW_STRING.match(source, index)
             if raw:
@@ -451,29 +460,6 @@ def system_include_errors(path, source, code):
             errors.append(
                 f"{path}:{line}: system includes use C headers ending in '.h'; "
                 "C++ library headers expand the compilation surface"
-            )
-    return errors
-
-
-def comment_errors(path, source, comments):
-    """Apply explicit comment token and filler rules."""
-    errors = []
-    for offset, comment in comments:
-        line = line_at(source, offset)
-        ordinary = comment.replace("2023-present", "")
-        if "-" in ordinary:
-            errors.append(f"{path}:{line}: comments use words separated by spaces")
-        if ";" in comment:
-            errors.append(
-                f"{path}:{line}: comments use separate sentences for independent clauses"
-            )
-        if "—" in comment or "–" in comment:
-            errors.append(
-                f"{path}:{line}: comments use sentences in place of dash punctuation"
-            )
-        for phrase in COMMENT_PHRASES.finditer(comment):
-            errors.append(
-                f"{path}:{line_at(source, offset + 2 + phrase.start())}: replace filler phrase '{phrase.group(0)}' with a concrete contract"
             )
     return errors
 
@@ -850,7 +836,7 @@ def trailing_return_errors(path, source, code):
     return errors
 
 
-def raw_allocation_offsets(source, code):
+def raw_allocation_offsets(source, code, allow_placement_new=False):
     tokens = [
         (match.group(0), match.start(), match.end())
         for match in TOKENS.finditer(code)
@@ -860,28 +846,43 @@ def raw_allocation_offsets(source, code):
         previous = tokens[index - 1][0] if index else ""
         following = tokens[index + 1][0] if index + 1 < len(tokens) else ""
         if token == "new":
+            if previous == "operator":
+                continue
+            if (
+                allow_placement_new
+                and following == "("
+                and index + 3 < len(tokens)
+                and tokens[index + 2][0] == "address"
+                and tokens[index + 3][0] == ")"
+            ):
+                continue
             offsets.append(start)
-        elif token == "delete" and previous != "=":
+        elif token == "delete" and previous not in {"=", "operator"}:
             offsets.append(start)
         elif token in RAW_ALLOCATORS and following == "(":
             offsets.append(start)
     return offsets
 
 
-def raw_allocation_errors(path, root, source, code, allowed):
+def approved_file(path, root, project, approved):
+    """Match an exceptional owner by SDK identity and exact source path."""
     relative = path.relative_to(root).as_posix()
-    if relative in allowed:
+    return (project, relative) in approved
+
+
+def raw_allocation_errors(path, root, project, source, code):
+    if approved_file(path, root, project, APPROVED_RAW_ALLOCATION_FILES):
         return []
+    allow_placement_new = approved_file(
+        path, root, project, APPROVED_PLACEMENT_NEW_FILES
+    )
     return [
-        f"{path}:{line_at(source, offset)}: raw allocation requires exact path registration in toolchain.json"
-        for offset in raw_allocation_offsets(source, code)
+        f"{path}:{line_at(source, offset)}: raw allocation is restricted to "
+        "exact project paths approved in Toolchain's source policy"
+        for offset in raw_allocation_offsets(
+            source, code, allow_placement_new=allow_placement_new
+        )
     ]
-
-
-def contains_raw_allocation(path):
-    source = path.read_text()
-    code, _ = lexical(source)
-    return bool(raw_allocation_offsets(source, code))
 
 
 def flexible_type_offsets(source, code):
@@ -929,9 +930,8 @@ def canonicalize_types(source, code):
     return source
 
 
-def flexible_type_errors(path, root, source, code, allowed):
-    relative = path.relative_to(root).as_posix()
-    if relative in allowed:
+def flexible_type_errors(path, root, project, source, code):
+    if approved_file(path, root, project, APPROVED_FLEXIBLE_TYPE_FILES):
         return []
     contract = (
         "uses the fixed width project vocabulary; select U*, S*, R*, Count, "
@@ -941,12 +941,6 @@ def flexible_type_errors(path, root, source, code, allowed):
         f"{path}:{line_at(source, offset)}: noncanonical numeric type '{token}' {contract}"
         for token, offset in flexible_type_offsets(source, code)
     ]
-
-
-def contains_flexible_type(path):
-    source = path.read_text()
-    code, _ = lexical(source)
-    return bool(flexible_type_offsets(source, code))
 
 
 def standard_integer_includes(source, code):
@@ -960,10 +954,9 @@ def standard_integer_includes(source, code):
     return matches
 
 
-def standard_integer_errors(path, root, source, code, allowed):
+def standard_integer_errors(path, root, project, source, code):
     """Keep standard integer headers and macros outside canonical sources."""
-    relative = path.relative_to(root).as_posix()
-    if relative in allowed:
+    if approved_file(path, root, project, APPROVED_STANDARD_INTEGER_FILES):
         return []
     errors = [
         f"{path}:{line_at(source, match.start())}: Toolchain supplies the canonical integer vocabulary; remove this standard integer header"
@@ -974,15 +967,6 @@ def standard_integer_errors(path, root, source, code, allowed):
         for match in STANDARD_INTEGER_MACRO.finditer(code)
     )
     return errors
-
-
-def contains_standard_integer(path):
-    source = path.read_text()
-    code, _ = lexical(source)
-    return bool(
-        standard_integer_includes(source, code)
-        or STANDARD_INTEGER_MACRO.search(code)
-    )
 
 
 def remove_standard_integer_headers(source, code):
@@ -1288,13 +1272,12 @@ def line_starts(source):
     return starts
 
 
-def canonicalize_source(path, root, standard_integer_files):
+def canonicalize_source(path, root, project):
     """Apply mechanical vocabulary and include substitutions before Clang."""
     source = path.read_text()
     code, _ = lexical(source)
     canonical = canonicalize_types(source, code)
-    relative = path.relative_to(root).as_posix()
-    if relative not in standard_integer_files:
+    if not approved_file(path, root, project, APPROVED_STANDARD_INTEGER_FILES):
         canonical_code, _ = lexical(canonical)
         canonical = remove_standard_integer_headers(canonical, canonical_code)
     if canonical != source:
@@ -1324,13 +1307,11 @@ def format_source(path):
 def source_errors(
     path,
     root,
-    raw_allocation_files,
-    flexible_type_files,
-    standard_integer_files,
+    project,
     namespace_roots,
 ):
     source = path.read_text()
-    code, comments = lexical(source)
+    code, _ = lexical(source)
     return (
         header_identity_errors(path, source, code)
         + namespace_errors(path, source, code)
@@ -1338,18 +1319,11 @@ def source_errors(
         + implementation_header_errors(path, root, source)
         + platform_header_errors(path, source)
         + system_include_errors(path, source, code)
-        + comment_errors(path, source, comments)
         + declaration_errors(path, source, code)
         + trailing_return_errors(path, source, code)
-        + raw_allocation_errors(
-            path, root, source, code, raw_allocation_files
-        )
-        + flexible_type_errors(
-            path, root, source, code, flexible_type_files
-        )
-        + standard_integer_errors(
-            path, root, source, code, standard_integer_files
-        )
+        + raw_allocation_errors(path, root, project, source, code)
+        + flexible_type_errors(path, root, project, source, code)
+        + standard_integer_errors(path, root, project, source, code)
         + preprocessor_errors(path, source)
         + paragraph_errors(path, source, code)
     )
