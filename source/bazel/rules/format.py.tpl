@@ -260,8 +260,8 @@ def main():
             )
         )
         source = path.read_text()
-        _, comments = lexical(source)
-        verdicts = classify_comments(path, source, comments)
+        code, comments = lexical(source)
+        verdicts = classify_comments(path, source, comments, code)
         comment_verdicts.extend(verdicts)
         for verdict in verdicts:
             if verdict.decision == "Reject":

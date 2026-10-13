@@ -17,6 +17,7 @@ enum class SignedEnum : S64 {
   Zero,
   Minimum = S64(-9223372036854775807LL - 1),
 };
+
 enum class UnsignedEnum : U64 { Zero, Maximum = U64(-1) };
 
 // A range of words has the same accessors as a byte range. Comparability is

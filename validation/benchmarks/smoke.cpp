@@ -47,6 +47,7 @@ static Harness Arithmetic = {
         fixture.ready = true;
         ++fixture.setups;
       },
+
   .teardown =
       [] {
         if (!fixture.ready) {

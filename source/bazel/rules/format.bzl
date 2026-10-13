@@ -89,10 +89,12 @@ def format():
     selected files, or the complete standard tree when used by itself, and
     enforces the SDK::Module import shape. Every source scan prints aggregate
     comment quality status, rejects quality failures and reports comments that
-    need human review. Mutable runs generate the repository's include buckets
-    from MODULE.bazel. Checks verify that generated configuration together with
-    namespace structure, complete declarations, state ownership, preprocessor
-    boundaries and lexical paragraph order in the selected sources.
+    need human review. Each explicit constructor carries its own comment naming
+    the conversion boundary it protects. Mutable runs generate the repository's
+    include buckets from MODULE.bazel. Checks verify that generated
+    configuration together with namespace structure, complete declarations,
+    state ownership, preprocessor boundaries, multiline brace boundaries and
+    lexical paragraph order in the selected sources.
     """
     if native.package_name():
         fail("format must be declared from the repository root BUILD file")

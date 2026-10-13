@@ -1147,7 +1147,10 @@ def executable_scope(tokens, brace, parentheses):
         return True
     if previous == ")":
         opening = parentheses.get(brace - 1)
-        return opening is not None
+        return (
+            opening is not None
+            and (opening == 0 or tokens[opening - 1][0] != "requires")
+        )
     return executable_signature(tokens, brace, parentheses)
 
 
@@ -1265,6 +1268,62 @@ def paragraph_errors(path, source, code):
     ]
 
 
+def multiline_brace_violations(source, code):
+    """Separate a multiline braced entity from the source entity after it."""
+    tokens = code_tokens(source, code)
+    braces = pairs(tokens, "{", "}")
+    parentheses = pairs(tokens, "(", ")")
+    violations = []
+    for opening in sorted(index for index in braces if index < braces[index]):
+        closing = braces[opening]
+        previous = tokens[opening - 1][0] if opening else ""
+        preceding_parenthesis = parentheses.get(opening - 1)
+        requires_expression = (
+            previous == ")"
+            and preceding_parenthesis is not None
+            and preceding_parenthesis > 0
+            and tokens[preceding_parenthesis - 1][0] == "requires"
+        )
+        if (
+            requires_expression
+            or source.find(
+                "\n",
+                tokens[opening][2],
+                tokens[closing][1],
+            )
+            < 0
+        ):
+            continue
+
+        closing_end = tokens[closing][2]
+        current_end = source.find("\n", closing_end)
+        if current_end < 0:
+            continue
+        suffix = code[closing_end:current_end].strip()
+        if re.match(r"^(?:else|catch|while)\b", suffix):
+            continue
+
+        next_start = current_end + 1
+        next_end = source.find("\n", next_start)
+        next_end = len(source) if next_end < 0 else next_end
+        following_source = source[next_start:next_end].strip()
+        following_code = code[next_start:next_end].strip()
+        if not following_source or re.match(
+            r"^(?:}|else\b|catch\b|while\b)", following_code
+        ):
+            continue
+        violations.append(next_start)
+    return violations
+
+
+def multiline_brace_errors(path, source, code):
+    """Keep each multiline braced entity in its own source paragraph."""
+    return [
+        f"{path}:{line_at(source, offset)}: multiline braced entities end with an empty line before the next source entity"
+        for offset in multiline_brace_violations(source, code)
+    ]
+
+
 def line_starts(source):
     starts = [0]
     for match in re.finditer("\n", source):
@@ -1298,6 +1357,7 @@ def format_source(path):
         source.rfind("\n", 0, offset) + 1
         for offset in paragraph_violations(source, code)
     )
+    insertions.update(multiline_brace_violations(source, code))
     for offset in sorted(insertions, reverse=True):
         source = source[:offset] + "\n" + source[offset:]
     if insertions:
@@ -1326,4 +1386,5 @@ def source_errors(
         + standard_integer_errors(path, root, project, source, code)
         + preprocessor_errors(path, source)
         + paragraph_errors(path, source, code)
+        + multiline_brace_errors(path, source, code)
     )

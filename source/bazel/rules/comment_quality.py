@@ -29,6 +29,12 @@ TECHNICAL_TERM = re.compile(
     r"workspace)\b",
     re.IGNORECASE,
 )
+EXPLICIT_CONSTRUCTOR = re.compile(
+    r"(?m)^[ \t]*(?:(?:\[\[[^\n]*\]\]|consteval|constexpr|friend|inline)\s+)*"
+    r"explicit(?:\s*\([^{};\n]*\))?\s+(?!operator\b)"
+    r"[A-Za-z_][A-Za-z0-9_]*\s*\("
+)
+EXPLICIT_PREFIX = re.compile(r"\s*(?:template\s*<[^;{}]*>\s*)*")
 
 
 @dataclass(frozen=True)
@@ -60,6 +66,14 @@ class SourceSlice:
     comment: str
     attached_line: int
     attached: str
+
+
+EXPLICIT_CONSTRUCTOR_SIGNAL = Signal(
+    "unjustified explicit constructor",
+    100,
+    "Each explicit constructor has its own comment explaining why implicit "
+    "construction would violate its contract.",
+)
 
 
 def normalize(comment):
@@ -885,6 +899,10 @@ def source_signals(context):
     path_words = {part.lower() for part in path.parts}
     technical_term_count = len(TECHNICAL_TERM.findall(comment))
 
+    explicit_constructor = attached_explicit_constructor(context)
+    if explicit_constructor and not explains_explicit_constructor(comment):
+        signals.append(EXPLICIT_CONSTRUCTOR_SIGNAL)
+
     if (
         "validation" in path_words
         and len(WORD.findall(comment)) >= 8
@@ -1236,6 +1254,36 @@ def source_signals(context):
     return signals
 
 
+def attached_explicit_constructor(context):
+    """Find the explicit constructor directly governed by one comment block."""
+    match = EXPLICIT_CONSTRUCTOR.search(context.attached)
+    if not match or not EXPLICIT_PREFIX.fullmatch(context.attached[: match.start()]):
+        return None
+    return context.attached_line + context.attached[: match.start()].count("\n")
+
+
+def explains_explicit_constructor(comment):
+    """Recognize a comment that states the constructor's conversion boundary."""
+    if matches(
+        r"\b(?:call site|construct(?:ion|or) syntax|convert(?:ed|ing|s)?|"
+        r"conversion|implicit(?:ly)?)\b",
+        comment,
+    ):
+        return True
+    return matches(r"\bexplicit construction\b", comment) and matches(
+        r"\b(?:distinguishes?|exposes?|keeps?|makes?|prevents?|requires?)\b",
+        comment,
+    )
+
+
+def explicit_constructor_lines(source, code):
+    """Locate every explicit constructor while strings and comments are masked."""
+    return tuple(
+        source.count("\n", 0, match.start()) + 1
+        for match in EXPLICIT_CONSTRUCTOR.finditer(code)
+    )
+
+
 def classify_file(path, line):
     context = source_slice(path, line)
     base = classify(context.comment)
@@ -1302,15 +1350,32 @@ def source_contexts(path, source, comments):
     return tuple(contexts)
 
 
-def classify_comments(path, source, comments):
+def classify_comments(path, source, comments, code=None):
     """Classify every authored comment block in one C or C++ source file."""
+    contexts = source_contexts(path, source, comments)
     verdicts = []
-    for context in source_contexts(path, source, comments):
+    covered_constructors = set()
+    for context in contexts:
         base = classify(context.comment)
+        constructor = attached_explicit_constructor(context)
+        if constructor:
+            covered_constructors.add(constructor)
         verdicts.append(
             source_verdict(base, context, source_signals(context))
         )
-    return tuple(verdicts)
+    if code is not None:
+        for line in explicit_constructor_lines(source, code):
+            if line in covered_constructors:
+                continue
+            context = SourceSlice(str(path), line, "", line, "")
+            verdicts.append(
+                source_verdict(
+                    classify(""),
+                    context,
+                    (EXPLICIT_CONSTRUCTOR_SIGNAL,),
+                )
+            )
+    return tuple(sorted(verdicts, key=lambda verdict: verdict.line or 0))
 
 
 def diagnostic(verdict):

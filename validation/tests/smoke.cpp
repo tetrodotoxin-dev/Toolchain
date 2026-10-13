@@ -30,6 +30,7 @@ static Harness Assertions = {
         fixture.value = 0;
         ++fixture.setups;
       },
+
   .teardown =
       [] {
         fixture.value = -1;

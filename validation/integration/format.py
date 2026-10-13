@@ -475,6 +475,83 @@ if __name__ == "__main__":
         )
         run(formatter, root, "source/constructors.hpp")
 
+        missing_explicit_comment = source / "missing_explicit_comment.hpp"
+        missing_explicit_comment.write_text(
+            "class MissingExplicitComment {\n"
+            " public:\n"
+            "  explicit MissingExplicitComment(S32 value) : value(value) {}\n"
+            " private:\n"
+            "  S32 value;\n"
+            "};\n"
+        )
+        result = run(
+            formatter,
+            root,
+            "source/missing_explicit_comment.hpp",
+            status=1,
+        )
+        assert "unjustified explicit constructor" in result.stderr
+        assert "(100/100)" in result.stderr
+        missing_explicit_comment.unlink()
+
+        unexplained_explicit = source / "unexplained_explicit.hpp"
+        unexplained_explicit.write_text(
+            "class UnexplainedExplicit {\n"
+            " public:\n"
+            "  // Stores the supplied scalar.\n"
+            "  explicit UnexplainedExplicit(S32 value) : value(value) {}\n"
+            " private:\n"
+            "  S32 value;\n"
+            "};\n"
+        )
+        result = run(
+            formatter,
+            root,
+            "source/unexplained_explicit.hpp",
+            status=1,
+        )
+        assert "unjustified explicit constructor" in result.stderr
+        assert "(100/100)" in result.stderr
+        unexplained_explicit.unlink()
+
+        shared_explicit_comment = source / "shared_explicit_comment.hpp"
+        shared_explicit_comment.write_text(
+            "class SharedExplicitComment {\n"
+            " public:\n"
+            "  /* Construction syntax keeps scalar values from converting into an\n"
+            "     owner when the caller intends to retain the scalar. */\n"
+            "  explicit SharedExplicitComment(S32 value) : value(value) {}\n"
+            "  explicit SharedExplicitComment(U32 value) : value(value) {}\n"
+            " private:\n"
+            "  U32 value;\n"
+            "};\n"
+        )
+        result = run(
+            formatter,
+            root,
+            "source/shared_explicit_comment.hpp",
+            status=1,
+        )
+        assert result.stderr.count("unjustified explicit constructor") == 1
+        shared_explicit_comment.unlink()
+
+        explained_explicits = source / "explained_explicits.hpp"
+        explained_explicits.write_text(
+            "class ExplainedExplicits {\n"
+            " public:\n"
+            "  // Explicit construction prevents a signed scalar from silently becoming\n"
+            "  // an owned value when the caller intends to retain the scalar.\n"
+            "  explicit ExplainedExplicits(S32 value) : value(value) {}\n"
+            "  // Construction syntax keeps an unsigned scalar from implicitly becoming\n"
+            "  // an owned value when the caller intends to retain the scalar.\n"
+            "  explicit ExplainedExplicits(U32 value) : value(value) {}\n"
+            " private:\n"
+            "  U32 value;\n"
+            "};\n"
+        )
+        run(formatter, root, "source/explained_explicits.hpp")
+        run(formatter, root, "--check", "source/explained_explicits.hpp")
+
         deleted_operation = source / "deleted_operation.hpp"
         deleted_operation.write_text(
             "class DeletedOperation {\n"
@@ -873,6 +950,87 @@ if __name__ == "__main__":
         assert "  } else if" in formatted_else
         assert "  } else {" in formatted_else
         run(formatter, root, "--check", "source/attached_else.cpp")
+
+        body_boundaries = source / "body_boundaries.hpp"
+        body_boundaries.write_text(
+            "class BodyBoundaries {\n"
+            " public:\n"
+            "  BodyBoundaries(S32 value) : value(value) {}\n"
+            "  BodyBoundaries(const BodyBoundaries& source) : value(source.value) {\n"
+            "    value++;\n"
+            "  }\n"
+            "  BodyBoundaries(BodyBoundaries&& source) {\n"
+            "    value = source.value;\n"
+            "    source.value = 0;\n"
+            "  }\n"
+            "  auto operator=(const BodyBoundaries& source) -> BodyBoundaries& {\n"
+            "    value = source.value;\n"
+            "    return *this;\n"
+            "  }\n"
+            "  ~BodyBoundaries() { value = 0; }\n"
+            " private:\n"
+            "  S32 value;\n"
+            "};\n"
+        )
+        result = run(
+            formatter,
+            root,
+            "--check",
+            "source/body_boundaries.hpp",
+            status=1,
+        )
+        assert "multiline braced entities" in result.stderr
+        run(formatter, root, "source/body_boundaries.hpp")
+        formatted_boundaries = body_boundaries.read_text()
+        assert "value(value) {}\n  BodyBoundaries" in formatted_boundaries
+        assert "    value++;\n  }\n\n  BodyBoundaries" in formatted_boundaries
+        assert "  }\n\n  auto operator=" in formatted_boundaries, repr(
+            formatted_boundaries
+        )
+        assert "    return *this;\n  }\n\n  ~BodyBoundaries" in formatted_boundaries
+        run(formatter, root, "source/body_boundaries.hpp")
+        assert body_boundaries.read_text() == formatted_boundaries
+        run(formatter, root, "--check", "source/body_boundaries.hpp")
+
+        requires_expression = source / "requires_expression.hpp"
+        requires_expression.write_text(
+            "template <typename Type>\n"
+            "  requires requires(const Type& value) {\n"
+            "    value.get_data();\n"
+            "    value.get_capacity();\n"
+            "    value.get_size();\n"
+            "  }\n"
+            "inline auto size(const Type& value) -> Count {\n"
+            "  return value.get_size();\n"
+            "}\n"
+        )
+        run(formatter, root, "source/requires_expression.hpp")
+        formatted_requires = requires_expression.read_text()
+        assert "  }\ninline auto size" in formatted_requires, repr(formatted_requires)
+        run(formatter, root, "--check", "source/requires_expression.hpp")
+
+        type_boundaries = source / "type_boundaries.hpp"
+        type_boundaries.write_text(
+            "struct FirstType {\n"
+            "  S32 first;\n"
+            "  S32 second;\n"
+            "};\n"
+            "// Second type\n"
+            "struct SecondType {\n"
+            "  S32 value;\n"
+            "};\n"
+        )
+        result = run(
+            formatter,
+            root,
+            "--check",
+            "source/type_boundaries.hpp",
+            status=1,
+        )
+        assert "multiline braced entities" in result.stderr
+        run(formatter, root, "source/type_boundaries.hpp")
+        assert "};\n\n// Second type\nstruct SecondType" in type_boundaries.read_text()
+        run(formatter, root, "--check", "source/type_boundaries.hpp")
 
         repairable_preprocessor = {
             "conditional.cpp": (
