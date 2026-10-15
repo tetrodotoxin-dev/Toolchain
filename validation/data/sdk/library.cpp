@@ -3,8 +3,12 @@
 
 #include "validation/data/sdk/library.h"
 
+#include "toolchain/compile/allocation.hpp"
+#include "toolchain/compile/source_location.hpp"
+#include "toolchain/memory/lifetime.hpp"
 #include "toolchain/toolchain.hpp"
 
+using namespace Toolchain::Compile;
 using namespace Toolchain::Memory;
 
 struct Fixture {
@@ -28,10 +32,12 @@ static_assert([] {
 }());
 
 static_assert([] {
-  ConstAllocation<Fixture> values(2);
+  Allocation<Fixture> values(2);
   values.get_data()[1].value = 42;
   return values.get_data()[0].value == 0 && values.get_data()[1].value == 42;
 }());
+
+static_assert(SourceLocation::current().is_set());
 
 // The native helper remains a private C++ symbol while the header publishes
 // the C entrypoint. Exercising both in one translation unit proves export

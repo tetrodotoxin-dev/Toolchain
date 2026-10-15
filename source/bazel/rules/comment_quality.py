@@ -35,6 +35,35 @@ EXPLICIT_CONSTRUCTOR = re.compile(
     r"[A-Za-z_][A-Za-z0-9_]*\s*\("
 )
 EXPLICIT_PREFIX = re.compile(r"\s*(?:template\s*<[^;{}]*>\s*)*")
+POLICY_HOOK_CALL = re.compile(
+    r"(?:get_policy\s*\(\s*\)\s*\.|policy_type\s*::)\s*"
+    r"([A-Za-z_][A-Za-z0-9_]*)\s*\("
+)
+PROHIBITED_ALIAS_WORDS = frozenset(
+    {
+        "admissibility",
+        "admissibilities",
+        "admissible",
+        "admissibly",
+        "admission",
+        "admissions",
+        "admissive",
+        "admissively",
+        "admissiveness",
+        "admit",
+        "admits",
+        "admitted",
+        "admitter",
+        "admitters",
+        "admitting",
+        "admittance",
+        "admittances",
+        "inadmissibility",
+        "inadmissibilities",
+        "inadmissible",
+        "inadmissibly",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -147,10 +176,22 @@ def source_verdict(base, context, extra):
 def classify(source):
     """Return a repeatable style verdict and every contribution to its score."""
     comment = normalize(source)
+    grammar_comment = normalize(
+        "\n".join(
+            line
+            for line in source.splitlines()
+            if not normalize(line).startswith("auto ")
+        )
+    )
     punctuation_prose = re.sub(r"`[^`]*`", "", comment)
     punctuation_prose = re.sub(r"\]\([^)]*\)", "]", punctuation_prose)
     punctuation_prose = re.sub(r"https?://\S+", "", punctuation_prose)
     words = WORD.findall(comment)
+    prohibited_aliases = {
+        word
+        for word in words
+        if any(alias in word.lower() for alias in PROHIBITED_ALIAS_WORDS)
+    }
     imperative = bool(words) and words[0].lower() in {
         "add",
         "build",
@@ -185,6 +226,15 @@ def classify(source):
         signals.append(Signal(name, points, explanation))
         minimum_score = max(minimum_score, score_floor)
 
+    if prohibited_aliases:
+        add(
+            "prohibited alias word",
+            100,
+            "The admit word family substitutes a generic label for the "
+            "operation's concrete verb.",
+            100,
+        )
+
     if matches(r"\bCopyright\s*\(c\)", comment):
         add(
             "license metadata",
@@ -205,7 +255,8 @@ def classify(source):
         )
 
     if re.fullmatch(
-        r"(?:'[^']*'|\"[^\"]*\"|[A-Z]+\d+\.?|0x[0-9A-Fa-f]+|\d+)",
+        r"(?:'[^']*'|\"[^\"]*\"|[A-Z]+\d+\.?|0x[0-9A-Fa-f]+|\d+|"
+        r"[+*/%=<>!&|^~?-])",
         comment,
     ):
         add(
@@ -797,7 +848,11 @@ def classify(source):
             "The comment directs or narrates the next statement without explaining its choice.",
         )
 
-    if comment[:1].islower() and not namespace_annotation and not structural_heading:
+    if (
+        grammar_comment[:1].islower()
+        and not namespace_annotation
+        and not structural_heading
+    ):
         add(
             "unmarked identifier",
             25,
@@ -806,7 +861,7 @@ def classify(source):
             40,
         )
 
-    if re.search(r"[.!?]\s+[a-z][A-Za-z0-9_]*\b", comment):
+    if re.search(r"[.!?]\s+[a-z][A-Za-z0-9_]*\b", grammar_comment):
         add(
             "unmarked sentence identifier",
             25,
@@ -972,6 +1027,61 @@ def source_signals(context):
                     "the declaration already supplies that context.",
                 )
             )
+
+        relocation_policy = (
+            function_name == "relocate"
+            and matches(r"\bdestination\b", context.attached)
+            and matches(r"\bsource\b", context.attached)
+        )
+        if relocation_policy:
+            names_both_locations = matches(r"`destination`", comment) and matches(
+                r"`source`", comment
+            )
+            explains_lifetime_choice = matches(
+                r"\b(?:allocation|Arena|block|capacity|lifetime|owner|release|"
+                r"remit|reset|storage)\b",
+                comment,
+            )
+            if not names_both_locations or not explains_lifetime_choice:
+                signals.append(
+                    Signal(
+                        "incomplete relocation contract",
+                        60,
+                        "A relocation policy must name the destination storage, "
+                        "the source value and the ownership or lifetime reason "
+                        "for copying or moving between them.",
+                    )
+                )
+
+            if matches(
+                r"\bwhen that expression is valid\b|"
+                r"\brejects? (?:constant source|rvalue|lvalue) construction\b|"
+                r"\bconstructed from (?:the |an? )?(?:constant source|rvalue|lvalue)\b",
+                comment,
+            ):
+                signals.append(
+                    Signal(
+                        "type trait narration",
+                        45,
+                        "The comment paraphrases constructibility dispatch instead "
+                        "of explaining the policy invariant that requires it.",
+                    )
+                )
+
+    container_name = path.stem.lower()
+    if (
+        "memory" in path_words
+        and ("vector" in container_name or "bytes" in container_name)
+        and matches(r"\belements?\b", comment)
+    ):
+        signals.append(
+            Signal(
+                "container value alias",
+                45,
+                "Vector and Bytes use value for contained items. Element adds a "
+                "second identity for the same contract subject.",
+            )
+        )
 
     primary_declaration = re.search(
         r"\b(?:class|struct)\s+([A-Za-z_][A-Za-z0-9_]*)\b",
@@ -1284,10 +1394,87 @@ def explicit_constructor_lines(source, code):
     )
 
 
+def policy_extension_signals(context, code):
+    """Require an open CRTP capability to publish every invoked policy hook."""
+    if not code or "policy_type" not in context.attached:
+        return []
+    if not re.search(
+        r"\b(?:class|struct)\s+[A-Za-z_][A-Za-z0-9_]*",
+        context.attached,
+    ):
+        return []
+
+    hooks = sorted(set(POLICY_HOOK_CALL.findall(code)))
+    if len(hooks) < 2:
+        return []
+
+    contract_lines = []
+    for line in context.comment.splitlines():
+        marked = re.match(r"^\s*(?://|#)(.*)$", line)
+        contract_lines.append(marked.group(1) if marked else line)
+    signature_lines = {}
+    for hook in hooks:
+        for index, line in enumerate(contract_lines):
+            if re.match(
+                r"^ {2}auto\s+" + re.escape(hook) + r"\s*\(",
+                line,
+            ):
+                signature_lines[hook] = index
+                break
+
+    missing = [hook for hook in hooks if hook not in signature_lines]
+    undocumented = []
+    for hook, index in signature_lines.items():
+        description = index + 1
+        while description < len(contract_lines) and not normalize(
+            contract_lines[description]
+        ):
+            description += 1
+
+        description_lines = []
+        while description < len(contract_lines) and normalize(
+            contract_lines[description]
+        ):
+            description_lines.append(contract_lines[description])
+            description += 1
+
+        if (
+            not description_lines
+            or any(
+                re.match(r"^ {4}\S", line) is None
+                for line in description_lines
+            )
+            or len(WORD.findall(normalize("\n".join(description_lines)))) < 5
+        ):
+            undocumented.append(hook)
+    if not missing and not undocumented:
+        return []
+
+    failures = []
+    if missing:
+        names = ", ".join(f"`{hook}`" for hook in missing)
+        failures.append(f"missing signatures for {names}")
+    if undocumented:
+        names = ", ".join(f"`{hook}`" for hook in undocumented)
+        failures.append(f"missing local invariants for {names}")
+    return [
+        Signal(
+            "incomplete policy extension contract",
+            65,
+            "The capability's primary contract has " + " and ".join(failures) + ".",
+        ),
+    ]
+
+
 def classify_file(path, line):
+    source = Path(path).read_text()
     context = source_slice(path, line)
     base = classify(context.comment)
-    return source_verdict(base, context, source_signals(context))
+    return source_verdict(
+        base,
+        context,
+        source_signals(context) + policy_extension_signals(context, source),
+    )
 
 
 def source_contexts(path, source, comments):
@@ -1360,9 +1547,10 @@ def classify_comments(path, source, comments, code=None):
         constructor = attached_explicit_constructor(context)
         if constructor:
             covered_constructors.add(constructor)
-        verdicts.append(
-            source_verdict(base, context, source_signals(context))
-        )
+        extra = source_signals(context)
+        if code is not None:
+            extra += policy_extension_signals(context, code)
+        verdicts.append(source_verdict(base, context, extra))
     if code is not None:
         for line in explicit_constructor_lines(source, code):
             if line in covered_constructors:

@@ -3,8 +3,6 @@
 
 #pragma once
 
-#include "toolchain/memory/const_allocation.hpp"
-#include "toolchain/memory/lifetime.hpp"
 #include "toolchain/toolchain.h"
 
 // Bool fixes boolean storage at one byte while preserving the language's

@@ -30,6 +30,22 @@ if __name__ == "__main__":
     assert "hyphenated prose" not in {
         signal.name for signal in markdown_link.signals
     }
+    for prohibited in classifier.PROHIBITED_ALIAS_WORDS:
+        verdict = classifier.classify(
+            f"The operation uses {prohibited} as its result."
+        )
+        assert verdict.decision == "Reject", (prohibited, verdict)
+        assert "prohibited alias word" in {
+            signal.name for signal in verdict.signals
+        }, (prohibited, verdict)
+    for identifier in ("admission_result", "AdmissionResult"):
+        verdict = classifier.classify(
+            f"The operation returns `{identifier}`."
+        )
+        assert verdict.decision == "Reject", (identifier, verdict)
+        assert "prohibited alias word" in {
+            signal.name for signal in verdict.signals
+        }, (identifier, verdict)
 
     corpus = [
         json.loads(line)
@@ -55,14 +71,14 @@ if __name__ == "__main__":
     correction = suite("correction")
     adversarial = suite("adversarial")
     punctuation = suite("punctuation")
-    assert len(corpus) == 153
+    assert len(corpus) == 165
     assert len(examples) == 24
     assert len(feedback) == 14
     assert len(revisions) == 1
     assert len(holdout) == 24
     assert len(holdout_feedback) == 17
     assert len(edited) == 10
-    assert len(source_context) == 22
+    assert len(source_context) == 34
     assert len(source_holdout) == 24
     assert len(correction) == 2
     assert len(adversarial) == 13

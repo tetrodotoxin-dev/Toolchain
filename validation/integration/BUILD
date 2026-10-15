@@ -21,16 +21,16 @@ py_test(
 )
 
 py_test(
-    name = "const_allocation",
+    name = "compile_allocation",
     size = "small",
-    srcs = ["const_allocation.py"],
+    srcs = ["compile_allocation.py"],
     args = [
         "$(rlocationpath @host_tools//:llvm/bin/" + CXX.split("/")[-1] + ")",
-        "$(rlocationpath //source:const_allocation_header)",
+        "$(rlocationpath //source:compile_allocation_header)",
     ],
     data = [
-        "//source:const_allocation_dependencies",
-        "//source:const_allocation_header",
+        "//source:compile_allocation_dependencies",
+        "//source:compile_allocation_header",
         "@host_tools//:llvm/bin/" + CXX.split("/")[-1],
     ],
     deps = ["@rules_python//python/runfiles"],
@@ -190,7 +190,7 @@ test_suite(
     tests = [
         ":comment_quality",
         ":components",
-        ":const_allocation",
+        ":compile_allocation",
         ":format",
         ":harness",
         ":sdk",

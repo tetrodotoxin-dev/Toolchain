@@ -6,7 +6,8 @@ cc_library(
     name = "headers",
     hdrs = [
         "toolchain/export.h",
-        "toolchain/memory/const_allocation.hpp",
+        "toolchain/compile/allocation.hpp",
+        "toolchain/compile/source_location.hpp",
         "toolchain/memory/lifetime.hpp",
         "toolchain/toolchain.h",
         "toolchain/toolchain.hpp",
@@ -15,13 +16,13 @@ cc_library(
 )
 
 filegroup(
-    name = "const_allocation_header",
-    srcs = ["toolchain/memory/const_allocation.hpp"],
+    name = "compile_allocation_header",
+    srcs = ["toolchain/compile/allocation.hpp"],
     testonly = True,
 )
 
 filegroup(
-    name = "const_allocation_dependencies",
+    name = "compile_allocation_dependencies",
     srcs = [
         "toolchain/export.h",
         "toolchain/memory/lifetime.hpp",
@@ -35,7 +36,8 @@ filegroup(
     srcs = glob(["sdk/**"]) + [
         "BUILD",
         "toolchain/export.h",
-        "toolchain/memory/const_allocation.hpp",
+        "toolchain/compile/allocation.hpp",
+        "toolchain/compile/source_location.hpp",
         "toolchain/memory/lifetime.hpp",
         "toolchain/toolchain.h",
         "toolchain/toolchain.hpp",

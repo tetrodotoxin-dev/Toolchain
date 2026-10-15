@@ -35,6 +35,11 @@ PLATFORM_INCLUDE = re.compile(
     r"sys/|linux/|wayland|mach/|CoreFoundation/|emscripten(?:\.h|/))"
 )
 SYSTEM_INCLUDE = re.compile(r"^\s*#\s*include\s*<([^>]+)>")
+NAMED_CAST = re.compile(
+    r"\b(?:const|dynamic|reinterpret|static)_cast\s*<|"
+    r"\bstd\s*::\s*bit_cast\s*<|"
+    r"\b__builtin_bit_cast\s*\("
+)
 STANDARD_INTEGER_INCLUDE = re.compile(
     r'^[ \t]*#[ \t]*include[ \t]*[<"](?:inttypes|stdint)\.h[>"]'
     r"[ \t]*(?://.*)?(?:\r?\n|$)",
@@ -119,10 +124,13 @@ RAW_ALLOCATORS = {
 APPROVED_RAW_ALLOCATION_FILES = {
     ("perimortem", "source/perimortem/memory/allocator/bibliotheca.cpp"),
     ("perimortem", "source/perimortem/memory/allocator/global.cpp"),
-    ("toolchain", "source/toolchain/memory/const_allocation.hpp"),
+    ("toolchain", "source/toolchain/compile/allocation.hpp"),
 }
 APPROVED_PLACEMENT_NEW_FILES = {
     ("toolchain", "source/toolchain/memory/lifetime.hpp"),
+}
+APPROVED_NAMED_CAST_FILES = {
+    ("perimortem", "source/perimortem/core/data.hpp"),
 }
 APPROVED_FLEXIBLE_TYPE_FILES = {
     ("toolchain", "source/toolchain/toolchain.h"),
@@ -280,8 +288,8 @@ def namespace_owns(code, declaration, object_declaration):
 def source_location_extension(expected_namespace, expected_object, namespace, code):
     return (
         namespace == "std"
-        and expected_object == "Source"
-        and expected_namespace.endswith("::Diagnostics")
+        and expected_object == "SourceLocation"
+        and expected_namespace.endswith("::Compile")
         and re.search(r"\bclass\s+source_location\b", code)
         and re.search(r"\bstruct\s+__impl\b", code)
         and "__builtin_source_location" in code
@@ -464,15 +472,16 @@ def system_include_errors(path, source, code):
     return errors
 
 
-def declaration_errors(path, source, code):
+def declaration_errors(path, root, project, source, code):
     """Keep C++ ownership on complete declarations and ordinary state."""
-    if path.suffix not in {".cpp", ".hpp"}:
+    if path.suffix not in HEADERS | IMPLEMENTATIONS:
         return []
     errors = []
-    for match in re.finditer(r"\bconst_cast\s*<", code):
-        errors.append(
-            f"{path}:{line_at(source, match.start())}: owner contracts preserve const qualification"
-        )
+    if not approved_file(path, root, project, APPROVED_NAMED_CAST_FILES):
+        for match in NAMED_CAST.finditer(code):
+            errors.append(
+                f"{path}:{line_at(source, match.start())}: named casts use the owning project's reviewed data conversion boundary"
+            )
     for match in re.finditer(r"\bmutable\b", code):
         errors.append(
             f"{path}:{line_at(source, match.start())}: state changing operations use their owner contract"
@@ -1379,7 +1388,7 @@ def source_errors(
         + implementation_header_errors(path, root, source)
         + platform_header_errors(path, source)
         + system_include_errors(path, source, code)
-        + declaration_errors(path, source, code)
+        + declaration_errors(path, root, project, source, code)
         + trailing_return_errors(path, source, code)
         + raw_allocation_errors(path, root, project, source, code)
         + flexible_type_errors(path, root, project, source, code)

@@ -20,7 +20,7 @@ def package(manifest, checksums):
                 content = Path(source).read_bytes()
                 if name == "sdk.json":
                     # lib/ sorts before sdk.json, so these digests describe the
-                    # exact payloads already admitted to this archive.
+                    # exact payloads already written to this archive.
                     metadata = json.loads(content)
                     metadata["sha256"] = {path: digest for path, digest in seen.items()
                                           if path.startswith("lib/")}

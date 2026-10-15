@@ -20,14 +20,15 @@ constexpr auto operator delete(void*, void*) noexcept -> void;
 
 namespace Toolchain::Memory {
 
-// Lifetime begins an object inside storage managed by its caller. A factory
-// preserves value category and uses guaranteed elision into that address.
+// Lifetime begins an object inside storage managed by its caller. The factory
+// is consumed exactly once and its result uses guaranteed elision into that
+// address.
 class Lifetime {
  public:
   template <typename Type, typename Factory>
   __attribute__((always_inline)) static constexpr auto construct(
       void* address,
-      Factory&& create) -> Type&;
+      Factory create) -> Type&;
 
   template <typename Type>
   __attribute__((always_inline)) static constexpr auto construct(void* address)
@@ -38,9 +39,9 @@ class Lifetime {
 
 template <typename Type, typename Factory>
 __attribute__((always_inline)) constexpr auto
-    Toolchain::Memory::Lifetime::construct(void* address, Factory&& create)
+    Toolchain::Memory::Lifetime::construct(void* address, Factory create)
         -> Type& {
-  return *new (address) Type(static_cast<Factory&&>(create)());
+  return *new (address) Type(create());
 }
 
 template <typename Type>

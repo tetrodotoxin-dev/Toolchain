@@ -70,7 +70,7 @@ if __name__ == "__main__":
             check=True,
         ).stdout.strip()
         first = run([program], root)
-        archive = root / ".bin/release/tetro_toolchain-0.3.2-source.tar.gz"
+        archive = root / ".bin/release/tetro_toolchain-0.3.3-source.tar.gz"
         assert archive.exists(), first.stdout
         digest = hashlib.sha256(archive.read_bytes()).hexdigest()
         assert archive.with_name(archive.name + ".sha256").read_text() == (

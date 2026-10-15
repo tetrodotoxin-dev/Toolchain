@@ -303,7 +303,8 @@ _package_release = rule(implementation = _package, attrs = {
     "_toolchain_headers": attr.label_list(
         default = [
             Label("//source:toolchain/export.h"),
-            Label("//source:toolchain/memory/const_allocation.hpp"),
+            Label("//source:toolchain/compile/allocation.hpp"),
+            Label("//source:toolchain/compile/source_location.hpp"),
             Label("//source:toolchain/memory/lifetime.hpp"),
             Label("//source:toolchain/toolchain.h"),
             Label("//source:toolchain/toolchain.hpp"),

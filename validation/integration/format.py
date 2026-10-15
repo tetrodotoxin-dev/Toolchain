@@ -172,9 +172,9 @@ if __name__ == "__main__":
         )
         run(formatter, root, "source/example/image/texture_2d.hpp")
 
-        diagnostics = source / "example" / "core" / "diagnostics"
-        diagnostics.mkdir(parents=True)
-        source_location = diagnostics / "source.hpp"
+        compile_module = source / "example" / "compile"
+        compile_module.mkdir(parents=True)
+        source_location = compile_module / "source_location.hpp"
         source_location.write_text(
             "#pragma once\n"
             "namespace std {\n"
@@ -183,16 +183,16 @@ if __name__ == "__main__":
             "  struct __impl {};\n"
             "};\n"
             "}\n"
-            "namespace Example::Core::Diagnostics {\n"
-            "class Source {\n"
+            "namespace Example::Compile {\n"
+            "class SourceLocation {\n"
             " public:\n"
             "  static auto current(\n"
             "      const std::source_location::__impl* value = "
-            "__builtin_source_location()) -> Source;\n"
+            "__builtin_source_location()) -> SourceLocation;\n"
             "};\n"
             "}\n"
         )
-        run(formatter, root, "source/example/core/diagnostics/source.hpp")
+        run(formatter, root, "source/example/compile/source_location.hpp")
 
         prelude = source / "example" / "core"
         prelude.mkdir(exist_ok=True)
@@ -419,6 +419,33 @@ if __name__ == "__main__":
                 "  return const_cast<S32*>(value);\n"
                 "}\n"
             ),
+            "const_reference_cast.cpp": (
+                "auto expose(S32& value) -> const S32& {\n"
+                "  return static_cast<const S32&>(value);\n"
+                "}\n"
+            ),
+            "reinterpret_cast.h": (
+                "auto expose(void* value) -> U8* {\n"
+                "  return reinterpret_cast<U8*>(value);\n"
+                "}\n"
+            ),
+            "dynamic_cast.cpp": (
+                "struct Base { virtual ~Base() = default; };\n"
+                "struct Derived : Base {};\n"
+                "auto expose(Base* value) -> Derived* {\n"
+                "  return dynamic_cast<Derived*>(value);\n"
+                "}\n"
+            ),
+            "bit_cast.cpp": (
+                "auto expose(R32 value) -> U32 {\n"
+                "  return __builtin_bit_cast(U32, value);\n"
+                "}\n"
+            ),
+            "standard_bit_cast.cpp": (
+                "auto expose(R32 value) -> U32 {\n"
+                "  return std::bit_cast<U32>(value);\n"
+                "}\n"
+            ),
             "mutable.hpp": "struct Value { mutable S32 state; };\n",
             "class.hpp": "class Forward;\n",
             "enum.hpp": "enum class Forward : U32;\n",
@@ -428,11 +455,92 @@ if __name__ == "__main__":
             path.write_text(content)
             result = run(formatter, root, "source/" + name, status=1)
             assert (
-                "const qualification" in result.stderr
+                "data conversion boundary" in result.stderr
                 or "owner contract" in result.stderr
                 or "complete owner" in result.stderr
             )
             path.unlink()
+
+        cast_owner = root / "perimortem"
+        cast_owner.mkdir()
+        (cast_owner / "MODULE.bazel").write_text(
+            'module(name = "perimortem")\n'
+        )
+        cast_boundary = cast_owner / "source/perimortem/core"
+        cast_boundary.mkdir(parents=True)
+        data_header = cast_boundary / "data.hpp"
+        data_header.write_text(
+            "#pragma once\n"
+            "namespace Perimortem::Core {\n"
+            "class Data {\n"
+            " public:\n"
+            "  template <typename target_type, typename source_type>\n"
+            "  static auto cast(source_type* source) -> target_type* {\n"
+            "    return reinterpret_cast<target_type*>(source);\n"
+            "  }\n"
+            "};\n"
+            "}\n"
+        )
+        run(
+            formatter,
+            cast_owner,
+            "source/perimortem/core/data.hpp",
+        )
+        other_header = cast_boundary / "other.hpp"
+        other_header.write_text(data_header.read_text().replace("Data", "Other"))
+        result = run(
+            formatter,
+            cast_owner,
+            "source/perimortem/core/other.hpp",
+            status=1,
+        )
+        assert "data conversion boundary" in result.stderr
+
+        policy = source / "example" / "container" / "policy.hpp"
+        policy.parent.mkdir(parents=True)
+        complete_policy = (
+            "#pragma once\n"
+            "namespace Example::Container {\n"
+            "// Policy owns one value while allowing its storage policy to change.\n"
+            "// The policy provides the following required operations:\n"
+            "//\n"
+            "//  auto allocate(Count requested) -> S32*\n"
+            "//\n"
+            "//    Returns storage for at least the requested value count.\n"
+            "//\n"
+            "//  auto release(S32* values) -> void\n"
+            "//\n"
+            "//    Detaches the allocation after its current values are retired.\n"
+            "template <typename policy_type>\n"
+            "class Policy {\n"
+            " public:\n"
+            "  auto update() -> void {\n"
+            "    S32* values = get_policy().allocate(1);\n"
+            "    get_policy().release(values);\n"
+            "  }\n"
+            " private:\n"
+            "  auto get_policy() -> policy_type&;\n"
+            "};\n"
+            "}\n"
+        )
+        policy.write_text(complete_policy)
+        run(formatter, root, "source/example/container/policy.hpp")
+        policy.write_text(
+            complete_policy.replace(
+                "//  auto release(S32* values) -> void\n"
+                "//\n"
+                "//    Detaches the allocation after its current values are retired.\n",
+                "",
+            )
+        )
+        result = run(
+            formatter,
+            root,
+            "source/example/container/policy.hpp",
+            status=1,
+        )
+        assert "incomplete policy extension contract" in result.stderr
+        policy.write_text(complete_policy)
 
         invalid_returns = {
             "leading_return.cpp": "S32 value() { return 1; }\n",

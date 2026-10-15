@@ -5,28 +5,28 @@
 
 #include "toolchain/toolchain.h"
 
-namespace Toolchain::Memory {
+namespace Toolchain::Compile {
 
-// ConstAllocation owns an array that exists only during constant evaluation.
-// Its immediate construction prevents the allocated address from escaping into
+// Allocation owns a value initialized array that exists only during constant
+// evaluation. Immediate construction prevents its address from escaping into
 // runtime code. Destruction remains constexpr because C++ destroys constant
 // values through the ordinary destructor language rule.
 template <typename Type>
-class ConstAllocation {
+class Allocation {
  public:
-  consteval ConstAllocation() = default;
+  consteval Allocation() = default;
   // A Count must not silently acquire storage ownership. Explicit construction
   // makes allocation visible at the call site.
-  consteval explicit ConstAllocation(Count capacity)
+  consteval explicit Allocation(Count capacity)
       : data(capacity ? new Type[capacity]{} : nullptr), capacity(capacity) {}
 
-  ConstAllocation(const ConstAllocation&) = delete;
-  consteval ConstAllocation(ConstAllocation&& other) { take(other); }
+  Allocation(const Allocation&) = delete;
+  consteval Allocation(Allocation&& other) { take(other); }
 
-  constexpr ~ConstAllocation() { delete[] data; }
+  constexpr ~Allocation() { delete[] data; }
 
-  auto operator=(const ConstAllocation&) -> ConstAllocation& = delete;
-  consteval auto operator=(ConstAllocation&& other) -> ConstAllocation& {
+  auto operator=(const Allocation&) -> Allocation& = delete;
+  consteval auto operator=(Allocation&& other) -> Allocation& {
     if (this != &other) {
       delete[] data;
       data = nullptr;
@@ -42,7 +42,7 @@ class ConstAllocation {
   constexpr auto get_capacity() const -> Count { return capacity; }
 
  private:
-  consteval auto take(ConstAllocation& other) -> void {
+  consteval auto take(Allocation& other) -> void {
     data = other.data;
     capacity = other.capacity;
     other.data = nullptr;
@@ -53,4 +53,4 @@ class ConstAllocation {
   Count capacity = 0;
 };
 
-}  // namespace Toolchain::Memory
+}  // namespace Toolchain::Compile

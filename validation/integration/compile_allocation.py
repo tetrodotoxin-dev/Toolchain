@@ -11,7 +11,7 @@ from python.runfiles import runfiles
 
 
 def compile_source(compiler, include, source):
-    with tempfile.TemporaryDirectory(prefix="const-allocation-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="compile-allocation-") as temporary:
         path = Path(temporary) / "probe.cpp"
         path.write_text(source)
         return subprocess.run(
@@ -37,10 +37,10 @@ if __name__ == "__main__":
     valid = compile_source(
         compiler,
         include,
-        '#include "toolchain/memory/const_allocation.hpp"\n'
-        "using namespace Toolchain::Memory;\n"
+        '#include "toolchain/compile/allocation.hpp"\n'
+        "using namespace Toolchain::Compile;\n"
         "static_assert([] {\n"
-        "  ConstAllocation<S32> values(2);\n"
+        "  Allocation<S32> values(2);\n"
         "  values.get_data()[1] = 42;\n"
         "  return values.get_capacity() == 2 && values.get_data()[1] == 42;\n"
         "}());\n",
@@ -50,10 +50,10 @@ if __name__ == "__main__":
     runtime = compile_source(
         compiler,
         include,
-        '#include "toolchain/memory/const_allocation.hpp"\n'
-        "using namespace Toolchain::Memory;\n"
+        '#include "toolchain/compile/allocation.hpp"\n'
+        "using namespace Toolchain::Compile;\n"
         "auto allocate_at_runtime() -> void {\n"
-        "  ConstAllocation<S32> values(2);\n"
+        "  Allocation<S32> values(2);\n"
         "}\n",
     )
     assert runtime.returncode != 0, runtime.stderr

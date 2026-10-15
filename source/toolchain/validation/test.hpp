@@ -83,7 +83,7 @@ class Test {
       // signedness and range survive. The compiler query keeps this header
       // self contained.
       using Integer = __underlying_type(T);
-      const auto integer = static_cast<Integer>(value);
+      const auto integer = Integer(value);
       if constexpr (__is_signed(Integer)) {
         const S64 promoted = integer;
         print_integer(promoted);
