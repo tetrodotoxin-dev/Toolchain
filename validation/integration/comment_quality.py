@@ -71,7 +71,8 @@ if __name__ == "__main__":
     correction = suite("correction")
     adversarial = suite("adversarial")
     punctuation = suite("punctuation")
-    assert len(corpus) == 165
+    ownership = suite("ownership")
+    assert len(corpus) == 171
     assert len(examples) == 24
     assert len(feedback) == 14
     assert len(revisions) == 1
@@ -83,6 +84,7 @@ if __name__ == "__main__":
     assert len(correction) == 2
     assert len(adversarial) == 13
     assert len(punctuation) == 2
+    assert len(ownership) == 6
     assert Counter(sample["repository"] for sample in source_holdout) == Counter(
         {
             "cuda": 3,
@@ -222,6 +224,8 @@ if __name__ == "__main__":
     for sample in correction:
         verdict = classifier.classify(sample["comment"])
         assert verdict.decision == sample["decision"], (sample["id"], verdict)
+        marked = "// " + sample["comment"].replace("\n", "\n// ")
+        assert classifier.classify(marked) == verdict
         if "score_min" in sample:
             assert verdict.score >= sample["score_min"], (sample["id"], verdict)
         if "score_max" in sample:
@@ -284,6 +288,24 @@ if __name__ == "__main__":
         assert verdict.decision == "Reject", (sample["id"], verdict)
         assert verdict.score >= sample["score_min"], (sample["id"], verdict)
         assert verdict.score > repaired_verdict.score, (sample["id"], verdict)
+
+    ownership_verdicts = {}
+    for sample in ownership:
+        verdict = classifier.classify(sample["comment"])
+        assert verdict.decision == sample["decision"], (sample["id"], verdict)
+        marked = "// " + sample["comment"].replace("\n", "\n// ")
+        assert classifier.classify(marked) == verdict
+        if "score_min" in sample:
+            assert verdict.score >= sample["score_min"], (sample["id"], verdict)
+        names = {signal.name for signal in verdict.signals}
+        assert names.issuperset(sample.get("signals", [])), (sample["id"], verdict)
+        assert names.isdisjoint(sample.get("absent_signals", [])), (
+            sample["id"],
+            verdict,
+        )
+        if "compare_to" in sample:
+            assert verdict.score < ownership_verdicts[sample["compare_to"]].score
+        ownership_verdicts[sample["id"]] = verdict
 
     punctuation_verdicts = {}
     for sample in punctuation:

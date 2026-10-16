@@ -39,6 +39,17 @@ POLICY_HOOK_CALL = re.compile(
     r"(?:get_policy\s*\(\s*\)\s*\.|policy_type\s*::)\s*"
     r"([A-Za-z_][A-Za-z0-9_]*)\s*\("
 )
+AMBIGUOUS_OWNERSHIP = re.compile(
+    r"\b(?:"
+    r"owned\s+(?:allocations?|data|lifetimes?|memory|objects?|resources?|"
+    r"state|storage|threads?|values?)|"
+    r"owning\s+(?:factory|lifetime|member|policy|thread)|"
+    r"ownership\s+(?:can\b|state\b)|"
+    r"(?:policy|result)\s+owns\s+(?:its\s+)?(?:storage|transition)|"
+    r"(?:one|two)\s+owners?\b"
+    r")",
+    re.IGNORECASE,
+)
 PROHIBITED_ALIAS_WORDS = frozenset(
     {
         "admissibility",
@@ -233,6 +244,15 @@ def classify(source):
             "The admit word family substitutes a generic label for the "
             "operation's concrete verb.",
             100,
+        )
+
+    if AMBIGUOUS_OWNERSHIP.search(comment):
+        add(
+            "ambiguous ownership claim",
+            70,
+            "Ownership vocabulary hides the concrete resource, responsible "
+            "participant or lifetime transition.",
+            70,
         )
 
     if matches(r"\bCopyright\s*\(c\)", comment):
@@ -1216,7 +1236,9 @@ def source_signals(context):
         resource_boundary = matches(
             r"\bindependently owned resources?\b|"
             r"\b(?:objects?|values?) owned by the same Arena\b|"
-            r"\bstate governed by the same Arena\b",
+            r"\bstate governed by the same Arena\b|"
+            r"\b(?:cannot|must not) (?:depend|rely) on\b[^.]{0,80}"
+            r"\bdestructors?\b[^.]{0,60}\brelease\b",
             comment,
         )
         if destructor_suppression and not invalidation_boundary:
