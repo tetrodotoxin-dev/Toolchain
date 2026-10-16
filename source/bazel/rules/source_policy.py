@@ -17,6 +17,10 @@ NAMESPACE_DECLARATION = re.compile(
     r"(?:\s+[A-Za-z_][A-Za-z0-9_]*(?:\s*::\s*[A-Za-z_][A-Za-z0-9_]*)*)?"
     r"\s*(?:\{|=)"
 )
+IMPLEMENTATION_TYPE_DEFINITION = re.compile(
+    r"(?m)^[ \t]*(?:class|struct|union)\s+([A-Za-z_][A-Za-z0-9_]*)\b|"
+    r"^[ \t]*enum\s+(?:class\s+|struct\s+)?([A-Za-z_][A-Za-z0-9_]*)\b"
+)
 RAW_STRING = re.compile(r'(?:u8|u|U|L)?R"([^ ()\\\t\r\n]{0,16})\(')
 FORWARD_DECLARATION = re.compile(
     r"\b(?:class|struct|union)\s+[A-Za-z_][A-Za-z0-9_]*\s*;|"
@@ -237,6 +241,56 @@ def lexical(source):
 
 def line_at(source, offset):
     return source.count("\n", 0, offset) + 1
+
+
+def implementation_type_definitions(path):
+    """Find namespace-scope type definitions emitted by one implementation."""
+    if path.suffix not in IMPLEMENTATIONS:
+        return []
+
+    source = path.read_text()
+    code, _ = lexical(source)
+    definitions = []
+    for match in IMPLEMENTATION_TYPE_DEFINITION.finditer(code):
+        if code.count("{", 0, match.start()) != code.count("}", 0, match.start()):
+            continue
+
+        opening = code.find("{", match.end())
+        terminator = code.find(";", match.end())
+        if opening < 0 or (terminator >= 0 and terminator < opening):
+            continue
+
+        definitions.append(
+            (match.group(1) or match.group(2), line_at(source, match.start()))
+        )
+    return definitions
+
+
+def duplicate_implementation_type_errors(paths, selected):
+    """Reject different implementation files that publish one type identity."""
+    definitions = {}
+    for path in paths:
+        for name, line in implementation_type_definitions(path):
+            definitions.setdefault(name, []).append((path, line))
+
+    selected = set(selected)
+    errors = []
+    for name, locations in sorted(definitions.items()):
+        owners = {path for path, _ in locations}
+        if len(owners) < 2:
+            continue
+
+        rendered = ", ".join(
+            f"{path}:{line}" for path, line in sorted(locations)
+        )
+        for path, line in locations:
+            if path in selected:
+                errors.append(
+                    f"{path}:{line}: implementation type '{name}' is defined in "
+                    f"multiple .cpp files ({rendered}); move one shared definition "
+                    "to a header or give distinct fixtures distinct names"
+                )
+    return errors
 
 
 def pascal_name(value):

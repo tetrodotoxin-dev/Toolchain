@@ -46,13 +46,9 @@ class Benchmark {
 
 }  // namespace Toolchain::Validation
 
-#define VALIDATION_BENCHMARK(harness, name)                      \
-  static auto validation_benchmark_##harness##_##name() -> void; \
-  namespace {                                                    \
-  Toolchain::Validation::Benchmark                               \
-      validation_benchmark_entry_##harness##_##name(             \
-          harness,                                               \
-          #name,                                                 \
-          validation_benchmark_##harness##_##name);              \
-  }                                                              \
+#define VALIDATION_BENCHMARK(harness, name)                         \
+  static auto validation_benchmark_##harness##_##name() -> void;    \
+  static Toolchain::Validation::Benchmark                           \
+      validation_benchmark_entry_##harness##_##name(                \
+          harness, #name, validation_benchmark_##harness##_##name); \
   static auto validation_benchmark_##harness##_##name() -> void

@@ -17,7 +17,7 @@ static const char* fast_color = getenv("NO_COLOR") ? "" : "\x1b[38;5;34m";
 static const char* slow_color = getenv("NO_COLOR") ? "" : "\x1b[38;5;160m";
 static Clock monotonic_clock;
 
-struct Instance {
+struct BenchmarkInstance {
   const Harness* harness;
   Bytes<> name;
   Benchmark::BenchmarkFunc run;
@@ -26,7 +26,7 @@ struct Instance {
 // Static storage gives registrations stable addresses for the process lifetime.
 // The fixed capacities bound startup and measurement work, while constinit
 // completes initialization before benchmark constructors begin registering.
-static constinit Instance benchmarks[1024] = {};
+static constinit BenchmarkInstance benchmarks[1024] = {};
 static CppSize count = 0;
 static U64 samples[4096];
 static U64 sample_start = 0;
@@ -137,7 +137,7 @@ static auto sort_samples(CppSize size) -> void {
   }
 }
 
-static auto measure(const Instance& benchmark, CppSize width) -> void {
+static auto measure(const BenchmarkInstance& benchmark, CppSize width) -> void {
   const auto& harness = *benchmark.harness;
 
   // One complete fixture lifecycle establishes lazy code and data state before

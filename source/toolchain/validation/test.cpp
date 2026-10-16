@@ -17,7 +17,7 @@ static const char* fail_color = getenv("NO_COLOR") ? "" : "\x1b[38;5;160m";
 static const char* skip_color = getenv("NO_COLOR") ? "" : "\x1b[38;5;178m";
 static Clock monotonic_clock;
 
-struct Instance {
+struct TestInstance {
   const Harness* harness;
   Bytes<> name;
   Test::TestFunc run;
@@ -34,7 +34,7 @@ static constexpr R64 slow_test_ms = 1000;
 // Static storage gives registrations stable addresses for the process lifetime.
 // The fixed capacity bounds startup work, and constinit keeps initialization
 // complete before constructors in test translation units begin registering.
-static constinit Instance tests[4096] = {};
+static constinit TestInstance tests[4096] = {};
 static U64 count = 0;
 
 // Registration order defines execution order. Reaching the fixed capacity is a
@@ -62,7 +62,7 @@ static auto output_break() -> void {
       dim_color, clear_color);
 }
 
-static auto output_location(const Instance& test) -> void {
+static auto output_location(const TestInstance& test) -> void {
   fputs("    ", stdout);
   Test::print_bytes(test.file, false);
   printf(":%llu: ", test.line);

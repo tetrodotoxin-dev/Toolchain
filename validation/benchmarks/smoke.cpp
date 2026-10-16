@@ -9,7 +9,7 @@ using namespace Toolchain::Validation;
 
 // These counts are observed after the real benchmark process returns from
 // main. Warm up and measured bodies share the same fixture lifecycle.
-struct Fixture {
+struct BenchmarkFixture {
   U32 initializations = 0;
   U32 setups = 0;
   U32 runs = 0;
@@ -19,8 +19,8 @@ struct Fixture {
   bool ready = false;
   U32 values[64] = {};
 
-  Fixture() { puts("benchmark fixture constructed"); }
-  ~Fixture() {
+  BenchmarkFixture() { puts("benchmark fixture constructed"); }
+  ~BenchmarkFixture() {
     printf(
         "benchmark fixture destroyed: init=%u setup=%u run=%u teardown=%u "
         "errors=%u ready=%d\n",
@@ -28,7 +28,7 @@ struct Fixture {
   }
 };
 
-static Fixture fixture;
+static BenchmarkFixture fixture;
 static const bool registered =
     Benchmark::register_counter("Events", [] { return fixture.events; });
 static Harness Arithmetic = {

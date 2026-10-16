@@ -343,6 +343,22 @@ if __name__ == "__main__":
                 assert "using namespace Example::Module;" in result.stderr
             path.unlink()
 
+        first_type = source / "first_type.cpp"
+        second_type = source / "second_type.cpp"
+        first_type.write_text("class RepeatedFixture {};\n")
+        second_type.write_text("class RepeatedFixture {};\n")
+        result = run(
+            formatter,
+            root,
+            "--check",
+            "source/first_type.cpp",
+            status=1,
+        )
+        assert "implementation type 'RepeatedFixture'" in result.stderr
+        assert "move one shared definition to a header" in result.stderr
+        first_type.unlink()
+        second_type.unlink()
+
         invalid_comments = {
             "hyphen.cpp": "// Author-owned language.\nS32 value;\n",
             "semicolon.cpp": "// One clause; another clause.\nS32 value;\n",

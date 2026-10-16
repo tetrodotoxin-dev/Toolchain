@@ -28,12 +28,12 @@ def run(program, *arguments, status=0, color=False):
 
 def verify_tests(program, reporting, skipped, empty, source):
     output = run(program)
-    assert "4 / 4 (100.00%)" in output, output
+    assert "5 / 5 (100.00%)" in output, output
     for name in ["single_evaluation", "byte_ranges", "bounded_strings",
-                 "byte_types"]:
+                 "byte_types", "tracked_values"]:
         assert re.search(r"\[ PASS\s+\] " + name + r"\s", output), output
     assert output.startswith("test fixture constructed\n"), output
-    finished = "test fixture destroyed: init=1 setup=4 teardown=4 value=-1\n"
+    finished = "test fixture destroyed: init=1 setup=5 teardown=5 value=-1\n"
     assert output.endswith(finished), output
     silent = run(program, "silent")
     assert silent == "test fixture constructed\n" + finished, silent

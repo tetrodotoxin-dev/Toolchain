@@ -11,28 +11,29 @@
 using namespace Toolchain::Compile;
 using namespace Toolchain::Memory;
 
-struct Fixture {
+struct SdkFixture {
   S32 value;
 };
 
 union FixtureStorage {
-  Fixture value;
+  SdkFixture value;
   constexpr FixtureStorage() {}
 };
 
 static_assert([] {
   FixtureStorage storage;
-  return Lifetime::construct<Fixture>(&storage.value).value == 0;
+  return Lifetime::construct<SdkFixture>(&storage.value).value == 0;
 }());
 
 static_assert([] {
   FixtureStorage storage;
-  Lifetime::construct<Fixture>(&storage.value, [] { return Fixture{42}; });
+  Lifetime::construct<SdkFixture>(
+      &storage.value, [] { return SdkFixture{42}; });
   return storage.value.value == 42;
 }());
 
 static_assert([] {
-  Allocation<Fixture> values(2);
+  Allocation<SdkFixture> values(2);
   values.get_data()[1].value = 42;
   return values.get_data()[0].value == 0 && values.get_data()[1].value == 42;
 }());
@@ -43,10 +44,10 @@ static_assert(SourceLocation::current().is_set());
 // the C entrypoint. Exercising both in one translation unit proves export
 // annotations preserve implementation privacy.
 HIDDEN auto toolchain_cpp_helper(S32 value) -> S32 {
-  alignas(Fixture) U8 storage[sizeof(Fixture)];
+  alignas(SdkFixture) U8 storage[sizeof(SdkFixture)];
 
-  Fixture& fixture = Lifetime::construct<Fixture>(
-      storage, [value] { return Fixture{S32(value * 2)}; });
+  SdkFixture& fixture = Lifetime::construct<SdkFixture>(
+      storage, [value] { return SdkFixture{S32(value * 2)}; });
   return fixture.value;
 }
 

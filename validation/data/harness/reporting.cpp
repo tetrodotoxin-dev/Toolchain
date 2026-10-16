@@ -42,18 +42,18 @@ struct Buffer {
 
 // The process checker observes destruction after main returns. The fixture
 // records whether failed and skipped bodies still receive their teardown.
-struct Fixture {
+struct ReportingFixture {
   U32 setups = 0;
   U32 teardowns = 0;
 
-  Fixture() { puts("report fixture constructed"); }
-  ~Fixture() {
+  ReportingFixture() { puts("report fixture constructed"); }
+  ~ReportingFixture() {
     printf(
         "report fixture destroyed: setup=%u teardown=%u\n", setups, teardowns);
   }
 };
 
-static Fixture fixture;
+static ReportingFixture fixture;
 static Harness Reporting = {
   .name = "Reporting",
   .setup = [] { ++fixture.setups; },

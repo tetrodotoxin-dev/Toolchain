@@ -208,16 +208,10 @@ class Test {
     return;                                                    \
   } while (false)
 
-#define VALIDATION_TEST(harness, name)                             \
-  static auto validation_test_##harness##_##name(                  \
-      Toolchain::Validation::Test::TestResult& result) -> void;    \
-  namespace {                                                      \
-  Toolchain::Validation::Test validation_entry_##harness##_##name( \
-      harness,                                                     \
-      #name,                                                       \
-      validation_test_##harness##_##name,                          \
-      __FILE__,                                                    \
-      __LINE__);                                                   \
-  }                                                                \
-  static auto validation_test_##harness##_##name(                  \
+#define VALIDATION_TEST(harness, name)                                         \
+  static auto validation_test_##harness##_##name(                              \
+      Toolchain::Validation::Test::TestResult& result) -> void;                \
+  static Toolchain::Validation::Test validation_entry_##harness##_##name(      \
+      harness, #name, validation_test_##harness##_##name, __FILE__, __LINE__); \
+  static auto validation_test_##harness##_##name(                              \
       Toolchain::Validation::Test::TestResult& result) -> void

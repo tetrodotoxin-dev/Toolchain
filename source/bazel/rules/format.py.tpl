@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from comment_quality import classify_comments, diagnostic, summary
 from format_policy import (
     canonicalize_source,
+    duplicate_implementation_type_errors,
     format_source,
     lexical,
     source_errors,
@@ -268,6 +269,12 @@ def main():
                 errors.append(diagnostic(verdict))
             elif verdict.decision == "Warn":
                 warnings.append(diagnostic(verdict))
+    errors.extend(
+        duplicate_implementation_type_errors(
+            [path for path in discover(root) if path.suffix == ".cpp"],
+            files,
+        )
+    )
     report = [summary(comment_verdicts)] + warnings + errors
     stream = sys.stderr if warnings or errors else sys.stdout
     print("\n".join(report), file=stream, flush=True)
