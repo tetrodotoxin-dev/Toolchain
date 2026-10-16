@@ -30,6 +30,15 @@ if __name__ == "__main__":
     assert "hyphenated prose" not in {
         signal.name for signal in markdown_link.signals
     }
+    license_header = classifier.classify(
+        "# Tetrodotoxin\n"
+        "# Copyright (c) 2023-present Matt Kaes and contributors"
+    )
+    assert license_header.decision == "Accept", license_header
+    assert license_header.score == 0, license_header
+    assert {signal.name for signal in license_header.signals} == {
+        "license metadata"
+    }, license_header
     for prohibited in classifier.PROHIBITED_ALIAS_WORDS:
         verdict = classifier.classify(
             f"The operation uses {prohibited} as its result."

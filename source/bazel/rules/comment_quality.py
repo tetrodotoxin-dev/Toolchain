@@ -187,6 +187,22 @@ def source_verdict(base, context, extra):
 def classify(source):
     """Return a repeatable style verdict and every contribution to its score."""
     comment = normalize(source)
+    if matches(r"\bCopyright\s*\(c\)", comment):
+        return Verdict(
+            "Accept",
+            0,
+            ACCEPT_THRESHOLD,
+            REJECT_THRESHOLD,
+            comment,
+            (
+                Signal(
+                    "license metadata",
+                    -45,
+                    "A copyright header is file metadata rather than explanatory prose.",
+                ),
+            ),
+        )
+
     grammar_comment = normalize(
         "\n".join(
             line
@@ -253,13 +269,6 @@ def classify(source):
             "Ownership vocabulary hides the concrete resource, responsible "
             "participant or lifetime transition.",
             70,
-        )
-
-    if matches(r"\bCopyright\s*\(c\)", comment):
-        add(
-            "license metadata",
-            -45,
-            "A copyright header is file metadata rather than explanatory prose.",
         )
 
     namespace_annotation = re.fullmatch(
