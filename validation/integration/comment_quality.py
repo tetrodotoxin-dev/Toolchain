@@ -39,6 +39,12 @@ if __name__ == "__main__":
     assert {signal.name for signal in license_header.signals} == {
         "license metadata"
     }, license_header
+    copyright_prose = classifier.classify(
+        "The parser treats Copyright (c) as ordinary payload text."
+    )
+    assert "license metadata" not in {
+        signal.name for signal in copyright_prose.signals
+    }, copyright_prose
     for prohibited in classifier.PROHIBITED_ALIAS_WORDS:
         verdict = classifier.classify(
             f"The operation uses {prohibited} as its result."

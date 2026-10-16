@@ -39,6 +39,8 @@ POLICY_HOOK_CALL = re.compile(
     r"(?:get_policy\s*\(\s*\)\s*\.|policy_type\s*::)\s*"
     r"([A-Za-z_][A-Za-z0-9_]*)\s*\("
 )
+COPYRIGHT_METADATA = re.compile(r"^Copyright\s*\(c\)(?:\s|$)", re.IGNORECASE)
+PROJECT_METADATA = re.compile(r"#?\s*[A-Za-z][A-Za-z0-9_.-]*")
 AMBIGUOUS_OWNERSHIP = re.compile(
     r"\b(?:"
     r"owned\s+(?:allocations?|data|lifetimes?|memory|objects?|resources?|"
@@ -156,6 +158,19 @@ def matches(pattern, comment):
     return re.search(pattern, comment, re.IGNORECASE) is not None
 
 
+def is_license_metadata(source):
+    """Recognize a canonical project heading and copyright block."""
+    lines = [normalize(line) for line in source.splitlines() if normalize(line)]
+    return (
+        bool(lines)
+        and any(COPYRIGHT_METADATA.match(line) for line in lines)
+        and all(
+            COPYRIGHT_METADATA.match(line) or PROJECT_METADATA.fullmatch(line)
+            for line in lines
+        )
+    )
+
+
 def decision(score):
     if score < ACCEPT_THRESHOLD:
         return "Accept"
@@ -187,7 +202,7 @@ def source_verdict(base, context, extra):
 def classify(source):
     """Return a repeatable style verdict and every contribution to its score."""
     comment = normalize(source)
-    if matches(r"\bCopyright\s*\(c\)", comment):
+    if is_license_metadata(source):
         return Verdict(
             "Accept",
             0,
