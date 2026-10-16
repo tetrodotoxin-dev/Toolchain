@@ -9,6 +9,11 @@ HEADERS = {".h", ".hpp"}
 IMPLEMENTATIONS = {".cpp"}
 
 USING_NAMESPACE = re.compile(r"\busing\s+namespace\s+([^;]+);")
+SELECTIVE_USING = re.compile(
+    r"\busing\s+"
+    r"((?:[A-Za-z_][A-Za-z0-9_]*\s*::\s*)+"
+    r"[A-Za-z_][A-Za-z0-9_]*)\s*;"
+)
 MODULE_NAMESPACE = re.compile(
     r"[A-Za-z_][A-Za-z0-9_]*\s*::\s*[A-Za-z_][A-Za-z0-9_]*"
 )
@@ -433,6 +438,15 @@ def namespace_errors(path, source, code):
             errors.append(
                 f"{path}:{line}: implementation imports use "
                 f"'using namespace SDK::Module;'{correction}"
+            )
+
+    if path.suffix in IMPLEMENTATIONS:
+        for match in SELECTIVE_USING.finditer(code):
+            name = re.sub(r"\s+", "", match.group(1))
+            errors.append(
+                f"{path}:{line_at(source, match.start())}: selective import "
+                f"'using {name};' hides namespace ownership; keep the "
+                "namespace qualifier at each use"
             )
 
     if path.suffix in IMPLEMENTATIONS:

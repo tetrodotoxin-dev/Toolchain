@@ -284,6 +284,29 @@ if __name__ == "__main__":
         )
         run(formatter, root, "source/imported.cpp")
 
+        selective_import = source / "selective_import.cpp"
+        selective_import.write_text(
+            "using Example::Data::Form;\n"
+            "auto representation() -> Form;\n"
+        )
+        result = run(
+            formatter,
+            root,
+            "source/selective_import.cpp",
+            status=1,
+        )
+        assert "selective import 'using Example::Data::Form;'" in result.stderr
+        assert "keep the namespace qualifier at each use" in result.stderr
+        selective_import.unlink()
+
+        type_alias = source / "type_alias.cpp"
+        type_alias.write_text(
+            "using namespace Example::Data;\n"
+            "using FormAlias = Form;\n"
+            "auto representation() -> FormAlias;\n"
+        )
+        run(formatter, root, "source/type_alias.cpp")
+
         paragraph = source / "paragraph.cpp"
         paragraph.write_text(
             "auto paragraph() -> S32 {\n"
