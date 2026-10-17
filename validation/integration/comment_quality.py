@@ -87,14 +87,14 @@ if __name__ == "__main__":
     adversarial = suite("adversarial")
     punctuation = suite("punctuation")
     ownership = suite("ownership")
-    assert len(corpus) == 171
+    assert len(corpus) == 173
     assert len(examples) == 24
     assert len(feedback) == 14
     assert len(revisions) == 1
     assert len(holdout) == 24
     assert len(holdout_feedback) == 17
     assert len(edited) == 10
-    assert len(source_context) == 34
+    assert len(source_context) == 36
     assert len(source_holdout) == 24
     assert len(correction) == 2
     assert len(adversarial) == 13

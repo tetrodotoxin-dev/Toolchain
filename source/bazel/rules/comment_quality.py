@@ -47,6 +47,8 @@ AMBIGUOUS_OWNERSHIP = re.compile(
     r"state|storage|threads?|values?)|"
     r"owning\s+(?:factory|lifetime|member|policy|thread)|"
     r"ownership\s+(?:can\b|state\b)|"
+    r"owns\s+(?:(?:a|an|one|its)\s+)?(?:native\s+)?(?:execution\s+)?"
+    r"(?:context|identity|lifetime)\b|"
     r"(?:policy|result)\s+owns\s+(?:its\s+)?(?:storage|transition)|"
     r"(?:one|two)\s+owners?\b"
     r")",
@@ -1199,6 +1201,21 @@ def source_signals(context):
                     "The primary type opens with literal storage or role details "
                     "and implementation variants before explaining why the shared "
                     "abstraction exists.",
+                )
+            )
+
+        negative_capability_inventory = matches(
+            r"\b(?:provides?|supplies?)\s+no\b[^.!?]{0,80},"
+            r"[^.!?]{0,80},[^.!?]{0,120}\b(?:and|or)\b",
+            comment,
+        )
+        if negative_capability_inventory:
+            signals.append(
+                Signal(
+                    "negative capability inventory",
+                    50,
+                    "A primary type lists absent capabilities instead of "
+                    "establishing its purpose and complete positive contract.",
                 )
             )
 
