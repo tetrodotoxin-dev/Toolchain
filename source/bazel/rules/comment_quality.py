@@ -1293,8 +1293,10 @@ def source_signals(context):
                 context.attached,
             )
             public_surface = context.attached
+            member_indent = r"[ \t]*"
             if public_section:
                 public_surface = context.attached[public_section.end() :]
+                member_indent = re.escape(public_section.group(1) + " ")
                 private_section = re.search(
                     r"(?m)^"
                     + re.escape(public_section.group(1))
@@ -1305,7 +1307,10 @@ def source_signals(context):
                     public_surface = public_surface[: private_section.start()]
             unchecked_constructor = False
             for constructor in re.finditer(
-                r"\b"
+                r"(?m)^"
+                + member_indent
+                + r"(?![ \t])"
+                + r"[^\n;{}]*?(?<!~)\b"
                 + re.escape(type_name)
                 + r"\s*\(([^)]*)\)([^;{\n]*)",
                 public_surface,
