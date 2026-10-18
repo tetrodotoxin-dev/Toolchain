@@ -9,6 +9,12 @@
 
 namespace Toolchain::Validation {
 
+// Test registers validation callbacks during static initialization so one
+// runner can discover every linked case without a generated inventory. Each
+// registration borrows its static Harness, name, file and callback through
+// process completion. Assertion helpers preserve the compared value types for
+// diagnostics and publish failure through the TestResult supplied to that
+// callback.
 class Test {
  public:
   enum class TestResult { Pass, Failed, Skipped };

@@ -7,6 +7,12 @@
 
 namespace Toolchain::Validation {
 
+// Benchmark registers callbacks during static initialization so one runner can
+// repeatedly measure every linked case without a generated inventory. Each
+// registration borrows its static Harness, name and callback through process
+// completion. A body can measure its complete invocation or select one focused
+// interval, while an optional cumulative counter reports independent work for
+// the same invocation.
 class Benchmark {
  public:
   using BenchmarkFunc = void (*)();

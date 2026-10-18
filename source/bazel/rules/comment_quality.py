@@ -131,6 +131,13 @@ EXPLICIT_CONSTRUCTOR_SIGNAL = Signal(
     "construction would violate its contract.",
 )
 
+MISSING_PRIMARY_TYPE_SIGNAL = Signal(
+    "missing primary type contract",
+    100,
+    "Each primary header type has an attached comment explaining why the "
+    "abstraction exists, its contract boundary and its public invariants.",
+)
+
 
 def normalize(comment):
     """Remove common comment delimiters without interpreting source code."""
@@ -1176,10 +1183,9 @@ def source_signals(context):
             )
         )
 
-    primary_declaration = re.search(
-        r"\b(?:class|struct)\s+([A-Za-z_][A-Za-z0-9_]*)\b",
-        context.attached,
-    )
+    primary_matches = attached_primary_type_matches(context)
+    primary_declaration = primary_matches[0] if primary_matches else None
+    expected_primary_type = primary_type_name(path)
     primary_type_evidence = (
         len(WORD.findall(comment)) > 35
         or technical_term_count >= 2
@@ -1194,9 +1200,9 @@ def source_signals(context):
         )
     )
     if (
-        path.suffix == ".hpp"
+        expected_primary_type
         and primary_declaration
-        and primary_declaration.group(1).lower() == path.stem.lower()
+        and primary_declaration.group(1) == expected_primary_type
         and not primary_type_evidence
     ):
         signals.append(
@@ -1209,9 +1215,9 @@ def source_signals(context):
         )
 
     primary_type = (
-        path.suffix == ".hpp"
+        expected_primary_type
         and primary_declaration
-        and primary_declaration.group(1).lower() == path.stem.lower()
+        and primary_declaration.group(1) == expected_primary_type
     )
     comment_paragraphs = paragraphs(context.comment)
     opening = comment_paragraphs[0] if comment_paragraphs else comment
@@ -1638,6 +1644,65 @@ def explicit_constructor_lines(source, code):
     )
 
 
+def primary_type_name(path):
+    """Derive the public type identity convention from a header filename."""
+    path = Path(path)
+    if path.suffix != ".hpp":
+        return None
+    return "".join(
+        word[:1].upper() + word[1:] for word in path.stem.split("_")
+    )
+
+
+def primary_type_pattern(path):
+    """Match class and struct declarations carrying the header identity."""
+    name = primary_type_name(path)
+    if not name:
+        return None
+    return re.compile(
+        r"\b(?:class|struct)\s+(" + re.escape(name) + r")\b"
+    )
+
+
+def primary_type_definition_lines(path, source, code):
+    """Locate complete primary type definitions while comments remain masked."""
+    pattern = primary_type_pattern(path)
+    if pattern is None:
+        return ()
+
+    lines = []
+    for match in pattern.finditer(code):
+        opening = code.find("{", match.end())
+        terminator = code.find(";", match.end())
+        if opening < 0 or (terminator >= 0 and terminator < opening):
+            continue
+        lines.append(source.count("\n", 0, match.start()) + 1)
+    return tuple(lines)
+
+
+def attached_primary_type_lines(context):
+    """Locate primary definitions directly governed by one comment block."""
+    return tuple(
+        context.attached_line + context.attached[: match.start()].count("\n")
+        for match in attached_primary_type_matches(context)
+    )
+
+
+def attached_primary_type_matches(context):
+    """Reject intervening source constructs between a contract and its type."""
+    pattern = primary_type_pattern(context.path)
+    if pattern is None:
+        return ()
+
+    matches = []
+    for match in pattern.finditer(context.attached):
+        prelude = context.attached[: match.start()]
+        if re.search(r"[{};#]|\bnamespace\b", prelude):
+            continue
+        matches.append(match)
+    return tuple(matches)
+
+
 def policy_extension_signals(context, code):
     """Require an open CRTP capability to publish every invoked policy hook."""
     if not code or "policy_type" not in context.attached:
@@ -1776,11 +1841,13 @@ def classify_comments(path, source, comments, code=None):
     contexts = source_contexts(path, source, comments, code)
     verdicts = []
     covered_constructors = set()
+    covered_primary_types = set()
     for context in contexts:
         base = classify(context.comment)
         constructor = attached_explicit_constructor(context)
         if constructor:
             covered_constructors.add(constructor)
+        covered_primary_types.update(attached_primary_type_lines(context))
         extra = source_signals(context)
         if code is not None:
             extra += policy_extension_signals(context, code)
@@ -1795,6 +1862,17 @@ def classify_comments(path, source, comments, code=None):
                     classify(""),
                     context,
                     (EXPLICIT_CONSTRUCTOR_SIGNAL,),
+                )
+            )
+        for line in primary_type_definition_lines(path, source, code):
+            if line in covered_primary_types:
+                continue
+            context = SourceSlice(str(path), line, "", line, "")
+            verdicts.append(
+                source_verdict(
+                    classify(""),
+                    context,
+                    (MISSING_PRIMARY_TYPE_SIGNAL,),
                 )
             )
     return tuple(sorted(verdicts, key=lambda verdict: verdict.line or 0))

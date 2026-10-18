@@ -23,9 +23,12 @@ class source_location {
 
 namespace Toolchain::Compile {
 
-// SourceLocation exposes one compiler call site without assigning a string
-// representation or safety policy to its C strings. Consumers establish those
-// contracts before publishing the location through their own interfaces.
+// SourceLocation isolates the compiler source location builtin and its record
+// layout. Toolchain projects can therefore capture callers during constant
+// evaluation while sharing one compiler ABI. File and function pointers refer
+// to read only program storage, but carry no extent or encoding promise.
+// Consumers establish those string boundaries before publishing the location
+// through their own interfaces.
 class SourceLocation {
  public:
   // The default argument is evaluated at the caller and records that location

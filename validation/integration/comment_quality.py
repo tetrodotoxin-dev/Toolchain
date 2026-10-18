@@ -45,6 +45,36 @@ if __name__ == "__main__":
     assert "license metadata" not in {
         signal.name for signal in copyright_prose.signals
     }, copyright_prose
+
+    undocumented_type = "class MissingContract {\n};\n"
+    undocumented = classifier.classify_comments(
+        Path("source/example/missing_contract.hpp"),
+        undocumented_type,
+        (),
+        undocumented_type,
+    )
+    assert len(undocumented) == 1, undocumented
+    assert undocumented[0].decision == "Reject", undocumented
+    assert "missing primary type contract" in {
+        signal.name for signal in undocumented[0].signals
+    }, undocumented
+
+    distant_contract = (
+        "// Copyright (c) 2023-present Example\n\n"
+        "#pragma once\n\n"
+        "class DistantContract {\n};\n"
+    )
+    comment_end = distant_contract.index("\n")
+    distant_code = " " * comment_end + distant_contract[comment_end:]
+    distant = classifier.classify_comments(
+        Path("source/example/distant_contract.hpp"),
+        distant_contract,
+        ((0, comment_end, distant_contract[2:comment_end]),),
+        distant_code,
+    )
+    assert "missing primary type contract" in {
+        signal.name for verdict in distant for signal in verdict.signals
+    }, distant
     for prohibited in classifier.PROHIBITED_ALIAS_WORDS:
         verdict = classifier.classify(
             f"The operation uses {prohibited} as its result."

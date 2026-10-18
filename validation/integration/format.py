@@ -140,13 +140,21 @@ if __name__ == "__main__":
         owned_header = owned / "header.hpp"
         owned_header.write_text(
             "#pragma once\n"
-            "namespace Example::Module::Folder {\nclass Header {};\n}\n"
+            "namespace Example::Module::Folder {\n"
+            "// Header supplies the public identity used to verify that nested\n"
+            "// namespaces follow the complete source path.\n"
+            "class Header {};\n}\n"
         )
         run(formatter, root, "source/example/module/folder/header.hpp")
 
         paired = source / "example" / "module" / "paired"
         paired.with_suffix(".hpp").write_text(
-            "#pragma once\nnamespace Example::Module {\nclass Paired {};\n}\n"
+            "#pragma once\nnamespace Example::Module {\n"
+            "// Paired is the declaration anchor for its implementation. The\n"
+            "// identity remains in this header because source policy can then\n"
+            "// prove that the implementation includes its matching header before\n"
+            "// system dependencies.\n"
+            "class Paired {};\n}\n"
         )
         paired.with_suffix(".cpp").write_text(
             "#include <stddef.h>\n#include \"example/module/paired.hpp\"\n"
@@ -168,7 +176,10 @@ if __name__ == "__main__":
         image.mkdir()
         texture = image / "texture_2d.hpp"
         texture.write_text(
-            "#pragma once\nnamespace Example::Image {\nclass Texture2D {};\n}\n"
+            "#pragma once\nnamespace Example::Image {\n"
+            "// Texture2D supplies the public identity used to verify that a\n"
+            "// snake case filename maps to its Pascal case type.\n"
+            "class Texture2D {};\n}\n"
         )
         run(formatter, root, "source/example/image/texture_2d.hpp")
 
@@ -184,6 +195,8 @@ if __name__ == "__main__":
             "};\n"
             "}\n"
             "namespace Example::Compile {\n"
+            "// SourceLocation keeps the compiler location builtin behind the\n"
+            "// public namespace derived from this header path.\n"
             "class SourceLocation {\n"
             " public:\n"
             "  static auto current(\n"
@@ -673,6 +686,8 @@ if __name__ == "__main__":
 
         constructors = source / "constructors.hpp"
         constructors.write_text(
+            "// Constructors defines the ordinary special members used to prove that\n"
+            "// conversion operators do not require constructor rationale comments.\n"
             "class Constructors {\n"
             " public:\n"
             "  Constructors() = default;\n"
@@ -681,6 +696,21 @@ if __name__ == "__main__":
             "};\n"
         )
         run(formatter, root, "source/constructors.hpp")
+
+        missing_primary_contract = source / "missing_primary_contract.hpp"
+        missing_primary_contract.write_text(
+            "class MissingPrimaryContract {\n"
+            "};\n"
+        )
+        result = run(
+            formatter,
+            root,
+            "source/missing_primary_contract.hpp",
+            status=1,
+        )
+        assert "missing primary type contract" in result.stderr
+        assert "(100/100)" in result.stderr
+        missing_primary_contract.unlink()
 
         missing_explicit_comment = source / "missing_explicit_comment.hpp"
         missing_explicit_comment.write_text(
@@ -744,6 +774,8 @@ if __name__ == "__main__":
 
         explained_explicits = source / "explained_explicits.hpp"
         explained_explicits.write_text(
+            "// ExplainedExplicits verifies that each conversion boundary carries\n"
+            "// its own rationale even when constructors share one target type.\n"
             "class ExplainedExplicits {\n"
             " public:\n"
             "  // Explicit construction prevents a signed scalar from silently becoming\n"
@@ -761,6 +793,10 @@ if __name__ == "__main__":
 
         deleted_operation = source / "deleted_operation.hpp"
         deleted_operation.write_text(
+            "// DeletedOperation exists to verify that an unavailable copy path\n"
+            "// does not create a conversion boundary requiring rationale. Its\n"
+            "// deleted constructor is a compile time prohibition rather than a\n"
+            "// callable state transition.\n"
             "class DeletedOperation {\n"
             " public:\n"
             "  DeletedOperation(const DeletedOperation&) = delete;\n"
@@ -1160,6 +1196,9 @@ if __name__ == "__main__":
 
         body_boundaries = source / "body_boundaries.hpp"
         body_boundaries.write_text(
+            "// BodyBoundaries places every special member form in one type so\n"
+            "// formatting can distinguish inline bodies from multiline state\n"
+            "// transitions and preserve a declaration boundary between them.\n"
             "class BodyBoundaries {\n"
             " public:\n"
             "  BodyBoundaries(S32 value) : value(value) {}\n"
