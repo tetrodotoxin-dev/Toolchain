@@ -4,6 +4,7 @@
 
 import hashlib
 import re
+import subprocess
 
 
 HEADERS = {".h", ".hpp"}
@@ -549,6 +550,27 @@ def system_include_errors(path, source, code):
     return errors
 
 
+def locally_changed(path, root):
+    """Report staged, unstaged or untracked edits when Git metadata exists."""
+    try:
+        status = subprocess.run(
+            [
+                "git",
+                "status",
+                "--porcelain=v1",
+                "--untracked-files=all",
+                "--",
+                path.relative_to(root).as_posix(),
+            ],
+            cwd=root,
+            capture_output=True,
+            check=False,
+        )
+    except OSError:
+        return False
+    return status.returncode == 0 and bool(status.stdout)
+
+
 def declaration_errors(path, root, project, source, code):
     """Keep C++ ownership on complete declarations and ordinary state."""
     if path.suffix not in HEADERS | IMPLEMENTATIONS:
@@ -559,6 +581,10 @@ def declaration_errors(path, root, project, source, code):
     errors = []
     expected_digest = LOCKED_SOURCE_DIGESTS.get(source_key)
     if expected_digest is not None:
+        if locally_changed(path, root):
+            errors.append(
+                f"{path}:1: locked source has staged or unstaged edits; explicit human review must precede its commit"
+            )
         digest = hashlib.sha256(source.encode()).hexdigest()
         if digest != expected_digest:
             errors.append(

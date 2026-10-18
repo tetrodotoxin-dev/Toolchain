@@ -529,6 +529,62 @@ if __name__ == "__main__":
         )
         assert "locked source changed" in result.stderr
 
+        subprocess.run(
+            ["git", "init", "--quiet"],
+            cwd=cast_owner,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "add", "MODULE.bazel", "source/perimortem/core/data.hpp"],
+            cwd=cast_owner,
+            check=True,
+        )
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                "user.name=Toolchain",
+                "-c",
+                "user.email=validation@toolchain.invalid",
+                "commit",
+                "--quiet",
+                "-m",
+                "Baseline",
+            ],
+            cwd=cast_owner,
+            check=True,
+        )
+        result = run(
+            formatter,
+            cast_owner,
+            "source/perimortem/core/data.hpp",
+            status=1,
+        )
+        assert "locked source changed" in result.stderr
+        assert "locked source has staged or unstaged edits" not in result.stderr
+
+        data_header.write_text(data_source + "// Local edit.\n")
+        result = run(
+            formatter,
+            cast_owner,
+            "source/perimortem/core/data.hpp",
+            status=1,
+        )
+        assert "locked source has staged or unstaged edits" in result.stderr
+
+        subprocess.run(
+            ["git", "add", "source/perimortem/core/data.hpp"],
+            cwd=cast_owner,
+            check=True,
+        )
+        result = run(
+            formatter,
+            cast_owner,
+            "source/perimortem/core/data.hpp",
+            status=1,
+        )
+        assert "locked source has staged or unstaged edits" in result.stderr
+
         other_header = cast_boundary / "other.hpp"
         other_header.write_text(data_source.replace("Data", "Other"))
         result = run(
