@@ -228,6 +228,7 @@ def main():
     errors = []
     warnings = []
     comment_verdicts = []
+    parsed = {}
 
     if not arguments.check:
         for path in files:
@@ -252,16 +253,19 @@ def main():
             format_source(path)
 
     for path in files:
+        source = path.read_text()
+        code, comments = lexical(source)
+        parsed[path] = (source, code)
         errors.extend(
             source_errors(
                 path,
                 root,
                 local_project,
                 namespace_roots,
+                source,
+                code,
             )
         )
-        source = path.read_text()
-        code, comments = lexical(source)
         verdicts = classify_comments(path, source, comments, code)
         comment_verdicts.extend(verdicts)
         for verdict in verdicts:
@@ -273,6 +277,7 @@ def main():
         duplicate_implementation_type_errors(
             [path for path in discover(root) if path.suffix == ".cpp"],
             files,
+            parsed,
         )
     )
     report = [summary(comment_verdicts)] + warnings + errors

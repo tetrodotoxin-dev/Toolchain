@@ -79,6 +79,18 @@ PROHIBITED_ALIAS_WORDS = frozenset(
         "inadmissibly",
     }
 )
+TECHNICAL_HYPHENATED = re.compile(
+    r"\b(?:SHA-(?:1|224|256|384|512)|UTF-(?:8|16|32)|x86-64)\b",
+    re.IGNORECASE,
+)
+SOURCE_REJECT_SIGNALS = frozenset(
+    {
+        "primary representation before purpose",
+        "underspecified canonical form",
+        "unexplained validated state",
+        "unexplained public bound",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -182,8 +194,14 @@ def decision(score):
 
 
 def source_verdict(base, context, extra):
+    source_floor = (
+        REJECT_THRESHOLD
+        if any(signal.name in SOURCE_REJECT_SIGNALS for signal in extra)
+        else 0
+    )
     score = max(
         base.minimum_score,
+        source_floor,
         max(0, min(100, base.score + sum(signal.points for signal in extra))),
     )
     return Verdict(
@@ -325,9 +343,10 @@ def classify(source):
             "The short statement has little room for a mechanism, boundary or reason.",
         )
 
+    hyphenated_prose = TECHNICAL_HYPHENATED.sub("", punctuation_prose)
     if re.search(
         r"(?<=[A-Za-z0-9])-(?=[A-Za-z0-9])|[\u2013\u2014]",
-        punctuation_prose,
+        hyphenated_prose,
     ):
         add(
             "hyphenated prose",
@@ -809,8 +828,9 @@ def classify(source):
         re.IGNORECASE,
     )
     domain_mechanism = matches(
-        r"\b(?:ABI|callback|compile(?:s|d|ing)?|compiler|context|CUDA|"
-        r"entry|execution|function|launch|module|native code|source)\b",
+        r"\b(?:ABI|anchor|callback|compile(?:s|d|ing)?|compiler|context|CUDA|"
+        r"emission|entry|execution|filesystem|function|host|launch|module|"
+        r"native (?:code|path)|path|serialization|source)\b",
         comment,
     )
     if len(words) >= 30 and len(ownership_terms) >= 5 and not domain_mechanism:
@@ -943,6 +963,40 @@ def line_comment_marker(line):
     return None
 
 
+def attached_extent(lines, attached, code_lines=None):
+    """Attach a complete type so its primary contract sees the public API."""
+    source_lines = lines if code_lines is None else code_lines
+    ordinary_end = attached
+    code_count = 0
+    while ordinary_end < len(lines) and code_count < 16:
+        current = lines[ordinary_end]
+        if (
+            not current.strip()
+            or line_comment_marker(current)
+            or current.lstrip().startswith("/*")
+        ):
+            break
+        ordinary_end += 1
+        code_count += 1
+
+    prelude = "\n".join(source_lines[attached : min(len(lines), attached + 8)])
+    if re.search(r"\b(?:class|struct)\s+[A-Za-z_][A-Za-z0-9_]*\b", prelude) is None:
+        return ordinary_end
+
+    depth = 0
+    opened = False
+    for position in range(attached, len(source_lines)):
+        for character in source_lines[position]:
+            if character == "{":
+                depth += 1
+                opened = True
+            elif character == "}" and opened:
+                depth -= 1
+        if opened and depth == 0:
+            return position + 1
+    return ordinary_end
+
+
 def source_slice(path, line):
     """Extract one comment and the source paragraph to which it is attached."""
     source_path = Path(path)
@@ -974,14 +1028,7 @@ def source_slice(path, line):
     attached = end
     while attached < len(lines) and not lines[attached].strip():
         attached += 1
-    attached_end = attached
-    code_lines = 0
-    while attached_end < len(lines) and code_lines < 16:
-        current = lines[attached_end]
-        if not current.strip() or line_comment_marker(current):
-            break
-        attached_end += 1
-        code_lines += 1
+    attached_end = attached_extent(lines, attached)
     return SourceSlice(
         str(source_path),
         begin + 1,
@@ -1181,6 +1228,135 @@ def source_signals(context):
             r"separates?|so that|therefore|unifies?|without duplicating)\b",
             opening,
         )
+        representation_opening = matches(
+            r"^(?:Contains?|Holds?|Stores?|Wraps?)\b",
+            opening,
+        )
+        if representation_opening and not purpose:
+            signals.append(
+                Signal(
+                    "primary representation before purpose",
+                    60,
+                    "A primary type opens with its representation before "
+                    "explaining which caller or domain problem requires it.",
+                )
+            )
+
+        first_sentence = re.split(r"[.!?](?:\s|$)", opening, maxsplit=1)[0]
+        canonical_claim = (
+            representation_opening
+            and matches(
+                r"\b(?:canonical(?:ize[sd]?|ization|ly)?|"
+                r"normaliz(?:e[sd]?|ation))\b",
+                first_sentence,
+            )
+        ) or matches(
+            r"\b"
+            + re.escape(type_name)
+            + r"\b[^.!?]{0,120}\b(?:canonical(?:ize[sd]?|ization|ly)?|"
+            r"normaliz(?:e[sd]?|ation))\b",
+            first_sentence,
+        )
+        if canonical_claim:
+            validity_boundary = matches(
+                r"\b(?:accept(?:s|ed|ing)?|cannot|invalid|must|only|"
+                r"reject(?:s|ed|ing)?|require(?:s|d|ing)?)\b",
+                comment,
+            )
+            identity_boundary = matches(
+                r"\b(?:equivalen(?:ce|t)|identity|same\b[^.]{0,60}\bform|"
+                r"one\b[^.]{0,60}\brepresentation)\b",
+                comment,
+            )
+            materialization_boundary = matches(
+                r"\b(?:emit(?:s|ted|ting|ission)?|native|prefix|separator|"
+                r"serializ(?:e[sd]?|ation)|syntax)\b",
+                comment,
+            )
+            if not (
+                validity_boundary
+                and identity_boundary
+                and materialization_boundary
+            ):
+                signals.append(
+                    Signal(
+                        "underspecified canonical form",
+                        60,
+                        "A canonical type must state which spellings are valid, "
+                        "what gives equivalent values one identity and how that "
+                        "identity is serialized or emitted.",
+                    )
+                )
+
+            public_section = re.search(
+                r"(?m)^([ \t]*)public:\s*$",
+                context.attached,
+            )
+            public_surface = context.attached
+            if public_section:
+                public_surface = context.attached[public_section.end() :]
+                private_section = re.search(
+                    r"(?m)^"
+                    + re.escape(public_section.group(1))
+                    + r"private:\s*$",
+                    public_surface,
+                )
+                if private_section:
+                    public_surface = public_surface[: private_section.start()]
+            unchecked_constructor = False
+            for constructor in re.finditer(
+                r"\b"
+                + re.escape(type_name)
+                + r"\s*\(([^)]*)\)([^;{\n]*)",
+                public_surface,
+            ):
+                parameters = constructor.group(1)
+                suffix = constructor.group(2)
+                if type_name in parameters or matches(r"=\s*delete\b", suffix):
+                    continue
+                unchecked_constructor = True
+                break
+            if unchecked_constructor:
+                signals.append(
+                    Signal(
+                        "unexplained validated state",
+                        60,
+                        "A canonical type permits unchecked public construction "
+                        "instead of routing invalid input through a checked "
+                        "factory.",
+                    )
+                )
+
+        public_bound = re.search(
+            r"\bstatic\s+constexpr\b[^;\n]*\b(?:"
+            r"max(?:imum)?_(?:bytes|capacity|count|size)|"
+            r"(?:bytes|capacity|count|size)_limit)\s*=",
+            context.attached,
+        )
+        bound_extent = matches(
+            r"\b(?:at most|bound(?:ary)?|exceed(?:s|ed|ing)?|limit(?:s|ed|ing)?|"
+            r"maximum|over limit|up to)\b",
+            comment,
+        )
+        bound_reason = matches(
+            r"\b(?:because|so that|therefore|to avoid|to keep|without)\b",
+            comment,
+        )
+        bound_failure = matches(
+            r"\b(?:fail(?:s|ed|ure)?|invalid|none|reject(?:s|ed|ing)?)\b",
+            comment,
+        )
+        if public_bound and not (bound_extent and bound_reason and bound_failure):
+            signals.append(
+                Signal(
+                    "unexplained public bound",
+                    60,
+                    "A public size bound appears in the primary type without "
+                    "the resource reason or over-limit behavior that makes the "
+                    "number part of its contract.",
+                )
+            )
+
         named_variants = {
             name
             for name in re.findall(r"\b[A-Z][A-Za-z0-9_]*\b", opening)
@@ -1540,7 +1716,7 @@ def classify_file(path, line):
     )
 
 
-def source_contexts(path, source, comments):
+def source_contexts(path, source, comments, code=None):
     """Join line comments and attach each block to its source paragraph."""
     blocks = []
     for start, end, comment in comments:
@@ -1569,6 +1745,7 @@ def source_contexts(path, source, comments):
         blocks.append((start, end, comment, marker))
 
     lines = source.splitlines()
+    code_lines = code.splitlines() if code is not None else None
     contexts = []
     for start, end, comment, _ in blocks:
         if not normalize(comment):
@@ -1576,18 +1753,7 @@ def source_contexts(path, source, comments):
         attached = source.count("\n", 0, end) + 1
         while attached < len(lines) and not lines[attached].strip():
             attached += 1
-        attached_end = attached
-        code_lines = 0
-        while attached_end < len(lines) and code_lines < 16:
-            current = lines[attached_end]
-            if (
-                not current.strip()
-                or line_comment_marker(current)
-                or current.lstrip().startswith("/*")
-            ):
-                break
-            attached_end += 1
-            code_lines += 1
+        attached_end = attached_extent(lines, attached, code_lines)
         contexts.append(
             SourceSlice(
                 str(path),
@@ -1602,7 +1768,7 @@ def source_contexts(path, source, comments):
 
 def classify_comments(path, source, comments, code=None):
     """Classify every authored comment block in one C or C++ source file."""
-    contexts = source_contexts(path, source, comments)
+    contexts = source_contexts(path, source, comments, code)
     verdicts = []
     covered_constructors = set()
     for context in contexts:

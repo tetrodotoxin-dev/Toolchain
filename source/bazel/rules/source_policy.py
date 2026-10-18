@@ -248,13 +248,16 @@ def line_at(source, offset):
     return source.count("\n", 0, offset) + 1
 
 
-def implementation_type_definitions(path):
+def implementation_type_definitions(path, parsed=None):
     """Find namespace-scope type definitions emitted by one implementation."""
     if path.suffix not in IMPLEMENTATIONS:
         return []
 
-    source = path.read_text()
-    code, _ = lexical(source)
+    if parsed is not None and path in parsed:
+        source, code = parsed[path]
+    else:
+        source = path.read_text()
+        code, _ = lexical(source)
     definitions = []
     for match in IMPLEMENTATION_TYPE_DEFINITION.finditer(code):
         if code.count("{", 0, match.start()) != code.count("}", 0, match.start()):
@@ -271,11 +274,11 @@ def implementation_type_definitions(path):
     return definitions
 
 
-def duplicate_implementation_type_errors(paths, selected):
+def duplicate_implementation_type_errors(paths, selected, parsed=None):
     """Reject different implementation files that publish one type identity."""
     definitions = {}
     for path in paths:
-        for name, line in implementation_type_definitions(path):
+        for name, line in implementation_type_definitions(path, parsed):
             definitions.setdefault(name, []).append((path, line))
 
     selected = set(selected)
@@ -683,25 +686,47 @@ def executable_signature(tokens, brace, parentheses):
     )
 
 
-def trailing_return_errors(path, source, code):
+def trailing_return_errors(path, source, code, tokens=None):
     """Require explicit C++ function returns after the parameter list."""
     if path.suffix not in {".cpp", ".hpp"}:
         return []
-    tokens = code_tokens(source, code)
+    tokens = code_tokens(source, code) if tokens is None else tokens
     parentheses = pairs(tokens, "(", ")")
     brackets = pairs(tokens, "[", "]")
     braces = pairs(tokens, "{", "}")
+    # Prefix depth makes executable scope membership constant time for every
+    # candidate parameter list. Searching every brace range from every opening
+    # parenthesis made this repository-wide rule quadratic on large functions.
+    executable_depth = [0] * (len(tokens) + 1)
+    for opening, closing in braces.items():
+        if opening < closing and executable_scope(
+            tokens,
+            opening,
+            parentheses,
+        ):
+            executable_depth[opening + 1] += 1
+            executable_depth[closing] -= 1
+    depth = 0
+    for index in range(len(tokens)):
+        depth += executable_depth[index]
+        executable_depth[index] = depth
+
     errors = []
-    for opening in sorted(index for index in parentheses if index < parentheses[index]):
-        nested_parameter = any(
-            parent < opening < closing
-            for parent, closing in parentheses.items()
-            if parent < closing
-        )
+    # Parenthesis ranges are properly nested. Keeping their closing positions
+    # identifies nested calls and function types without another range search.
+    active_parentheses = []
+    openings = sorted(
+        index for index in parentheses if index < parentheses[index]
+    )
+    for opening in openings:
+        while active_parentheses and active_parentheses[-1] < opening:
+            active_parentheses.pop()
+        nested_parameter = bool(active_parentheses)
+        active_parentheses.append(parentheses[opening])
         if (
             opening == 0
             or nested_parameter
-            or enclosing_executable(tokens, opening, braces, parentheses)
+            or executable_depth[opening]
             or any(
                 left < opening < right
                 for left, right in brackets.items()
@@ -1231,12 +1256,12 @@ def executable_scope(tokens, brace, parentheses):
     return executable_signature(tokens, brace, parentheses)
 
 
-def paragraph_violations(source, code):
+def paragraph_violations(source, code, tokens=None):
     """Locate paragraphs that need a new lexical boundary.
 
     An empty line begins the next paragraph in the same lexical scope.
     """
-    tokens = code_tokens(source, code)
+    tokens = code_tokens(source, code) if tokens is None else tokens
     braces = pairs(tokens, "{", "}")
     parentheses = pairs(tokens, "(", ")")
     brackets = pairs(tokens, "[", "]")
@@ -1337,17 +1362,17 @@ def paragraph_violations(source, code):
     return violations
 
 
-def paragraph_errors(path, source, code):
+def paragraph_errors(path, source, code, tokens=None):
     """Advance each paragraph from declarations to statements to one block."""
     return [
         f"{path}:{line_at(source, offset)}: lexical paragraphs progress through declarations, statements and one control block"
-        for offset in paragraph_violations(source, code)
+        for offset in paragraph_violations(source, code, tokens)
     ]
 
 
-def multiline_brace_violations(source, code):
+def multiline_brace_violations(source, code, tokens=None):
     """Separate a multiline braced entity from the source entity after it."""
-    tokens = code_tokens(source, code)
+    tokens = code_tokens(source, code) if tokens is None else tokens
     braces = pairs(tokens, "{", "}")
     parentheses = pairs(tokens, "(", ")")
     violations = []
@@ -1393,11 +1418,11 @@ def multiline_brace_violations(source, code):
     return violations
 
 
-def multiline_brace_errors(path, source, code):
+def multiline_brace_errors(path, source, code, tokens=None):
     """Keep each multiline braced entity in its own source paragraph."""
     return [
         f"{path}:{line_at(source, offset)}: multiline braced entities end with an empty line before the next source entity"
-        for offset in multiline_brace_violations(source, code)
+        for offset in multiline_brace_violations(source, code, tokens)
     ]
 
 
@@ -1446,9 +1471,10 @@ def source_errors(
     root,
     project,
     namespace_roots,
+    source,
+    code,
 ):
-    source = path.read_text()
-    code, _ = lexical(source)
+    tokens = code_tokens(source, code)
     return (
         header_identity_errors(path, source, code)
         + namespace_errors(path, source, code)
@@ -1457,11 +1483,11 @@ def source_errors(
         + platform_header_errors(path, source)
         + system_include_errors(path, source, code)
         + declaration_errors(path, root, project, source, code)
-        + trailing_return_errors(path, source, code)
+        + trailing_return_errors(path, source, code, tokens)
         + raw_allocation_errors(path, root, project, source, code)
         + flexible_type_errors(path, root, project, source, code)
         + standard_integer_errors(path, root, project, source, code)
         + preprocessor_errors(path, source)
-        + paragraph_errors(path, source, code)
-        + multiline_brace_errors(path, source, code)
+        + paragraph_errors(path, source, code, tokens)
+        + multiline_brace_errors(path, source, code, tokens)
     )
