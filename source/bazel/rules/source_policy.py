@@ -138,8 +138,25 @@ APPROVED_RAW_ALLOCATION_FILES = {
 APPROVED_PLACEMENT_NEW_FILES = {
     ("toolchain", "source/toolchain/memory/lifetime.hpp"),
 }
-APPROVED_NAMED_CAST_FILES = {
-    ("perimortem", "source/perimortem/core/data.hpp"),
+APPROVED_NAMED_CAST_METHODS = {
+    ("perimortem", "source/perimortem/core/data.hpp"): {
+        "bit_cast",
+        "cast",
+        "copy",
+        "read",
+        "take",
+        "write",
+    },
+    ("perimortem", "source/perimortem/system/filesystem/file.cpp"): {
+        "inspect_stream",
+    },
+    ("perimortem", "source/perimortem/system/process/library.cpp"): {
+        "symbol",
+        "~Library",
+    },
+    ("perimortem", "source/perimortem/system/process/thread.cpp"): {
+        "join",
+    },
 }
 APPROVED_FLEXIBLE_TYPE_FILES = {
     ("toolchain", "source/toolchain/toolchain.h"),
@@ -543,13 +560,68 @@ def system_include_errors(path, source, code):
     return errors
 
 
-def declaration_errors(path, root, project, source, code):
+def enclosing_method(tokens, index):
+    """Return the innermost executable method containing one token."""
+    braces = pairs(tokens, "{", "}")
+    parentheses = pairs(tokens, "(", ")")
+    candidates = sorted(
+        (
+            opening
+            for opening, closing in braces.items()
+            if opening < index < closing
+            and opening < closing
+            and executable_signature(tokens, opening, parentheses)
+        ),
+        reverse=True,
+    )
+    for brace in candidates:
+        if tokens[brace - 1][0] in {"else", "try", "do", "]"}:
+            continue
+        closings = [
+            closing
+            for opening, closing in parentheses.items()
+            if opening < closing < brace
+        ]
+        if not closings:
+            continue
+        parameters = parentheses[max(closings)]
+        name_index = parameters - 1
+        if name_index < 0:
+            continue
+        name = tokens[name_index][0]
+        if name in CONTROL or name == "constexpr":
+            continue
+        if name_index and tokens[name_index - 1][0] == "~":
+            return "~" + name
+        return name
+    return ""
+
+
+def reviewed_named_cast(path, root, project, match, tokens):
+    """Admit a cast only inside an explicitly reviewed method and source path."""
+    relative = path.relative_to(root).as_posix()
+    approved = APPROVED_NAMED_CAST_METHODS.get((project, relative), set())
+    if not approved:
+        return False
+    token_index = next(
+        (
+            index
+            for index, (_, start, end) in enumerate(tokens)
+            if start <= match.start() < end
+        ),
+        -1,
+    )
+    return token_index >= 0 and enclosing_method(tokens, token_index) in approved
+
+
+def declaration_errors(path, root, project, source, code, tokens=None):
     """Keep C++ ownership on complete declarations and ordinary state."""
     if path.suffix not in HEADERS | IMPLEMENTATIONS:
         return []
+    tokens = code_tokens(source, code) if tokens is None else tokens
     errors = []
-    if not approved_file(path, root, project, APPROVED_NAMED_CAST_FILES):
-        for match in NAMED_CAST.finditer(code):
+    for match in NAMED_CAST.finditer(code):
+        if not reviewed_named_cast(path, root, project, match, tokens):
             errors.append(
                 f"{path}:{line_at(source, match.start())}: named casts use the owning project's reviewed data conversion boundary"
             )
@@ -1482,7 +1554,7 @@ def source_errors(
         + implementation_header_errors(path, root, source)
         + platform_header_errors(path, source)
         + system_include_errors(path, source, code)
-        + declaration_errors(path, root, project, source, code)
+        + declaration_errors(path, root, project, source, code, tokens)
         + trailing_return_errors(path, source, code, tokens)
         + raw_allocation_errors(path, root, project, source, code)
         + flexible_type_errors(path, root, project, source, code)

@@ -508,7 +508,7 @@ if __name__ == "__main__":
         cast_boundary = cast_owner / "source/perimortem/core"
         cast_boundary.mkdir(parents=True)
         data_header = cast_boundary / "data.hpp"
-        data_header.write_text(
+        data_source = (
             "#pragma once\n"
             "namespace Perimortem::Core {\n"
             "class Data {\n"
@@ -520,17 +520,59 @@ if __name__ == "__main__":
             "};\n"
             "}\n"
         )
+        data_header.write_text(data_source)
         run(
             formatter,
             cast_owner,
             "source/perimortem/core/data.hpp",
         )
+        data_header.write_text(
+            data_source.replace(
+                "};\n",
+                "  static auto restore(U64 value) -> void* {\n"
+                "    return reinterpret_cast<void*>(value);\n"
+                "  }\n"
+                "};\n",
+            )
+        )
+        result = run(
+            formatter,
+            cast_owner,
+            "source/perimortem/core/data.hpp",
+            status=1,
+        )
+        assert "data conversion boundary" in result.stderr
+
         other_header = cast_boundary / "other.hpp"
-        other_header.write_text(data_header.read_text().replace("Data", "Other"))
+        other_header.write_text(data_source.replace("Data", "Other"))
         result = run(
             formatter,
             cast_owner,
             "source/perimortem/core/other.hpp",
+            status=1,
+        )
+        assert "data conversion boundary" in result.stderr
+
+        ffi_boundary = cast_owner / "source/perimortem/system/filesystem"
+        ffi_boundary.mkdir(parents=True)
+        ffi_source = ffi_boundary / "file.cpp"
+        ffi_source.write_text(
+            "auto inspect_stream(U64 value) -> void* {\n"
+            "  return reinterpret_cast<void*>(value);\n"
+            "}\n"
+        )
+        run(
+            formatter,
+            cast_owner,
+            "source/perimortem/system/filesystem/file.cpp",
+        )
+        ffi_source.write_text(
+            ffi_source.read_text().replace("inspect_stream", "restore_pointer")
+        )
+        result = run(
+            formatter,
+            cast_owner,
+            "source/perimortem/system/filesystem/file.cpp",
             status=1,
         )
         assert "data conversion boundary" in result.stderr
