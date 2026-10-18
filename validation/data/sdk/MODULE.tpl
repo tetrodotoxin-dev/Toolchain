@@ -17,6 +17,7 @@ register_toolchains(
     "@tetro_toolchain//:cc_toolchain_for_linux_x86_64",
     "@tetro_toolchain//:cc_toolchain_for_windows_x64",
     "@tetro_toolchain//:cc_toolchain_for_wasm32",
+    "@tetro_toolchain//:cc_toolchain_for_wasm32_runner",
 )
 
 sdks = use_extension("@tetro_toolchain//source/bazel:sdk.bzl", "dependencies")

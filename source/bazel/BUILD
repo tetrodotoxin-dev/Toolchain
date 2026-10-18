@@ -5,6 +5,7 @@ package(default_visibility = ["//visibility:public"])
 exports_files(glob([
     "**/*.bzl",
     "**/*.py",
+    "**/*.sh",
     "**/*.tpl",
 ]) + ["rules/.clang-format.tpl"])
 
@@ -13,6 +14,7 @@ filegroup(
     srcs = glob([
         "**/*.bzl",
         "**/*.py",
+        "**/*.sh",
         "**/*.tpl",
     ]) + [
         "BUILD",

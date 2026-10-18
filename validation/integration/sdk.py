@@ -233,6 +233,10 @@ def verify(toolchain, checksum_manifest):
         (workspace / "source").mkdir()
         shutil.copyfile(sources / "source.tpl", workspace / "source/BUILD.bazel")
         shutil.copyfile(sources / "style.cpp", workspace / "source/style.cpp")
+        (workspace / "validation/tests").mkdir(parents=True)
+        (workspace / "validation/benchmarks").mkdir(parents=True)
+        shutil.copyfile(sources / "web_test.cpp", workspace / "validation/tests/web.cpp")
+        shutil.copyfile(sources / "web_benchmark.cpp", workspace / "validation/benchmarks/web.cpp")
         shutil.copyfile(repository / "validation/integration/sdk.c", workspace / "consumer.c")
         for linkage in ["static", "shared"]:
             values = {
@@ -258,6 +262,13 @@ def verify(toolchain, checksum_manifest):
                 assert not (workspace / ".clang-format").exists()
                 print("Candidate formatter passed in the external consumer.", flush=True)
                 verify_vscode(root, workspace, toolchain, directory)
+                subprocess.run([
+                    "bazel", "--batch", "--output_base=" + str(root / "bazel"),
+                    "run", "//:tests", "--config=web_tests",
+                    "--distdir=" + str(toolchain.parent),
+                    "--distdir=" + str(directory),
+                ], cwd=workspace, check=True)
+                print("Candidate Web validation runner passed.", flush=True)
             subprocess.run([
                 "bazel", "--batch", "--output_base=" + str(root / "bazel"),
                 "test", "//:consumer", "//:component", "//:repack", "--nocache_test_results",

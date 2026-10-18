@@ -11,6 +11,8 @@ exports_files([
     "comment_quality/corpus.jsonl",
     "harness/reporting.cpp",
     "sdk/style.cpp",
+    "sdk/web_benchmark.cpp",
+    "sdk/web_test.cpp",
 ] + glob(["sdk/*.tpl"]))
 
 cc_binary(

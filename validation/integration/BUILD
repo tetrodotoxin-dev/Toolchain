@@ -179,6 +179,8 @@ py_test(
         "//validation/data:sdk/dependency.tpl",
         "//validation/data:sdk/source.tpl",
         "//validation/data:sdk/style.cpp",
+        "//validation/data:sdk/web_benchmark.cpp",
+        "//validation/data:sdk/web_test.cpp",
     ],
     deps = ["@rules_python//python/runfiles"],
 )
@@ -189,8 +191,8 @@ test_suite(
     name = "integration",
     tests = [
         ":comment_quality",
-        ":components",
         ":compile_allocation",
+        ":components",
         ":format",
         ":harness",
         ":sdk",
