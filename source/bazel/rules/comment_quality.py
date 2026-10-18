@@ -1202,7 +1202,6 @@ def source_signals(context):
     if (
         expected_primary_type
         and primary_declaration
-        and primary_declaration.group(1) == expected_primary_type
         and not primary_type_evidence
     ):
         signals.append(
@@ -1217,7 +1216,6 @@ def source_signals(context):
     primary_type = (
         expected_primary_type
         and primary_declaration
-        and primary_declaration.group(1) == expected_primary_type
     )
     comment_paragraphs = paragraphs(context.comment)
     opening = comment_paragraphs[0] if comment_paragraphs else comment
@@ -1645,23 +1643,24 @@ def explicit_constructor_lines(source, code):
 
 
 def primary_type_name(path):
-    """Derive the public type identity convention from a header filename."""
+    """Normalize the public type identity carried by a header filename."""
     path = Path(path)
     if path.suffix != ".hpp":
         return None
-    return "".join(
-        word[:1].upper() + word[1:] for word in path.stem.split("_")
-    )
+    return re.sub(r"[^A-Za-z0-9]", "", path.stem).lower()
 
 
 def primary_type_pattern(path):
     """Match class and struct declarations carrying the header identity."""
-    name = primary_type_name(path)
-    if not name:
+    if not primary_type_name(path):
         return None
-    return re.compile(
-        r"\b(?:class|struct)\s+(" + re.escape(name) + r")\b"
-    )
+    return re.compile(r"\b(?:class|struct)\s+([A-Za-z_][A-Za-z0-9_]*)\b")
+
+
+def matches_primary_type(path, declaration):
+    """Compare filename and declaration identities without acronym casing."""
+    expected = primary_type_name(path)
+    return expected and declaration.group(1).lower() == expected
 
 
 def primary_type_definition_lines(path, source, code):
@@ -1672,6 +1671,8 @@ def primary_type_definition_lines(path, source, code):
 
     lines = []
     for match in pattern.finditer(code):
+        if not matches_primary_type(path, match):
+            continue
         opening = code.find("{", match.end())
         terminator = code.find(";", match.end())
         if opening < 0 or (terminator >= 0 and terminator < opening):
@@ -1696,6 +1697,8 @@ def attached_primary_type_matches(context):
 
     matches = []
     for match in pattern.finditer(context.attached):
+        if not matches_primary_type(context.path, match):
+            continue
         prelude = context.attached[: match.start()]
         if re.search(r"[{};#]|\bnamespace\b", prelude):
             continue

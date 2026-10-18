@@ -75,6 +75,19 @@ if __name__ == "__main__":
     assert "missing primary type contract" in {
         signal.name for verdict in distant for signal in verdict.signals
     }, distant
+
+    for path, declaration in (
+        ("source/example/texture_2d.hpp", "class Texture2D {\n};\n"),
+        ("source/example/gd_class.hpp", "class GDClass {\n};\n"),
+    ):
+        normalized = classifier.classify_comments(
+            Path(path), declaration, (), declaration
+        )
+        assert "missing primary type contract" in {
+            signal.name
+            for verdict in normalized
+            for signal in verdict.signals
+        }, (path, normalized)
     for prohibited in classifier.PROHIBITED_ALIAS_WORDS:
         verdict = classifier.classify(
             f"The operation uses {prohibited} as its result."

@@ -177,8 +177,10 @@ if __name__ == "__main__":
         texture = image / "texture_2d.hpp"
         texture.write_text(
             "#pragma once\nnamespace Example::Image {\n"
-            "// Texture2D supplies the public identity used to verify that a\n"
-            "// snake case filename maps to its Pascal case type.\n"
+            "// Texture2D is the public image identity for this header. The numeric\n"
+            "// suffix remains attached to its dimension letter because source\n"
+            "// policy normalizes filename words before matching the declaration,\n"
+            "// allowing texture_2d to name Texture2D without a path exception.\n"
             "class Texture2D {};\n}\n"
         )
         run(formatter, root, "source/example/image/texture_2d.hpp")
