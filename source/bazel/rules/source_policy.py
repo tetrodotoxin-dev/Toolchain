@@ -2,6 +2,7 @@
 
 """Validate C and C++ structure that clang-format leaves semantic."""
 
+import hashlib
 import re
 
 
@@ -138,25 +139,13 @@ APPROVED_RAW_ALLOCATION_FILES = {
 APPROVED_PLACEMENT_NEW_FILES = {
     ("toolchain", "source/toolchain/memory/lifetime.hpp"),
 }
-APPROVED_NAMED_CAST_METHODS = {
-    ("perimortem", "source/perimortem/core/data.hpp"): {
-        "bit_cast",
-        "cast",
-        "copy",
-        "read",
-        "take",
-        "write",
-    },
-    ("perimortem", "source/perimortem/system/filesystem/file.cpp"): {
-        "inspect_stream",
-    },
-    ("perimortem", "source/perimortem/system/process/library.cpp"): {
-        "symbol",
-        "~Library",
-    },
-    ("perimortem", "source/perimortem/system/process/thread.cpp"): {
-        "join",
-    },
+# Perimortem Data is the only C++ named-cast boundary. Locking its complete
+# source makes every new conversion primitive require an accompanying Toolchain
+# policy review instead of silently widening a file-level exception.
+LOCKED_SOURCE_DIGESTS = {
+    ("perimortem", "source/perimortem/core/data.hpp"): (
+        "e00a82658fc456e54f0fbf7ae1903fedb3334a34bccf86a5b7182f8823ff1987"
+    ),
 }
 APPROVED_FLEXIBLE_TYPE_FILES = {
     ("toolchain", "source/toolchain/toolchain.h"),
@@ -560,68 +549,24 @@ def system_include_errors(path, source, code):
     return errors
 
 
-def enclosing_method(tokens, index):
-    """Return the innermost executable method containing one token."""
-    braces = pairs(tokens, "{", "}")
-    parentheses = pairs(tokens, "(", ")")
-    candidates = sorted(
-        (
-            opening
-            for opening, closing in braces.items()
-            if opening < index < closing
-            and opening < closing
-            and executable_signature(tokens, opening, parentheses)
-        ),
-        reverse=True,
-    )
-    for brace in candidates:
-        if tokens[brace - 1][0] in {"else", "try", "do", "]"}:
-            continue
-        closings = [
-            closing
-            for opening, closing in parentheses.items()
-            if opening < closing < brace
-        ]
-        if not closings:
-            continue
-        parameters = parentheses[max(closings)]
-        name_index = parameters - 1
-        if name_index < 0:
-            continue
-        name = tokens[name_index][0]
-        if name in CONTROL or name == "constexpr":
-            continue
-        if name_index and tokens[name_index - 1][0] == "~":
-            return "~" + name
-        return name
-    return ""
-
-
-def reviewed_named_cast(path, root, project, match, tokens):
-    """Admit a cast only inside an explicitly reviewed method and source path."""
-    relative = path.relative_to(root).as_posix()
-    approved = APPROVED_NAMED_CAST_METHODS.get((project, relative), set())
-    if not approved:
-        return False
-    token_index = next(
-        (
-            index
-            for index, (_, start, end) in enumerate(tokens)
-            if start <= match.start() < end
-        ),
-        -1,
-    )
-    return token_index >= 0 and enclosing_method(tokens, token_index) in approved
-
-
-def declaration_errors(path, root, project, source, code, tokens=None):
+def declaration_errors(path, root, project, source, code):
     """Keep C++ ownership on complete declarations and ordinary state."""
     if path.suffix not in HEADERS | IMPLEMENTATIONS:
         return []
-    tokens = code_tokens(source, code) if tokens is None else tokens
+
+    relative = path.relative_to(root).as_posix()
+    source_key = (project, relative)
     errors = []
+    expected_digest = LOCKED_SOURCE_DIGESTS.get(source_key)
+    if expected_digest is not None:
+        digest = hashlib.sha256(source.encode()).hexdigest()
+        if digest != expected_digest:
+            errors.append(
+                f"{path}:1: locked source changed; an approved Toolchain digest update must accompany edits"
+            )
+
     for match in NAMED_CAST.finditer(code):
-        if not reviewed_named_cast(path, root, project, match, tokens):
+        if source_key not in LOCKED_SOURCE_DIGESTS:
             errors.append(
                 f"{path}:{line_at(source, match.start())}: named casts use the owning project's reviewed data conversion boundary"
             )
@@ -1554,7 +1499,7 @@ def source_errors(
         + implementation_header_errors(path, root, source)
         + platform_header_errors(path, source)
         + system_include_errors(path, source, code)
-        + declaration_errors(path, root, project, source, code, tokens)
+        + declaration_errors(path, root, project, source, code)
         + trailing_return_errors(path, source, code, tokens)
         + raw_allocation_errors(path, root, project, source, code)
         + flexible_type_errors(path, root, project, source, code)
