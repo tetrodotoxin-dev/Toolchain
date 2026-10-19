@@ -43,6 +43,9 @@ FORWARD_DECLARATION = re.compile(
 HEADER_NAMESPACE = re.compile(
     r"\bnamespace\s+([A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)*)\s*\{"
 )
+STANDALONE_CLASS = re.compile(
+    r"(?m)^[ \t]*class\s+[A-Za-z_][A-Za-z0-9_]*\b"
+)
 PLATFORM_CONDITION = re.compile(
     r"\b(?:PERI_(?:LINUX|WINDOWS|WASM|MACOS|FREEBSD)|"
     r"_WIN32|__linux__|__APPLE__|__EMSCRIPTEN__|__FreeBSD__)\b"
@@ -435,6 +438,22 @@ def header_identity_errors(path, source, code):
                 f"top level types nest under '{expected_object}'"
             )
     return errors
+
+
+def c_header_api_errors(path, source, code):
+    """Keep standalone C++ facades out of C ABI headers."""
+    if path.suffix != ".h":
+        return []
+    declarations = list(HEADER_NAMESPACE.finditer(code))
+    declarations.extend(STANDALONE_CLASS.finditer(code))
+    if not declarations:
+        return []
+    line = min(
+        line_at(source, declaration.start()) for declaration in declarations
+    )
+    return [
+        f"{path}:{line}: standalone C++ namespaces and classes live in a paired .hpp header; keep the .h surface rooted in ABI records"
+    ]
 
 
 def namespace_errors(path, source, code):
@@ -1531,7 +1550,8 @@ def source_errors(
 ):
     tokens = code_tokens(source, code)
     return (
-        header_identity_errors(path, source, code)
+        c_header_api_errors(path, source, code)
+        + header_identity_errors(path, source, code)
         + namespace_errors(path, source, code)
         + qualified_namespace_errors(path, source, code, namespace_roots)
         + implementation_header_errors(path, root, source)

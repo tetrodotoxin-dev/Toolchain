@@ -135,6 +135,34 @@ if __name__ == "__main__":
         header.write_text("namespace Example::Module {\nclass Value {};\n}\n")
         run(formatter, root, "source/valid.hpp")
 
+        abi_c_header = source / "abi_record.h"
+        abi_c_header.write_text(
+            "typedef struct example_record {\n"
+            "  char value;\n"
+            "#ifdef __cplusplus\n"
+            "  constexpr example_record() : value(0) {}\n"
+            "#endif\n"
+            "} example_record;\n"
+        )
+        run(formatter, root, "source/abi_record.h")
+        abi_c_header.unlink()
+
+        legacy_c_header = source / "legacy.h"
+        legacy_c_header.write_text(
+            "typedef struct example_value { unsigned value; } example_value;\n"
+            "#ifdef __cplusplus\n"
+            "namespace Example {\nclass Value {};\n}\n"
+            "#endif\n"
+        )
+        result = run(
+            formatter,
+            root,
+            "source/legacy.h",
+            status=1,
+        )
+        assert "standalone C++ namespaces and classes" in result.stderr
+        legacy_c_header.unlink()
+
         owned = source / "example" / "module" / "folder"
         owned.mkdir(parents=True)
         owned_header = owned / "header.hpp"
