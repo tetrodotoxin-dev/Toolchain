@@ -85,6 +85,7 @@ TECHNICAL_HYPHENATED = re.compile(
 )
 SOURCE_REJECT_SIGNALS = frozenset(
     {
+        "prohibited Perimortem borrowing alias",
         "primary representation before purpose",
         "underspecified canonical form",
         "unexplained validated state",
@@ -1053,6 +1054,18 @@ def source_signals(context):
     path = Path(context.path)
     path_words = {part.lower() for part in path.parts}
     technical_term_count = len(TECHNICAL_TERM.findall(comment))
+
+    if "perimortem" in path_words and re.search(
+        r"\bborrow(?:s|ed|ing)?\b", comment, re.IGNORECASE
+    ):
+        signals.append(
+            Signal(
+                "prohibited Perimortem borrowing alias",
+                100,
+                "Perimortem comments state the concrete View, reference and "
+                "caller lifetime instead of using borrow terminology as an alias.",
+            )
+        )
 
     explicit_constructor = attached_explicit_constructor(context)
     if explicit_constructor and not explains_explicit_constructor(comment):
