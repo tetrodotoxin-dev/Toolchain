@@ -28,6 +28,12 @@ IMPLEMENTATION_TYPE_DEFINITION = re.compile(
     r"(?m)^[ \t]*(?:class|struct|union)\s+([A-Za-z_][A-Za-z0-9_]*)\b|"
     r"^[ \t]*enum\s+(?:class\s+|struct\s+)?([A-Za-z_][A-Za-z0-9_]*)\b"
 )
+OWNED_TYPE_DECLARATION = re.compile(
+    r"\b(?:class|struct|union)\s+([A-Za-z_][A-Za-z0-9_]*)"
+    r"\s*(?=final\b|[{:;<])|"
+    r"\benum(?:\s+(?:class|struct))?\s+([A-Za-z_][A-Za-z0-9_]*)"
+    r"\s*(?=[:{;])"
+)
 RAW_STRING = re.compile(r'(?:u8|u|U|L)?R"([^ ()\\\t\r\n]{0,16})\(')
 FORWARD_DECLARATION = re.compile(
     r"\b(?:class|struct|union)\s+[A-Za-z_][A-Za-z0-9_]*\s*;|"
@@ -337,21 +343,24 @@ def public_header_identity(path):
     return namespace, pascal_name(path.stem)
 
 
-def namespace_owns(code, declaration, object_declaration):
+def direct_namespace_types(code, declaration):
     opening = code.find("{", declaration.start(), declaration.end())
     if opening < 0:
-        return False
+        return []
     depth = 1
     closing = opening + 1
     while closing < len(code) and depth:
         depth += code[closing] == "{"
         depth -= code[closing] == "}"
         closing += 1
-    for owned in object_declaration.finditer(code, opening + 1, closing - 1):
+    owned_types = []
+    for owned in OWNED_TYPE_DECLARATION.finditer(
+        code, opening + 1, closing - 1
+    ):
         prefix = code[opening + 1 : owned.start()]
         if prefix.count("{") == prefix.count("}"):
-            return True
-    return False
+            owned_types.append(owned)
+    return owned_types
 
 
 def source_location_extension(expected_namespace, expected_object, namespace, code):
@@ -407,21 +416,24 @@ def header_identity_errors(path, source, code):
             f"{path}:1: public header namespace is '{expected_namespace}'"
         )
 
-    object_declaration = re.compile(
-        r"\b(?:class|struct|union)\s+" + re.escape(expected_object) + r"\b|"
-        r"\benum\s+(?:class\s+|struct\s+)?"
-        + re.escape(expected_object)
-        + r"\b"
-    )
-    owns_object = any(
-        declaration.group(1) == expected_namespace
-        and namespace_owns(code, declaration, object_declaration)
+    owned_types = [
+        owned
         for declaration in namespaces
-    )
+        if declaration.group(1) == expected_namespace
+        for owned in direct_namespace_types(code, declaration)
+    ]
+    owned_names = [owned.group(1) or owned.group(2) for owned in owned_types]
+    owns_object = expected_object in owned_names
     if not owns_object and not prelude:
         errors.append(
             f"{path}:1: public header primary object is '{expected_object}'"
         )
+    for owned, name in zip(owned_types, owned_names):
+        if not prelude and name != expected_object:
+            errors.append(
+                f"{path}:{line_at(source, owned.start())}: public header "
+                f"top level types nest under '{expected_object}'"
+            )
     return errors
 
 

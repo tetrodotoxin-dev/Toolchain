@@ -6,6 +6,7 @@ cc_library(
     name = "headers",
     hdrs = [
         "benchmark.hpp",
+        "bytes.hpp",
         "clock.hpp",
         "harness.hpp",
         "move_only.hpp",

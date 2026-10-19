@@ -238,6 +238,15 @@ if __name__ == "__main__":
                 "namespace Example::Module::Folder {}\n",
                 "primary object",
             ),
+            "extra_object.hpp": (
+                "#pragma once\n"
+                "namespace Example::Module::Folder {\n"
+                "class ExtraObject {};\n"
+                "struct ParseFailure {};\n"
+                "enum class FormatFailure { Invalid };\n"
+                "}\n",
+                "top level types nest under 'ExtraObject'",
+            ),
             "platform.hpp": (
                 "#pragma once\n#ifdef PERI_LINUX\n#endif\n"
                 "namespace Example::Module::Folder {\nclass Platform {};\n}\n",
@@ -502,6 +511,9 @@ if __name__ == "__main__":
             ),
             "mutable.hpp": "struct Value { mutable S32 state; };\n",
             "class.hpp": "class Forward;\n",
+            "namespaced_class.hpp": (
+                "namespace Example::Module {\nclass Forward;\n}\n"
+            ),
             "enum.hpp": "enum class Forward : U32;\n",
         }
         for name, content in invalid_declarations.items():

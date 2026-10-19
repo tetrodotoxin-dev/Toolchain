@@ -4,6 +4,7 @@
 #pragma once
 
 #include <stdio.h>
+#include <string.h>
 
 #include "toolchain/validation/harness.hpp"
 
