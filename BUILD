@@ -15,7 +15,11 @@ format()
 
 snapshot()
 
-validation(deps = [])
+validation(
+    deps = [],
+    benchmark_data = ["//validation/integration:validation_benchmark_data"],
+    test_data = ["//validation/integration:validation_test_data"],
+)
 
 vscode()
 

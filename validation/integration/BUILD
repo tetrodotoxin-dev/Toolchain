@@ -2,8 +2,27 @@ load("@host_tools//:settings.bzl", "CXX", "NM")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_python//python:py_test.bzl", "py_test")
 load("//source/bazel:package.bzl", "package_release")
+load(":validation_data.bzl", "validation_data_test")
 
 package(default_visibility = ["//:__pkg__"])
+
+filegroup(
+    name = "validation_test_data",
+    srcs = ["sdk.c"],
+)
+
+filegroup(
+    name = "validation_benchmark_data",
+    srcs = ["components.c"],
+)
+
+validation_data_test(
+    name = "validation_data",
+    benchmark_data = ":validation_benchmark_data",
+    benchmarks = "//:benchmarks_binary",
+    test_data = ":validation_test_data",
+    tests = "//:tests_binary",
+)
 
 py_test(
     name = "comment_quality",
@@ -200,5 +219,6 @@ test_suite(
         ":snapshot",
         ":static",
         ":symbols",
+        ":validation_data",
     ],
 )
