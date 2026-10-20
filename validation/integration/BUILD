@@ -133,7 +133,10 @@ py_test(
     name = "snapshot",
     size = "small",
     srcs = ["snapshot.py"],
-    args = ["$(rlocationpath //:snapshot)"],
+    args = [
+        "$(rlocationpath //:snapshot)",
+        module_version(),
+    ],
     data = ["//:snapshot"],
     deps = ["@rules_python//python/runfiles"],
 )

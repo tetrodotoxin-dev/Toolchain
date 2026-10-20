@@ -30,6 +30,7 @@ def run(command, root, status=0):
 if __name__ == "__main__":
     resolver = runfiles.Create()
     program = resolver.Rlocation(sys.argv[1])
+    version = sys.argv[2]
     with tempfile.TemporaryDirectory(prefix="toolchain-snapshot-test-") as temporary:
         root = Path(temporary)
         subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
@@ -70,7 +71,7 @@ if __name__ == "__main__":
             check=True,
         ).stdout.strip()
         first = run([program], root)
-        archive = root / ".bin/release/tetro_toolchain-0.4.0-source.tar.gz"
+        archive = root / f".bin/release/tetro_toolchain-{version}-source.tar.gz"
         assert archive.exists(), first.stdout
         digest = hashlib.sha256(archive.read_bytes()).hexdigest()
         assert archive.with_name(archive.name + ".sha256").read_text() == (

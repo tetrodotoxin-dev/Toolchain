@@ -896,6 +896,57 @@ if __name__ == "__main__":
         assert "approved in Toolchain's source policy" in result.stderr
         copied_path.unlink()
 
+        ttx_root = root / "ttx_policy"
+        retention_path = "validation/providers/retention/provider.c"
+        retention = ttx_root / retention_path
+        retention.parent.mkdir(parents=True)
+        ttx_module = ttx_root / "MODULE.bazel"
+        ttx_module.write_text('module(name = "ttx")\n')
+        retention_source = (
+            "#include <stdlib.h>\n\n"
+            "void* allocate(Count size) {\n"
+            "  return malloc(size);\n"
+            "}\n\n"
+            "void release(void* context) {\n"
+            "  free(context);\n"
+            "}\n"
+        )
+        retention.write_text(retention_source)
+        run(formatter, ttx_root, retention_path)
+        run(formatter, ttx_root, "--check", retention_path)
+
+        # Approval belongs to both the TTX project and this complete C path.
+        for other_path in [
+            "validation/providers/retention/other.c",
+            "validation/providers/other/provider.c",
+            "validation/providers/retention/provider.cpp",
+        ]:
+            copied = ttx_root / other_path
+            copied.parent.mkdir(parents=True, exist_ok=True)
+            copied.write_text(retention_source)
+            result = run(formatter, ttx_root, other_path, status=1)
+            assert result.stderr.count("raw allocation is restricted") == 2
+            copied.unlink()
+
+        ttx_module.write_text('module(name = "example")\n')
+        result = run(formatter, ttx_root, retention_path, status=1)
+        assert result.stderr.count("raw allocation is restricted") == 2
+        ttx_module.write_text('module(name = "ttx")\n')
+
+        # The fixture may allocate and free through its approved C pair. Other
+        # allocation operations still require their own policy decision.
+        for allocation in [
+            "calloc(1, size)",
+            "realloc(NULL, size)",
+            "aligned_alloc(8, size)",
+        ]:
+            retention.write_text(
+                retention_source.replace("malloc(size)", allocation)
+            )
+            result = run(formatter, ttx_root, retention_path, status=1)
+            assert result.stderr.count("raw allocation is restricted") == 1
+        retention.unlink()
+
         toolchain_root = root / "toolchain_policy"
         lifetime = toolchain_root / "source/toolchain/memory/lifetime.hpp"
         lifetime.parent.mkdir(parents=True)

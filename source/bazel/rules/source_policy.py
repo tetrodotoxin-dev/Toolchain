@@ -146,6 +146,12 @@ APPROVED_RAW_ALLOCATION_FILES = {
     ("perimortem", "source/perimortem/memory/allocator/global.cpp"),
     ("toolchain", "source/toolchain/compile/allocation.hpp"),
 }
+# TTX's retention fixture stays in C to exercise independently authored
+# providers. Its malloc/free pair gives the provider control of storage through
+# final release while keeping the fixture independent of C++ allocation APIs.
+APPROVED_RAW_ALLOCATION_CALLS = {
+    ("ttx", "validation/providers/retention/provider.c"): {"malloc", "free"},
+}
 APPROVED_PLACEMENT_NEW_FILES = {
     ("toolchain", "source/toolchain/memory/lifetime.hpp"),
 }
@@ -1012,7 +1018,9 @@ def trailing_return_errors(path, source, code, tokens=None):
     return errors
 
 
-def raw_allocation_offsets(source, code, allow_placement_new=False):
+def raw_allocation_offsets(
+    source, code, allow_placement_new=False, allowed_calls=()
+):
     tokens = [
         (match.group(0), match.start(), match.end())
         for match in TOKENS.finditer(code)
@@ -1035,7 +1043,11 @@ def raw_allocation_offsets(source, code, allow_placement_new=False):
             offsets.append(start)
         elif token == "delete" and previous not in {"=", "operator"}:
             offsets.append(start)
-        elif token in RAW_ALLOCATORS and following == "(":
+        elif (
+            token in RAW_ALLOCATORS
+            and following == "("
+            and token not in allowed_calls
+        ):
             offsets.append(start)
     return offsets
 
@@ -1052,11 +1064,16 @@ def raw_allocation_errors(path, root, project, source, code):
     allow_placement_new = approved_file(
         path, root, project, APPROVED_PLACEMENT_NEW_FILES
     )
+    allowed_calls = APPROVED_RAW_ALLOCATION_CALLS.get(
+        (project, path.relative_to(root).as_posix()), ()
+    )
     return [
         f"{path}:{line_at(source, offset)}: raw allocation is restricted to "
         "exact project paths approved in Toolchain's source policy"
         for offset in raw_allocation_offsets(
-            source, code, allow_placement_new=allow_placement_new
+            source, code,
+            allow_placement_new=allow_placement_new,
+            allowed_calls=allowed_calls,
         )
     ]
 
