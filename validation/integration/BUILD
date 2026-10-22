@@ -189,6 +189,7 @@ py_test(
     args = [
         "$(rlocationpath //:_candidate_snapshot)",
         "$(rlocationpath :checksum)",
+        "$(rlocationpath //validation/integration/linkage:checksum)",
     ],
     data = [
         "sdk.c",
@@ -198,11 +199,14 @@ py_test(
         "//:_candidate_snapshot",
         "//validation/data:sdk/BUILD.tpl",
         "//validation/data:sdk/MODULE.tpl",
+        "//validation/data:sdk/dependency.c",
         "//validation/data:sdk/dependency.tpl",
         "//validation/data:sdk/source.tpl",
         "//validation/data:sdk/style.cpp",
         "//validation/data:sdk/web_benchmark.cpp",
         "//validation/data:sdk/web_test.cpp",
+        "//validation/integration/linkage:checksum",
+        "//validation/integration/linkage:fixture",
     ],
     deps = ["@rules_python//python/runfiles"],
 )

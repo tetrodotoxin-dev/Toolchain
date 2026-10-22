@@ -1,9 +1,24 @@
-# Static archives keep their separately versioned static dependencies.
+# One producer can supply both variants under independent repository names.
 sdks.release(
-    name = "tetro_toolchain",
+    name = "dependency_static",
+    archives = {dependency_archives},
+    library = "tetro_toolchain",
+    linkage = "static",
     project = "Toolchain",
     version = "{version}",
-    linkage = "static",
-    archives = {dependency_archives},
 )
-use_repo(sdks, dependency = "tetro_toolchain")
+
+sdks.release(
+    name = "dependency_shared",
+    archives = {dependency_archives},
+    library = "tetro_toolchain",
+    linkage = "shared",
+    project = "Toolchain",
+    version = "{version}",
+)
+
+use_repo(
+    sdks,
+    alternate = "dependency_{alternate_linkage}",
+    dependency = "dependency_{dependency_linkage}",
+)

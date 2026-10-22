@@ -3,10 +3,6 @@
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@tetro_toolchain//:defs.bzl", "format", "package", "validation", "vscode")
 
-format()
-validation(deps = [])
-vscode()
-
 package(
     name = "repack",
     components = {
@@ -16,6 +12,19 @@ package(
     linkage = "{linkage}",
     module = "toolchain_test",
     platforms = ["linux-x86_64-v3"],
+)
+
+format()
+
+validation(deps = [])
+
+vscode()
+
+cc_test(
+    name = "alternate",
+    srcs = ["dependency.c"],
+    local_defines = ["EXPECT_STATIC={alternate_static}"],
+    deps = ["@alternate//:tetro_toolchain"],
 )
 
 cc_test(

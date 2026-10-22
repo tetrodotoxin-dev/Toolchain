@@ -5,11 +5,13 @@ load("//:defs.bzl", "library")
 package(default_visibility = [
     "//:__pkg__",
     "//validation/integration:__pkg__",
+    "//validation/integration/linkage:__pkg__",
 ])
 
 exports_files([
     "comment_quality/corpus.jsonl",
     "harness/reporting.cpp",
+    "sdk/dependency.c",
     "sdk/style.cpp",
     "sdk/web_benchmark.cpp",
     "sdk/web_test.cpp",
@@ -41,9 +43,16 @@ cc_binary(
 library(
     name = "runtime",
     testonly = True,
-    srcs = ["sdk/runtime.c"],
+    srcs = [
+        "sdk/registration.cpp",
+        "sdk/runtime.c",
+    ],
     hdrs = ["sdk/runtime.h"],
     linkage = "shared",
+    linkopts = select({
+        "//:linux": ["-Wl,--wrap=toolchain_archive_probe"],
+        "//conditions:default": [],
+    }),
     module = "toolchain_runtime",
     shared_lib_name = select({
         "//:linux": "libruntime.so.1",
@@ -52,8 +61,24 @@ library(
     }),
 )
 
-# These variants publish one dependency surface under both linkage models. The
-# shared runtime above remains visible in each release graph.
+library(
+    name = "runtime_static",
+    testonly = True,
+    srcs = [
+        "sdk/registration.cpp",
+        "sdk/runtime.c",
+    ],
+    hdrs = ["sdk/runtime.h"],
+    linkopts = select({
+        "//:linux": ["-Wl,--wrap=toolchain_archive_probe"],
+        "//conditions:default": [],
+    }),
+    module = "toolchain_runtime",
+    alwayslink = True,
+)
+
+# Each dependency variant chooses its matching runtime through ordinary deps.
+# The final SDK must retain that choice across the second library boundary.
 library(
     name = "dependency_static",
     testonly = True,
@@ -64,7 +89,7 @@ library(
     ],
     defines = ["TOOLCHAIN_PROJECT_VALUE=1"],
     includes = ["sdk/private"],
-    deps = [":runtime"],
+    deps = [":runtime_static"],
 )
 
 library(
@@ -152,7 +177,10 @@ library(
         "//:linux": ["-Wl,--wrap=toolchain_link_probe"],
         "//conditions:default": [],
     }),
-    local_defines = ["TOOLCHAIN_TEST_PRIVATE=1"],
+    local_defines = [
+        "TOOLCHAIN_TEST_PRIVATE=1",
+        "EXPECT_PROJECT_STATIC=1",
+    ],
     module = "toolchain_test",
     deps = [":public"],
 )
@@ -181,7 +209,68 @@ library(
         "//:linux": ["-Wl,--wrap=toolchain_link_probe"],
         "//conditions:default": [],
     }),
-    local_defines = ["TOOLCHAIN_TEST_PRIVATE=1"],
+    local_defines = [
+        "TOOLCHAIN_TEST_PRIVATE=1",
+        "EXPECT_PROJECT_STATIC=0",
+    ],
+    module = "toolchain_test",
+    deps = [":public"],
+)
+
+# Mixed choices exercise independent output and dependency linkage. The shared
+# variant absorbs its static dependencies; the static variant keeps the shared
+# dependency's DLL or SO available to the final consumer.
+library(
+    name = "shared_static",
+    testonly = True,
+    srcs = [
+        "sdk/library.c",
+        "sdk/library.cpp",
+    ],
+    hdrs = [
+        "sdk/library.h",
+        "sdk/optional.h",
+    ],
+    defines = ["TOOLCHAIN_TEST_VALUE=21"],
+    implementation_deps = [
+        ":dependency_static",
+        ":private",
+    ],
+    linkage = "shared",
+    linkopts = select({
+        "//:linux": ["-Wl,--wrap=toolchain_link_probe"],
+        "//conditions:default": [],
+    }),
+    local_defines = [
+        "TOOLCHAIN_TEST_PRIVATE=1",
+        "EXPECT_PROJECT_STATIC=1",
+    ],
+    module = "toolchain_test",
+    deps = [":public"],
+)
+
+library(
+    name = "static_shared",
+    testonly = True,
+    srcs = [
+        "sdk/library.c",
+        "sdk/library.cpp",
+        "sdk/private.c",
+    ],
+    hdrs = [
+        "sdk/library.h",
+        "sdk/optional.h",
+    ],
+    defines = ["TOOLCHAIN_TEST_VALUE=21"],
+    implementation_deps = [":dependency_shared"],
+    linkopts = select({
+        "//:linux": ["-Wl,--wrap=toolchain_link_probe"],
+        "//conditions:default": [],
+    }),
+    local_defines = [
+        "TOOLCHAIN_TEST_PRIVATE=1",
+        "EXPECT_PROJECT_STATIC=0",
+    ],
     module = "toolchain_test",
     deps = [":public"],
 )

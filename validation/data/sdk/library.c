@@ -14,6 +14,10 @@
 #error A dependency's export flag reached this implementation.
 #endif
 
+#if EXPECT_PROJECT_STATIC != defined(TETRO_TOOLCHAIN_STATIC)
+#error Dependency declarations must match the selected library linkage.
+#endif
+
 C_LINKAGE HIDDEN S32 toolchain_private_entry(S32 value);
 
 // External linkage makes this helper a useful check of the visibility default.

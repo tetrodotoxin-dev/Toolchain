@@ -11,6 +11,28 @@ package(default_visibility = ["//visibility:public"])
 # by that platform enter the consuming target's link and runtime dependencies.
 _RUNTIME = {runtime}
 
+_ARCHIVES = {archives}
+
+[
+    cc_import(
+        name = "archive_" + str(index),
+        linkopts = select({
+            platform: libraries[index]["linkopts"] if index < len(libraries) else []
+            for platform, libraries in _ARCHIVES.items()
+        }),
+        static_library = select({
+            platform: libraries[index]["library"] if index < len(libraries) else None
+            for platform, libraries in _ARCHIVES.items()
+        }),
+        visibility = ["//visibility:private"],
+        alwayslink = select({
+            platform: libraries[index]["alwayslink"] if index < len(libraries) else False
+            for platform, libraries in _ARCHIVES.items()
+        }),
+    )
+    for index in range(max([len(libraries) for libraries in _ARCHIVES.values()]))
+]
+
 [
     cc_import(
         name = "runtime_" + str(index),
@@ -51,7 +73,11 @@ cc_import(
     deps = [":headers"] + select({
         platform: [":runtime_" + str(index) for index in range(len(libraries))]
         for platform, libraries in _RUNTIME.items()
+    }) + select({
+        platform: [":archive_" + str(index) for index in range(len(libraries))]
+        for platform, libraries in _ARCHIVES.items()
     }),
+    alwayslink = select({alwayslink}),
 )
 
 filegroup(

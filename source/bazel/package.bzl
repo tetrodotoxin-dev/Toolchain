@@ -55,14 +55,14 @@ def _binaries(target, project, linkage):
         if not binary:
             fail("Static release target supplies no archive: " + str(target.label))
         name = project + "_static.lib" if binary.extension == "lib" else "lib" + project + ".a"
-        return struct(binary = binary, name = name, interface = None, interface_name = None)
+        return struct(binary = binary, name = name, interface = None, interface_name = None, alwayslink = library.alwayslink)
     binary = library.resolved_symlink_dynamic_library or library.dynamic_library
     if not binary:
         fail("Shared release target supplies no shared library: " + str(target.label))
     interface = library.resolved_symlink_interface_library or library.interface_library
     if binary.extension == "dll" and not interface:
         fail("Windows shared release target supplies no import library: " + str(target.label))
-    return struct(binary = binary, name = binary.basename, interface = interface, interface_name = binary.basename.removesuffix(".dll") + ".lib" if interface else None)
+    return struct(binary = binary, name = binary.basename, interface = interface, interface_name = binary.basename.removesuffix(".dll") + ".lib" if interface else None, alwayslink = False)
 
 _PublicHeadersInfo = provider(
     "Declared public header paths across ordinary dependencies.",
@@ -181,6 +181,49 @@ def _runtime(target, primary):
                 files.append([interface, import_name])
     return [libraries[name] for name in sorted(libraries)], files
 
+def _archives(target, primary):
+    """Collect static dependencies still required by the final link.
+
+    Args:
+        target: Configured library with transitive C++ linker inputs.
+        primary: The release's own library, packaged separately.
+
+    Returns:
+        Archive records and their [File, archive_path] pairs. Each record keeps
+        its linker options and whole-archive requirement with its binary.
+    """
+    libraries = {}
+    files = []
+    for entry in target[CcInfo].linking_context.linker_inputs.to_list():
+        for library in entry.libraries:
+            if library.dynamic_library or library.resolved_symlink_dynamic_library:
+                continue
+            binary = library.pic_static_library or library.static_library
+            if not binary or binary == primary:
+                continue
+            if any([file.path in flag for file in entry.additional_inputs for flag in entry.user_link_flags]):
+                fail("SDK static dependencies need relocatable linker inputs: " + str(entry.owner))
+            name = binary.basename
+            for suffix in [".pic.a", ".pic.lo", ".lo"]:
+                if name.endswith(suffix):
+                    name = name.removesuffix(suffix) + ".a"
+                    break
+            if name.endswith(".lo.lib"):
+                name = name.removesuffix(".lo.lib") + ".lib"
+            if name.endswith(".lib") and not name.endswith("_static.lib"):
+                name = name.removesuffix(".lib") + "_static.lib"
+            name = "lib/" + name
+            record = {
+                "library": name,
+                "alwayslink": library.alwayslink,
+                "linkopts": entry.user_link_flags,
+            }
+            if name in libraries and libraries[name] != record:
+                fail("Conflicting static dependency requirements for " + name)
+            libraries[name] = record
+            files.append([binary, name])
+    return [libraries[name] for name in sorted(libraries)], files
+
 def _toolchain_header_path(file):
     """Return the public include path of one Toolchain compiler header."""
     marker = "source/toolchain/"
@@ -221,16 +264,17 @@ def _package(ctx):
         for platform, target in targets.items():
             files = _binaries(target, ctx.attr.project, linkage)
             runtime, runtime_files = _runtime(target, files.binary)
+            dependencies, dependency_files = _archives(target, files.binary)
             project = ctx.attr.project.upper().replace("-", "_").replace(".", "_")
             defines = target[CcInfo].compilation_context.defines.to_list()
             if linkage == "static" and project + "_STATIC=1" not in defines:
                 fail("Static release project must match its static_library project: " + project)
 
-            # Dependencies carry their own link requirements through SDK deps.
-            # Export this target's flags once and preserve their ordering.
+            # Archives carry their own flags. Preserve the primary library's
+            # flags and requirements from dependencies that supply only flags.
             linkopts = []
             for entry in target[CcInfo].linking_context.linker_inputs.to_list():
-                if entry.owner == target.label:
+                if entry.owner == target.label or not entry.libraries:
                     # Toolchains may attach action-local inputs such as an empty
                     # Windows DEF file. Published user flags define the inputs
                     # that an imported SDK must carry with it.
@@ -264,11 +308,13 @@ def _package(ctx):
                 "interface": "lib/" + files.interface_name if files.interface else None,
                 "defines": defines,
                 "linkopts": linkopts,
+                "alwayslink": files.alwayslink,
                 "runtime": runtime,
+                "archives": dependencies,
                 "components": components,
             }))
-            members = [[file.path, path] for file, path in runtime_files] + [[files.binary.path, "lib/" + files.name], [metadata.path, "sdk.json"]]
-            inputs.extend([file for file, _ in runtime_files])
+            members = [[file.path, path] for file, path in runtime_files + dependency_files] + [[files.binary.path, "lib/" + files.name], [metadata.path, "sdk.json"]]
+            inputs.extend([file for file, _ in runtime_files + dependency_files])
             inputs.extend([files.binary, metadata])
             if files.interface:
                 members.append([files.interface.path, "lib/" + files.interface_name])
@@ -390,7 +436,9 @@ def package_release(name, static = None, shared = None, project = None, platform
     Each archive preserves public definitions and the target's linkopts.
     Declared transitive shared libraries and their import libraries accompany
     either linkage in lib/. System libraries supplied by the platform remain
-    platform requirements. Static dependency archives retain separate SDK pins.
+    platform requirements. Static archives required by the final link accompany
+    the release with their linker options and whole-archive requirements.
+    Static dependencies absorbed by a shared library are part of that binary.
     The archive writer checks repeated filenames for identical contents, so
     conflicting libraries fail packaging instead of replacing one another.
     Linkopts must remain valid in an extracted SDK. Linker scripts and other
