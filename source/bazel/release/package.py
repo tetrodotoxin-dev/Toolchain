@@ -19,11 +19,11 @@ def package(manifest, checksums):
                     raise ValueError(f"Invalid archive entry: {name}")
                 content = Path(source).read_bytes()
                 if name == "sdk.json":
-                    # lib/ sorts before sdk.json, so these digests describe the
-                    # exact payloads already written to this archive.
+                    # Library and link interface paths sort before sdk.json,
+                    # so these digests describe the payloads already archived.
                     metadata = json.loads(content)
                     metadata["sha256"] = {path: digest for path, digest in seen.items()
-                                          if path.startswith("lib/")}
+                                          if path.startswith(("lib/", "link/"))}
                     content = json.dumps(metadata, sort_keys=True).encode()
                 digest = hashlib.sha256(content).hexdigest()
                 # Different SDKs can carry the same dependency. Compare the

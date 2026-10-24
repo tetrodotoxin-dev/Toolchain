@@ -12,6 +12,7 @@ package(default_visibility = [
 exports_files([
     "comment_quality/corpus.jsonl",
     "harness/reporting.cpp",
+    "sdk/consumer.c",
     "sdk/dependency.c",
     "sdk/style.cpp",
     "sdk/web_benchmark.cpp",
@@ -39,6 +40,61 @@ cc_binary(
     deps = ["//source/toolchain/validation:test"],
 )
 
+# The host supplies the runtime separately from the SDK's link interface.
+library(
+    name = "system_host",
+    testonly = True,
+    srcs = ["sdk/host.c"],
+    hdrs = ["sdk/host.h"],
+    linkage = "shared",
+    module = "toolchain_host",
+    shared_lib_name = select({
+        "//:windows": "system_host.dll",
+        "//conditions:default": "libsystem_host.so.1",
+    }),
+    user_link_flags = select({
+        "//:linux": ["-Wl,-soname,libsystem_host.so.1"],
+        "//conditions:default": [],
+    }),
+)
+
+filegroup(
+    name = "system_host_binary",
+    testonly = True,
+    srcs = [":system_host_shared"],
+)
+
+# A Linux link interface has the runtime's SONAME but a distinct filename.
+# Relocated consumers must find the host runtime, even with this file present.
+genrule(
+    name = "system_host_stub",
+    testonly = True,
+    srcs = [":system_host_shared"],
+    outs = ["link/libsystem_host.so"],
+    cmd = "cp $(location :system_host_shared) $@",
+)
+
+cc_import(
+    name = "system_host_import",
+    testonly = True,
+    hdrs = ["sdk/host.h"],
+    interface_library = select({
+        "//:windows": ":system_host_interface",
+        "//conditions:default": ":system_host_stub",
+    }),
+    linkopts = select({
+        "//:linux": ["-Wl,--undefined=toolchain_host_entry"],
+        "//conditions:default": [],
+    }),
+    system_provided = True,
+)
+
+_HOST = select({
+    "//:linux": [":system_host_import"],
+    "//:windows": [":system_host_import"],
+    "//conditions:default": [],
+})
+
 # This runtime gives the SDK a transitive shared dependency with a distinct
 # soname, exercising archive metadata and relocated loading together.
 library(
@@ -60,6 +116,7 @@ library(
         "//:windows": "runtime.dll",
         "//conditions:default": "libruntime.so",
     }),
+    deps = _HOST,
 )
 
 library(
@@ -75,6 +132,7 @@ library(
         "//conditions:default": [],
     }),
     module = "toolchain_runtime",
+    deps = _HOST,
     alwayslink = True,
 )
 

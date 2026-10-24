@@ -1,7 +1,7 @@
 """Consume and repackage the generated Toolchain validation SDK."""
 
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
-load("@tetro_toolchain//:defs.bzl", "format", "package", "validation", "vscode")
+load("@tetro_toolchain//:defs.bzl", "format", "library", "package", "validation", "vscode")
 
 package(
     name = "repack",
@@ -19,6 +19,14 @@ format()
 validation(deps = [])
 
 vscode()
+
+library(
+    name = "consumer_library",
+    srcs = ["library.c"],
+    implementation_deps = [":api"],
+    linkage = "shared",
+    module = "toolchain_consumer",
+)
 
 cc_test(
     # Separate applications keep their selected runtime closures together.

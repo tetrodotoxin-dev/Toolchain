@@ -10,12 +10,19 @@ implementation_deps. Private dependency headers and definitions stay inside
 their own SDK, while their libraries remain available to consumers.
 Bundled runtime libraries are imported from the selected archive automatically.
 Static dependencies accompany their consuming archive and retain their own
-link requirements. A release's `name` identifies its Bazel repository; `library`
+link requirements. System-provided libraries carry their link interfaces under
+link/; the host supplies their runtime implementations. Earlier archives with
+no system records continue to use their existing library declarations.
+A release's `name` identifies its Bazel repository; `library`
 identifies the published artifact. Separate repository names can therefore
 select static and shared variants of the same release in one build. Library
 targets choose those repositories through deps and implementation_deps.
 An explicitly declared SDK dependency supplies overlapping runtime libraries
 when their recorded contents match. Incompatible copies fail the import.
+Components preserve these published identities through their link dependencies.
+Matching runtime payloads use one library input when components are combined;
+conflicting contents or linker interfaces fail before linking. Each component
+keeps its declared header scope.
 Component tags bind consumer-owned repository labels to one component. Sibling
 component edges come from the archive metadata and remain independent of those
 repository mappings.
@@ -35,7 +42,7 @@ def _provided(ctx, platform):
         platform: Archive platform whose dependency metadata is being compared.
 
     Returns:
-        File digests and static archive requirements indexed by their digest.
+        File digests, static archive requirements and system interface options.
     """
     provided = {}
     archives = {}
@@ -153,6 +160,8 @@ def _sdk(ctx):
     alwayslink = {}
     runtime = {}
     archives = {}
+    system = {}
+    digests = {}
     binaries = {}
     components = {}
     for platform, condition in _PLATFORMS.items():
@@ -162,6 +171,7 @@ def _sdk(ctx):
         if not manifest.exists:
             fail("SDK archive has no metadata for " + platform)
         metadata = json.decode(ctx.read(manifest))
+        digests[condition] = {platform + "/" + path: digest for path, digest in metadata["sha256"].items()}
         if metadata["linkage"] != ctx.attr.linkage:
             fail("SDK linkage disagrees with its pin for " + platform)
         binary = platform + "/" + metadata["library"]
@@ -182,9 +192,21 @@ def _sdk(ctx):
         provided = _provided(ctx, platform)
         runtime[condition] = _runtime(metadata, platform, provided.files)
         archives[condition] = _archives(metadata, platform, provided)
+        system[condition] = []
+        for library in metadata.get("system", []):
+            path = library["interface"]
+            if path in provided.files and provided.files[path] != metadata["sha256"][path]:
+                fail("Bundled system interface disagrees with a declared SDK dependency: " + platform + "/" + path)
+            if not ctx.path(platform + "/" + path).exists:
+                fail("SDK archive is missing its declared system interface: " + path)
+
+            # Each SDK contributes its own link options for the host interface.
+            # Equal interface bytes can accompany different required options.
+            system[condition].append({"interface": platform + "/" + path, "linkopts": library.get("linkopts", [])})
         binaries[condition].extend([platform + "/" + library["library"] for library in metadata.get("archives", [])])
+        binaries[condition].extend([platform + "/" + library["interface"] for library in metadata.get("system", [])])
         for name, component in metadata["components"].items():
-            if name in [ctx.attr.library, "headers", "build"] or name.startswith("runtime_") or name.startswith("archive_"):
+            if name in [ctx.attr.library, "headers", "build"] or name.startswith("runtime_") or name.startswith("archive_") or name.startswith("system_") or name.startswith("_sdk_"):
                 fail("SDK component conflicts with a reserved target name: " + name)
             if "dependencies" not in component:
                 fail("SDK component has no dependency metadata: " + name)
@@ -227,6 +249,8 @@ def _sdk(ctx):
         "{alwayslink}": repr(alwayslink),
         "{runtime}": repr(runtime),
         "{archives}": repr(archives),
+        "{digests}": repr(digests),
+        "{system}": repr(system),
         "{binaries}": repr(binaries),
         "{components}": repr(components),
     }, executable = False)

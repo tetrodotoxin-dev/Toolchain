@@ -225,6 +225,38 @@ def _archives(target, primary):
             files.append([binary, name])
     return [libraries[name] for name in sorted(libraries)], files
 
+def _system_libraries(target):
+    """Collect link interfaces for shared libraries supplied by the host.
+
+    Args:
+        target: Configured library with transitive C++ linker inputs.
+
+    Returns:
+        Interface records and archive files. Keeping these under link/ leaves
+        runtime loading to the host rather than deploying a linker stub.
+    """
+    interfaces = {}
+    options = {}
+    files = []
+    for entry in target[CcInfo].linking_context.linker_inputs.to_list():
+        for library in entry.libraries:
+            if library.dynamic_library or library.static_library or library.pic_static_library:
+                continue
+            interface = library.resolved_symlink_interface_library or library.interface_library
+            if interface:
+                if any([file.path in flag for file in entry.additional_inputs for flag in entry.user_link_flags]):
+                    fail("SDK system interfaces need relocatable linker inputs: " + str(entry.owner))
+                name = "link/" + interface.basename
+
+                # Several dependency paths can contribute options for the
+                # same interface. Preserve each complete option group once.
+                options.setdefault(name, {})[tuple(entry.user_link_flags)] = True
+                interfaces[name] = {"interface": name}
+                files.append([interface, name])
+    for name in interfaces:
+        interfaces[name]["linkopts"] = [flag for group in options[name] for flag in group]
+    return [interfaces[name] for name in sorted(interfaces)], files
+
 def _toolchain_header_path(file):
     """Return the public include path of one Toolchain compiler header."""
     marker = "source/toolchain/"
@@ -266,6 +298,7 @@ def _package(ctx):
             files = _binaries(target, ctx.attr.project, linkage)
             runtime, runtime_files = _runtime(target, files.binary)
             dependencies, dependency_files = _archives(target, files.binary)
+            system, system_files = _system_libraries(target)
             project = ctx.attr.project.upper().replace("-", "_").replace(".", "_")
             defines = target[CcInfo].compilation_context.defines.to_list()
             if linkage == "static" and project + "_STATIC=1" not in defines:
@@ -312,10 +345,11 @@ def _package(ctx):
                 "alwayslink": files.alwayslink,
                 "runtime": runtime,
                 "archives": dependencies,
+                "system": system,
                 "components": components,
             }))
-            members = [[file.path, path] for file, path in runtime_files + dependency_files] + [[files.binary.path, "lib/" + files.name], [metadata.path, "sdk.json"]]
-            inputs.extend([file for file, _ in runtime_files + dependency_files])
+            members = [[file.path, path] for file, path in runtime_files + dependency_files + system_files] + [[files.binary.path, "lib/" + files.name], [metadata.path, "sdk.json"]]
+            inputs.extend([file for file, _ in runtime_files + dependency_files + system_files])
             inputs.extend([files.binary, metadata])
             if files.interface:
                 members.append([files.interface.path, "lib/" + files.interface_name])

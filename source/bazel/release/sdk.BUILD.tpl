@@ -4,6 +4,7 @@
 
 load("@rules_cc//cc:cc_import.bzl", "cc_import")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@tetro_toolchain//source/bazel:release/library.bzl", "sdk_library")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -12,6 +13,25 @@ package(default_visibility = ["//visibility:public"])
 _RUNTIME = {runtime}
 
 _ARCHIVES = {archives}
+
+_SYSTEM = {system}
+
+[
+    cc_import(
+        name = "system_" + str(index),
+        interface_library = select({
+            platform: libraries[index]["interface"] if index < len(libraries) else None
+            for platform, libraries in _SYSTEM.items()
+        }),
+        linkopts = select({
+            platform: libraries[index]["linkopts"] if index < len(libraries) else []
+            for platform, libraries in _SYSTEM.items()
+        }),
+        system_provided = True,
+        visibility = ["//visibility:private"],
+    )
+    for index in range(max([len(libraries) for libraries in _SYSTEM.values()]))
+]
 
 [
     cc_import(
@@ -65,7 +85,7 @@ cc_library(
 )
 
 cc_import(
-    name = {library},
+    name = "_sdk_library",
     interface_library = select({interface_libraries}),
     linkopts = select({linkopts}),
     shared_library = select({shared_libraries}),
@@ -76,8 +96,19 @@ cc_import(
     }) + select({
         platform: [":archive_" + str(index) for index in range(len(libraries))]
         for platform, libraries in _ARCHIVES.items()
+    }) + select({
+        platform: [":system_" + str(index) for index in range(len(libraries))]
+        for platform, libraries in _SYSTEM.items()
     }),
     alwayslink = select({alwayslink}),
+    visibility = ["//visibility:private"],
+)
+
+sdk_library(
+    name = {library},
+    actual = ":_sdk_library",
+    digests = select({digests}),
+    deps = {dependencies} + {implementation_dependencies},
 )
 
 filegroup(
@@ -92,12 +123,22 @@ _COMPONENTS = {components}
 
 [
     cc_library(
-        name = name,
+        name = "_sdk_component_" + name,
         hdrs = select(component["headers"]),
         defines = select(component["defines"]),
         implementation_deps = [{library}],
         strip_include_prefix = "headers/include",
         deps = component["dependencies"],
+        visibility = ["//visibility:private"],
+    )
+    for name, component in _COMPONENTS.items()
+]
+
+[
+    sdk_library(
+        name = name,
+        actual = ":_sdk_component_" + name,
+        deps = [{library}] + component["dependencies"],
     )
     for name, component in _COMPONENTS.items()
 ]

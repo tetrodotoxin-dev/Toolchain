@@ -36,7 +36,7 @@ def substitute(template, values):
     return template
 
 
-def verify_runtime(directory, archive_path):
+def verify_runtime(directory, archive_path, host):
     with zipfile.ZipFile(archive_path) as archive:
         archive.extractall(directory)
     metadata = json.loads((directory / "sdk.json").read_text())
@@ -46,6 +46,10 @@ def verify_runtime(directory, archive_path):
                    if not key.startswith(("LD_", "RUNFILES_"))}
     command = [sys.executable, str(Path(__file__).resolve()), "--load",
                str(directory / metadata["library"])]
+    missing_host = subprocess.run(command, cwd=directory, env=environment,
+                                  capture_output=True, text=True)
+    assert missing_host.returncode != 0 and host.name in missing_host.stderr, missing_host.stderr
+    command.append(str(host))
     subprocess.run(command, cwd=directory, env=environment, check=True)
     for library in metadata["runtime"]:
         path = directory / library["library"]
@@ -74,16 +78,17 @@ def verify_conflict(root, writer, first, second):
     print("Conflicting runtime libraries were rejected.", flush=True)
 
 
-def verify_dependency_conflict(root, workspace, toolchain, directory, dependency_directory, sources, values, pins):
-    altered = root / "conflicting"
+def verify_dependency_conflict(root, workspace, toolchain, directory, dependency_directory, sources, values, pins, component=False):
+    altered = root / ("conflicting-component" if component else "conflicting")
     altered.mkdir()
-    variant = "linux-x86_64-v3-" + values["dependency_linkage"]
+    platform = "windows-x86_64-msvc" if component else "linux-x86_64-v3"
+    variant = platform + "-" + values["dependency_linkage"]
     name = "tetro_toolchain-" + values["version"] + "-" + variant + ".zip"
     with zipfile.ZipFile(dependency_directory / name) as original:
         contents = {entry: original.read(entry) for entry in original.namelist()}
     metadata = json.loads(contents["sdk.json"])
     kind = "archives" if values["dependency_linkage"] == "static" else "runtime"
-    path = metadata[kind][0]["library"]
+    path = "lib/plugin.dll" if component else metadata[kind][0]["library"]
     contents[path] += b"different runtime fixture"
     metadata["sha256"][path] = hashlib.sha256(contents[path]).hexdigest()
     contents["sdk.json"] = json.dumps(metadata).encode()
@@ -98,12 +103,15 @@ def verify_dependency_conflict(root, workspace, toolchain, directory, dependency
     (workspace / "MODULE.bazel").write_text(substitute((sources / "MODULE.tpl").read_text(), conflict))
     result = subprocess.run([
         "bazel", "--batch", "--output_base=" + str(root / "bazel"),
-        "build", "//:consumer", "--distdir=" + str(altered),
+        "build", "//:component" if component else "//:consumer", "--distdir=" + str(altered),
+        "--platforms=@tetro_toolchain//:" + ("windows_x64" if component else "linux_x86_64"),
         "--distdir=" + str(toolchain.parent), "--distdir=" + str(directory),
         "--distdir=" + str(dependency_directory),
     ], cwd=workspace, capture_output=True, text=True)
-    diagnostic = "Bundled archive" if kind == "archives" else "Bundled runtime"
-    assert result.returncode != 0 and diagnostic + " disagrees with a declared SDK dependency" in result.stderr, result.stderr
+    diagnostic = ("Bundled archive" if kind == "archives" else "Bundled runtime") + " disagrees with a declared SDK dependency"
+    if component:
+        diagnostic = "Conflicting SDK runtime contents or link requirements for plugin.dll"
+    assert result.returncode != 0 and diagnostic in result.stderr, result.stderr
     print("Incompatible SDK dependency was rejected during import.", flush=True)
 
 
@@ -164,7 +172,7 @@ def verify_missing_variant(root, workspace, toolchain, directory, sources, value
     print("Missing linkage failed without selecting another variant.", flush=True)
 
 
-def verify(toolchain, checksum_manifest, dependency_manifest, mixed=False):
+def verify(toolchain, checksum_manifest, dependency_manifest, host, mixed=False):
     toolchain = Path(toolchain).resolve()
     directory = Path(checksum_manifest).resolve().parent
     dependency_directory = Path(dependency_manifest).resolve().parent
@@ -227,6 +235,15 @@ def verify(toolchain, checksum_manifest, dependency_manifest, mixed=False):
                 assert len(runtime) == expected_runtime, metadata
                 expected_archives = (2 if project == "toolchain_test" else 1) if key.endswith("-static") and not shared_dependencies else 0
                 assert len(metadata["archives"]) == expected_archives, metadata
+                system = metadata["system"]
+                assert len(system) == (0 if key.startswith("wasm32-") else 1), metadata
+                for library in system:
+                    assert library["interface"].startswith("link/")
+                    assert library["interface"] in archive.namelist()
+                    if key.startswith("linux-") and key.endswith("-static") and not shared_dependencies:
+                        assert library["linkopts"] == ["-Wl,--undefined=toolchain_host_entry"], library
+                assert "lib/system_host.dll" not in archive.namelist()
+                assert "lib/libsystem_host.so.1" not in archive.namelist()
                 assert len(archive.namelist()) == len(set(archive.namelist()))
                 for library in runtime:
                     assert library["library"] in archive.namelist()
@@ -271,6 +288,7 @@ def verify(toolchain, checksum_manifest, dependency_manifest, mixed=False):
         # These are pinned local test artifacts served by Bazel's distdir.
         with (workspace / ".bazelrc").open("a") as options:
             options.write("\ncommon --distdir=" + str(dependency_directory) + "\n")
+            options.write("test --test_env=LD_LIBRARY_PATH=" + str(host.parent) + "\n")
         (workspace / "source").mkdir()
         shutil.copyfile(sources / "source.tpl", workspace / "source/BUILD.bazel")
         shutil.copyfile(sources / "style.cpp", workspace / "source/style.cpp")
@@ -280,6 +298,7 @@ def verify(toolchain, checksum_manifest, dependency_manifest, mixed=False):
         shutil.copyfile(sources / "web_benchmark.cpp", workspace / "validation/benchmarks/web.cpp")
         shutil.copyfile(repository / "validation/integration/sdk.c", workspace / "consumer.c")
         shutil.copyfile(sources / "dependency.c", workspace / "dependency.c")
+        shutil.copyfile(sources / "consumer.c", workspace / "library.c")
         for linkage in ["static", "shared"]:
             dependency_linkage = ("shared" if linkage == "static" else "static") if mixed else linkage
             values = {
@@ -317,13 +336,15 @@ def verify(toolchain, checksum_manifest, dependency_manifest, mixed=False):
                 print("Candidate Web validation runner passed.", flush=True)
             subprocess.run([
                 "bazel", "--batch", "--output_base=" + str(root / "bazel"),
-                "test", "//:consumer", "//:component", "//:alternate/consumer", "//:repack", "--nocache_test_results",
+                "test", "//:consumer", "//:component", "//:alternate/consumer", "//:consumer_library_shared", "//:repack", "--nocache_test_results",
                 "--distdir=" + str(toolchain.parent), "--distdir=" + str(directory),
             ], cwd=workspace, check=True)
             print(linkage + " SDK consumer passed", flush=True)
             output_directory = workspace / ".bin/bin"
             if not output_directory.exists():
                 output_directory = workspace / "bazel-bin"
+            subprocess.run([sys.executable, str(Path(__file__).resolve()), "--load-consumer",
+                            str(output_directory / "libconsumer_library.so"), str(host)], check=True)
             if linkage == "static":
                 dynamic = subprocess.run(["readelf", "-d", str(output_directory / "consumer")], capture_output=True, text=True, check=True).stdout
                 assert ("libdependency_shared.so" in dynamic) == (dependency_linkage == "shared"), dynamic
@@ -339,6 +360,14 @@ def verify(toolchain, checksum_manifest, dependency_manifest, mixed=False):
                 before_runtime = json.loads(before.read("sdk.json"))["runtime"]
                 after_runtime = json.loads(after.read("sdk.json"))["runtime"]
                 assert before_runtime == after_runtime
+                before_system = json.loads(before.read("sdk.json"))["system"]
+                after_system = json.loads(after.read("sdk.json"))["system"]
+                assert [item["interface"] for item in before_system] == [item["interface"] for item in after_system]
+                for original_interface, repacked_interface in zip(before_system, after_system):
+                    # Explicit SDK dependencies can contribute further options.
+                    # The original option sequence must survive repackaging.
+                    remaining = iter(repacked_interface["linkopts"])
+                    assert all(flag in remaining for flag in original_interface["linkopts"])
                 assert len(after.namelist()) == len(set(after.namelist()))
                 for library in after_runtime:
                     assert before.read(library["library"]) == after.read(library["library"])
@@ -349,11 +378,11 @@ def verify(toolchain, checksum_manifest, dependency_manifest, mixed=False):
                 after_archives = json.loads(after.read("sdk.json"))["archives"]
                 assert sorted(checksum_bytes(before.read(item["library"])) for item in before_archives) == sorted(checksum_bytes(after.read(item["library"])) for item in after_archives)
             if linkage == "shared":
-                verify_runtime(root / "repacked", repacked)
+                verify_runtime(root / "repacked", repacked, host)
             for platform in ["windows_x64", "wasm32"]:
                 subprocess.run([
                     "bazel", "--batch", "--output_base=" + str(root / "bazel"),
-                    "build", "//:consumer", "//:component", "//:alternate/consumer", "--platforms=@tetro_toolchain//:" + platform,
+                    "build", "//:consumer", "//:component", "//:alternate/consumer", "//:consumer_library_shared", "--platforms=@tetro_toolchain//:" + platform,
                     "--distdir=" + str(toolchain.parent), "--distdir=" + str(directory),
                 ], cwd=workspace, check=True)
                 print(linkage + " SDK consumer built for " + platform, flush=True)
@@ -373,9 +402,15 @@ def verify(toolchain, checksum_manifest, dependency_manifest, mixed=False):
                 print("Static SDK linked using bundled dependencies.", flush=True)
                 verify_dependency_conflict(root, workspace, toolchain, directory, dependency_directory,
                                            sources, values, pins["tetro_toolchain"])
-        if not mixed:
+        if mixed:
+            # The shared SDK embeds static code, while its public component
+            # introduces the dependency SDK separately. Conflicting runtimes
+            # must fail even though the aggregate declares no link dependency.
+            verify_dependency_conflict(root, workspace, toolchain, directory, dependency_directory,
+                                       sources, values, pins["tetro_toolchain"], component=True)
+        else:
             verify_missing_variant(root, workspace, toolchain, directory, sources, values, pins["toolchain_test"])
-        metadata = verify_runtime(root / "relocated", directory / ("toolchain_test-" + version + "-linux-x86_64-v3-shared.zip"))
+        metadata = verify_runtime(root / "relocated", directory / ("toolchain_test-" + version + "-linux-x86_64-v3-shared.zip"), host)
         # The release manifest owns every relocated path, so fixture target
         # names can evolve independently from this collision check.
         if metadata["runtime"]:
@@ -385,14 +420,23 @@ def verify(toolchain, checksum_manifest, dependency_manifest, mixed=False):
 
 
 if __name__ == "__main__":
-    if sys.argv[1] == "--load":
+    if sys.argv[1] in ["--load", "--load-consumer"]:
         import ctypes
+        if len(sys.argv) > 3:
+            ctypes.CDLL(sys.argv[3], mode=ctypes.RTLD_GLOBAL)
         library = ctypes.CDLL(sys.argv[2])
-        assert library.toolchain_c_entry(20) == 21
-        assert library.toolchain_cpp_entry(21) == 42
+        if sys.argv[1] == "--load-consumer":
+            assert library.toolchain_consumer_entry(21) == 42
+        else:
+            assert library.toolchain_c_entry(20) == 21
+            assert library.toolchain_cpp_entry(21) == 42
     else:
         from python.runfiles import runfiles
         resolver = runfiles.Create()
-        toolchain, matching, mixed = [Path(resolver.Rlocation(argument)) for argument in sys.argv[1:]]
-        verify(toolchain, matching, matching)
-        verify(toolchain, mixed, matching, mixed=True)
+        toolchain, matching, mixed, host = [Path(resolver.Rlocation(argument)).resolve() for argument in sys.argv[1:]]
+        # Nested Bazel commands establish their own workspace for formatter
+        # and editor installation, including when this test uses `bazel run`.
+        os.environ.pop("BUILD_WORKSPACE_DIRECTORY", None)
+        os.environ.pop("BUILD_WORKING_DIRECTORY", None)
+        verify(toolchain, matching, matching, host)
+        verify(toolchain, mixed, matching, host, mixed=True)

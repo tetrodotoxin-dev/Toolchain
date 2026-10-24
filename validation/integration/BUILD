@@ -102,14 +102,20 @@ cc_test(
     name = "static",
     size = "small",
     srcs = ["library.c"],
-    deps = ["//validation/data:static"],
+    deps = [
+        "//validation/data:static",
+        "//validation/data:system_host",
+    ],
 )
 
 cc_test(
     name = "shared",
     size = "small",
     srcs = ["library.c"],
-    deps = ["//validation/data:shared"],
+    deps = [
+        "//validation/data:shared",
+        "//validation/data:system_host",
+    ],
 )
 
 py_test(
@@ -190,6 +196,7 @@ py_test(
         "$(rlocationpath //:_candidate_snapshot)",
         "$(rlocationpath :checksum)",
         "$(rlocationpath //validation/integration/linkage:checksum)",
+        "$(rlocationpath //validation/data:system_host_binary)",
     ],
     data = [
         "sdk.c",
@@ -199,12 +206,14 @@ py_test(
         "//:_candidate_snapshot",
         "//validation/data:sdk/BUILD.tpl",
         "//validation/data:sdk/MODULE.tpl",
+        "//validation/data:sdk/consumer.c",
         "//validation/data:sdk/dependency.c",
         "//validation/data:sdk/dependency.tpl",
         "//validation/data:sdk/source.tpl",
         "//validation/data:sdk/style.cpp",
         "//validation/data:sdk/web_benchmark.cpp",
         "//validation/data:sdk/web_test.cpp",
+        "//validation/data:system_host_binary",
         "//validation/integration/linkage:checksum",
         "//validation/integration/linkage:fixture",
     ],
