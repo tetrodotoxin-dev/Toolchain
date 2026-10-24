@@ -173,8 +173,9 @@ def _runtime(target, primary):
             interface = library.resolved_symlink_interface_library or library.interface_library
             name = "lib/" + binary.basename
             import_name = "lib/" + binary.basename.removesuffix(".dll") + ".lib" if interface else None
-            if binary.extension == "dll" and not interface:
-                fail("Bundled Windows dependency supplies no import library: " + str(entry.owner))
+
+            # A DLL loaded through symbol lookup needs its runtime payload.
+            # Linkable dependencies also carry their supplied import library.
             libraries[name] = {"library": name, "interface": import_name}
             files.append([binary, name])
             if interface:

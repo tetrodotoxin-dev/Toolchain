@@ -1,4 +1,5 @@
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_import.bzl", "cc_import")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//:defs.bzl", "library")
 
@@ -77,6 +78,23 @@ library(
     alwayslink = True,
 )
 
+# The plugin supplies its callable only through runtime symbol lookup.
+library(
+    name = "plugin",
+    testonly = True,
+    srcs = ["sdk/plugin.c"],
+    linkage = "shared",
+    module = "toolchain_plugin",
+)
+
+# The consumer loads this DLL by name. Importing only the DLL reproduces a
+# runtime dependency whose distribution supplies no linker interface.
+cc_import(
+    name = "plugin_import",
+    testonly = True,
+    shared_library = ":plugin_shared",
+)
+
 # Each dependency variant chooses its matching runtime through ordinary deps.
 # The final SDK must retain that choice across the second library boundary.
 library(
@@ -89,7 +107,10 @@ library(
     ],
     defines = ["TOOLCHAIN_PROJECT_VALUE=1"],
     includes = ["sdk/private"],
-    deps = [":runtime_static"],
+    deps = [":runtime_static"] + select({
+        "//:windows": [":plugin_import"],
+        "//conditions:default": [],
+    }),
 )
 
 library(
@@ -103,7 +124,10 @@ library(
     defines = ["TOOLCHAIN_PROJECT_VALUE=1"],
     includes = ["sdk/private"],
     linkage = "shared",
-    deps = [":runtime"],
+    deps = [":runtime"] + select({
+        "//:windows": [":plugin_import"],
+        "//conditions:default": [],
+    }),
 )
 
 cc_library(

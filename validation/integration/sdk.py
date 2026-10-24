@@ -221,13 +221,19 @@ def verify(toolchain, checksum_manifest, dependency_manifest, mixed=False):
                 runtime = metadata["runtime"]
                 shared_dependencies = key.endswith("-shared") != (mixed and project == "toolchain_test")
                 expected_runtime = (2 if project == "toolchain_test" else 1) if shared_dependencies else 0
+                if key.startswith("windows-"):
+                    expected_runtime += 1
+                    assert {"library": "lib/plugin.dll", "interface": None} in runtime
                 assert len(runtime) == expected_runtime, metadata
                 expected_archives = (2 if project == "toolchain_test" else 1) if key.endswith("-static") and not shared_dependencies else 0
                 assert len(metadata["archives"]) == expected_archives, metadata
                 assert len(archive.namelist()) == len(set(archive.namelist()))
                 for library in runtime:
                     assert library["library"] in archive.namelist()
-                    if key.startswith("windows-"):
+                    if library["library"] == "lib/plugin.dll":
+                        assert library["interface"] is None, library
+                        assert "lib/plugin.lib" not in archive.namelist()
+                    elif key.startswith("windows-"):
                         assert library["interface"] in archive.namelist()
                 for library in metadata["archives"]:
                     assert library["library"] in archive.namelist()
@@ -311,7 +317,7 @@ def verify(toolchain, checksum_manifest, dependency_manifest, mixed=False):
                 print("Candidate Web validation runner passed.", flush=True)
             subprocess.run([
                 "bazel", "--batch", "--output_base=" + str(root / "bazel"),
-                "test", "//:consumer", "//:component", "//:alternate", "//:repack", "--nocache_test_results",
+                "test", "//:consumer", "//:component", "//:alternate/consumer", "//:repack", "--nocache_test_results",
                 "--distdir=" + str(toolchain.parent), "--distdir=" + str(directory),
             ], cwd=workspace, check=True)
             print(linkage + " SDK consumer passed", flush=True)
@@ -347,10 +353,13 @@ def verify(toolchain, checksum_manifest, dependency_manifest, mixed=False):
             for platform in ["windows_x64", "wasm32"]:
                 subprocess.run([
                     "bazel", "--batch", "--output_base=" + str(root / "bazel"),
-                    "build", "//:consumer", "//:component", "//:alternate", "--platforms=@tetro_toolchain//:" + platform,
+                    "build", "//:consumer", "//:component", "//:alternate/consumer", "--platforms=@tetro_toolchain//:" + platform,
                     "--distdir=" + str(toolchain.parent), "--distdir=" + str(directory),
                 ], cwd=workspace, check=True)
                 print(linkage + " SDK consumer built for " + platform, flush=True)
+                if platform == "windows_x64":
+                    for directory_name in ["", "alternate"]:
+                        assert (output_directory / directory_name / "plugin.dll").is_file()
             if linkage == "static":
                 # The complete SDK can link using only its bundled dependencies.
                 # Component header imports remain separately declared.

@@ -21,7 +21,9 @@ validation(deps = [])
 vscode()
 
 cc_test(
-    name = "alternate",
+    # Separate applications keep their selected runtime closures together.
+    # Windows stages dependency DLLs beside each executable.
+    name = "alternate/consumer",
     srcs = ["dependency.c"],
     local_defines = ["EXPECT_STATIC={alternate_static}"],
     deps = ["@alternate//:tetro_toolchain"],
