@@ -197,7 +197,10 @@ cc_library(
 cc_library(
     name = "api",
     testonly = True,
-    hdrs = ["sdk/library.h"],
+    hdrs = [
+        "sdk/library.h",
+        "sdk/private/library_detail.h",
+    ],
     defines = ["TOOLCHAIN_TEST_VALUE=21"],
     deps = [
         ":public",
@@ -252,6 +255,7 @@ library(
     hdrs = [
         "sdk/library.h",
         "sdk/optional.h",
+        "sdk/private/library_detail.h",
     ],
     defines = ["TOOLCHAIN_TEST_VALUE=21"],
     implementation_deps = [":dependency_static"],
@@ -279,6 +283,7 @@ library(
     hdrs = [
         "sdk/library.h",
         "sdk/optional.h",
+        "sdk/private/library_detail.h",
     ],
     defines = ["TOOLCHAIN_TEST_VALUE=21"],
     implementation_deps = [
@@ -312,6 +317,7 @@ library(
     hdrs = [
         "sdk/library.h",
         "sdk/optional.h",
+        "sdk/private/library_detail.h",
     ],
     defines = ["TOOLCHAIN_TEST_VALUE=21"],
     implementation_deps = [
@@ -342,6 +348,7 @@ library(
     hdrs = [
         "sdk/library.h",
         "sdk/optional.h",
+        "sdk/private/library_detail.h",
     ],
     defines = ["TOOLCHAIN_TEST_VALUE=21"],
     implementation_deps = [":dependency_shared"],

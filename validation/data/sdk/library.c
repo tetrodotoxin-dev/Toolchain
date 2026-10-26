@@ -4,7 +4,12 @@
 #include "validation/data/sdk/library.h"
 
 #include "project_detail.h"
+#include "validation/data/sdk/private/library_detail.h"
 #include "validation/data/sdk/project.h"
+
+#if TOOLCHAIN_TEST_LIBRARY_DETAIL != 1
+#error The implementation requires its marked private header.
+#endif
 
 #ifndef TOOLCHAIN_TEST_PRIVATE
 #error The implementation requires its private definition.

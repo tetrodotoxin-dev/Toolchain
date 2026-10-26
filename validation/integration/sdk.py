@@ -78,6 +78,31 @@ def verify_conflict(root, writer, first, second):
     print("Conflicting runtime libraries were rejected.", flush=True)
 
 
+def verify_private_header_boundary(root, writer):
+    boundary = root / "private-header"
+    boundary.mkdir()
+    public = boundary / "public.h"
+    private = boundary / "detail.h"
+    public.write_text('#include "detail.h"\n')
+    private.write_text("#define TOOLCHAIN_PRIVATE_HEADER 1\n")
+    manifest = boundary / "manifest.json"
+    manifest.write_text(json.dumps({str(boundary / "headers.zip"): [
+        [str(public), "include/project/public.h"],
+        [str(private), "include/project/detail.h"],
+    ]}))
+    result = subprocess.run(
+        [sys.executable, str(writer), str(manifest), str(boundary / "sha256.txt")],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0, result.stdout
+    assert (
+        "Public header project/public.h includes private header project/detail.h"
+        in result.stderr
+    ), result.stderr
+    print("Public dependency on a private header was rejected.", flush=True)
+
+
 def verify_dependency_conflict(root, workspace, toolchain, directory, dependency_directory, sources, values, pins, component=False):
     altered = root / ("conflicting-component" if component else "conflicting")
     altered.mkdir()
@@ -219,6 +244,7 @@ def verify(toolchain, checksum_manifest, dependency_manifest, host, mixed=False)
                         assert "include/" + name in archive.namelist()
                     if project == "toolchain_test":
                         assert "include/validation/data/sdk/public.h" in archive.namelist()
+                        assert "include/validation/data/sdk/private/library_detail.h" not in archive.namelist()
                         for name in ["project.h", "runtime.h", "project_detail.h"]:
                             assert not any(path.endswith("/" + name) for path in archive.namelist()), archive.namelist()
                     continue
@@ -269,6 +295,7 @@ def verify(toolchain, checksum_manifest, dependency_manifest, host, mixed=False)
                     assert components["api"]["dependencies"] == ["public"], components
                     assert components["public"]["dependencies"] == [], components
                     assert "validation/data/sdk/library.h" in components["api"]["headers"], components
+                    assert "validation/data/sdk/private/library_detail.h" not in components["api"]["headers"], components
                     assert "validation/data/sdk/public.h" not in components["api"]["headers"], components
                     assert "validation/data/sdk/public.h" in components["public"]["headers"], components
                 if metadata["interface"]:
@@ -434,6 +461,12 @@ if __name__ == "__main__":
         from python.runfiles import runfiles
         resolver = runfiles.Create()
         toolchain, matching, mixed, host = [Path(resolver.Rlocation(argument)).resolve() for argument in sys.argv[1:]]
+        repository = Path(__file__).resolve().parents[2]
+        with tempfile.TemporaryDirectory(prefix="toolchain-private-header-") as temporary:
+            verify_private_header_boundary(
+                Path(temporary),
+                repository / "source/bazel/release/package.py",
+            )
         # Nested Bazel commands establish their own workspace for formatter
         # and editor installation, including when this test uses `bazel run`.
         os.environ.pop("BUILD_WORKSPACE_DIRECTORY", None)

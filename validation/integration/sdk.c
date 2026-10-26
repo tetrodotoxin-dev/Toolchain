@@ -54,8 +54,11 @@ _Static_assert(sizeof(Count) == sizeof(U64), "Count uses the SDK width");
 #error SDK implementation dependency definitions crossed the public boundary.
 #endif
 
-#if __has_include( \
-    "project_detail.h") || __has_include("validation/data/sdk/runtime.h")
+#if __has_include(                                         \
+    "project_detail.h") ||                                 \
+    __has_include(                                         \
+        "validation/data/sdk/private/library_detail.h") || \
+        __has_include("validation/data/sdk/runtime.h")
 #error SDK implementation dependency headers crossed the public boundary.
 #endif
 
