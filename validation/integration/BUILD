@@ -55,6 +55,22 @@ py_test(
     deps = ["@rules_python//python/runfiles"],
 )
 
+py_test(
+    name = "lifetime",
+    size = "small",
+    srcs = ["lifetime.py"],
+    args = [
+        "$(rlocationpath @host_tools//:llvm/bin/" + CXX.split("/")[-1] + ")",
+        "$(rlocationpath //source:compile_allocation_header)",
+    ],
+    data = [
+        "//source:compile_allocation_dependencies",
+        "//source:compile_allocation_header",
+        "@host_tools//:llvm/bin/" + CXX.split("/")[-1],
+    ],
+    deps = ["@rules_python//python/runfiles"],
+)
+
 # The reporting fixture exercises every result path through the public runner.
 # Its process status and output preserve the contract seen by repository tests.
 py_test(

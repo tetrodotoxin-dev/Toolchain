@@ -5,6 +5,12 @@
 
 #include "toolchain/toolchain.h"
 
+// A host that uses the standard C++ library includes its memory headers first.
+// Those headers supply their own placement declarations. Standalone consumers
+// use the declarations below without acquiring the standard library headers.
+#if !defined(_NEW) && !defined(_NEW_) && !defined(_LIBCPP_NEW) && \
+    !defined(_LIBCPP___NEW_PLACEMENT_NEW_DELETE_H)
+
 // C++26 recognizes these standard placement operations during constant
 // evaluation but they require an explicit declaration. Since the Tetrodotoxin
 // family of projects avoid using C++ headers in favor of a more compact C
@@ -17,6 +23,8 @@ constexpr auto operator new(CppSize, void*) noexcept -> void*;
 constexpr auto operator delete(void*, void*) noexcept -> void;
 
 #pragma clang diagnostic pop
+
+#endif
 
 namespace Toolchain::Memory {
 
