@@ -55,6 +55,11 @@ PLATFORM_INCLUDE = re.compile(
     r"sys/|linux/|wayland|mach/|CoreFoundation/|emscripten(?:\.h|/))"
 )
 SYSTEM_INCLUDE = re.compile(r"^\s*#\s*include\s*<([^>]+)>")
+PRIVATE_HEADER_MARKER = re.compile(
+    r"(?m)^[ \t]*#[ \t]*define[ \t]+TOOLCHAIN_PRIVATE_HEADER"
+    r"[ \t]+1[ \t]*$"
+)
+PRIVATE_HEADER_TOKEN = re.compile(r"\bTOOLCHAIN_PRIVATE_HEADER\b")
 NAMED_CAST = re.compile(
     r"\b(?:const|dynamic|reinterpret|static)_cast\s*<|"
     r"\bstd\s*::\s*bit_cast\s*<|"
@@ -345,7 +350,6 @@ def public_header_identity(path):
         source < 0
         or path.suffix != ".hpp"
         or len(relative) < 2
-        or relative[0] == "implementation"
     ):
         return None
     namespace = "::".join(pascal_name(part) for part in relative[:-1])
@@ -401,8 +405,42 @@ def compiler_prelude(path, expected_object, source):
     )
 
 
+def private_header(path, code):
+    """Recognize a header's explicit SDK publication policy."""
+    return path.suffix in HEADERS and bool(PRIVATE_HEADER_MARKER.search(code))
+
+
+def private_header_errors(path, source, code):
+    """Keep private header classification exact and visible in its preamble."""
+    uses = list(PRIVATE_HEADER_TOKEN.finditer(code))
+    if not uses:
+        return []
+
+    declarations = list(PRIVATE_HEADER_MARKER.finditer(code))
+    if path.suffix not in HEADERS:
+        return [
+            f"{path}:{line_at(source, uses[0].start())}: "
+            "TOOLCHAIN_PRIVATE_HEADER classifies .h and .hpp files"
+        ]
+    if len(uses) != 1 or len(declarations) != 1:
+        return [
+            f"{path}:{line_at(source, uses[0].start())}: private headers "
+            "declare exactly '#define TOOLCHAIN_PRIVATE_HEADER 1'"
+        ]
+
+    include = re.search(r"(?m)^[ \t]*#[ \t]*include\b", code)
+    if include and declarations[0].start() > include.start():
+        return [
+            f"{path}:{line_at(source, declarations[0].start())}: private "
+            "header classification precedes includes"
+        ]
+    return []
+
+
 def header_identity_errors(path, source, code):
     """Match each public C++ header to its namespace and primary object."""
+    if private_header(path, code):
+        return []
     identity = public_header_identity(path)
     if not identity:
         return []
@@ -555,9 +593,9 @@ def implementation_header_errors(path, root, source):
     ]
 
 
-def platform_header_errors(path, source):
+def platform_header_errors(path, source, code):
     """Keep target selection inside implementation sources."""
-    if path.suffix != ".hpp":
+    if path.suffix != ".hpp" or private_header(path, code):
         return []
     errors = []
     for line, text in enumerate(source.splitlines(), 1):
@@ -1567,12 +1605,13 @@ def source_errors(
 ):
     tokens = code_tokens(source, code)
     return (
-        c_header_api_errors(path, source, code)
+        private_header_errors(path, source, code)
+        + c_header_api_errors(path, source, code)
         + header_identity_errors(path, source, code)
         + namespace_errors(path, source, code)
         + qualified_namespace_errors(path, source, code, namespace_roots)
         + implementation_header_errors(path, root, source)
-        + platform_header_errors(path, source)
+        + platform_header_errors(path, source, code)
         + system_include_errors(path, source, code)
         + declaration_errors(path, root, project, source, code)
         + trailing_return_errors(path, source, code, tokens)

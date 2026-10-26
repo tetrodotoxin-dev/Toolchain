@@ -303,6 +303,80 @@ if __name__ == "__main__":
             assert diagnostic in result.stderr
             path.unlink()
 
+        implementation = source / "implementation" / "platform" / "win32"
+        implementation.mkdir(parents=True)
+        private_header = implementation / "window.hpp"
+        private_header.write_text(
+            "#pragma once\n"
+            "namespace Example::Platform {\n"
+            "class Window {};\n"
+            "}\n"
+        )
+        result = run(
+            formatter,
+            root,
+            "source/implementation/platform/win32/window.hpp",
+            status=1,
+        )
+        assert (
+            "public header namespaces match 'Implementation::Platform::Win32'"
+            in result.stderr
+        )
+
+        private_header.write_text(
+            "#pragma once\n"
+            "#define TOOLCHAIN_PRIVATE_HEADER 1\n"
+            "#ifdef _WIN32\n"
+            "#include <windows.h>\n"
+            "#endif\n"
+            "namespace Example::Platform {\n"
+            "auto create_window() -> void;\n"
+            "}\n"
+        )
+        run(
+            formatter,
+            root,
+            "source/implementation/platform/win32/window.hpp",
+        )
+        run(
+            formatter,
+            root,
+            "--check",
+            "source/implementation/platform/win32/window.hpp",
+        )
+
+        private_cpp_system_header = implementation / "cpp_system.hpp"
+        private_cpp_system_header.write_text(
+            "#pragma once\n"
+            "#define TOOLCHAIN_PRIVATE_HEADER 1\n"
+            "#include <vector>\n"
+        )
+        result = run(
+            formatter,
+            root,
+            "source/implementation/platform/win32/cpp_system.hpp",
+            status=1,
+        )
+        assert "C headers ending in '.h'" in result.stderr
+        private_cpp_system_header.unlink()
+
+        malformed_private_header = implementation / "malformed.hpp"
+        malformed_private_header.write_text(
+            "#pragma once\n"
+            "#define TOOLCHAIN_PRIVATE_HEADER\n"
+        )
+        result = run(
+            formatter,
+            root,
+            "source/implementation/platform/win32/malformed.hpp",
+            status=1,
+        )
+        assert (
+            "private headers declare exactly "
+            "'#define TOOLCHAIN_PRIVATE_HEADER 1'"
+        ) in result.stderr
+        malformed_private_header.unlink()
+
         masked = source / "masked.cpp"
         masked.write_text(
             'const char* text = "using namespace Example::Module::Detail;";\n'
