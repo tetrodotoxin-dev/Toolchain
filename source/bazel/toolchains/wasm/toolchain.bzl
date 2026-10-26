@@ -131,7 +131,6 @@ def _runner_config(ctx):
                     "-fno-exceptions",
                     "-fno-rtti",
                     "-msimd128",
-                    "-pthread",
                     "-nostdinc",
                     "-resource-dir",
                     resource_directory,
@@ -151,18 +150,23 @@ def _runner_config(ctx):
                 flag_set(actions = [ACTION_NAMES.c_compile], flag_groups = [flag_group(flags = ["-xc", "-std=c23"])]),
             ]),
             feature(name = "runner_link", enabled = True, flag_sets = [flag_set(actions = link_actions, flag_groups = [flag_group(flags = [
-                "-pthread",
                 "-sSINGLE_FILE=1",
                 "-sENVIRONMENT=node",
                 "-sEXIT_RUNTIME=1",
-                "-sPTHREAD_POOL_SIZE=4",
                 # Validation retains the same large stack fixtures used by
                 # native builds instead of weakening their geometry for Wasm.
                 "-sSTACK_SIZE=8388608",
-                # A fixed shared heap avoids cross-thread memory growth while
-                # retaining the allocator suite's large-capacity cases.
+                # A fixed heap retains the allocator suite's large-capacity
+                # cases without changing their memory-growth behavior.
                 "-sINITIAL_MEMORY=268435456",
             ])])]),
+            feature(name = "wasm_threads", flag_sets = [
+                flag_set(actions = compile_actions, flag_groups = [flag_group(flags = ["-pthread"])]),
+                flag_set(actions = link_actions, flag_groups = [flag_group(flags = [
+                    "-pthread",
+                    "-sPTHREAD_POOL_SIZE=4",
+                ])]),
+            ]),
         ],
         tool_paths = [tool_path(name = name, path = path) for name, path in [
             ("gcc", sdk_tool + "/emscripten/em++"),
@@ -313,12 +317,5 @@ def wasm_targets():
         constraint_values = [
             "@platforms//os:emscripten",
             "@platforms//cpu:wasm32",
-        ],
-    )
-
-    native.config_setting(
-        name = "web_runner",
-        constraint_values = [
-            ":wasm_standalone",
         ],
     )

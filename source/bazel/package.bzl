@@ -435,6 +435,17 @@ def package(name = "sdk", module = None, components = {}, static = None, shared 
         fail("package requires a target for its selected " + linkage + " linkage")
     common = {key: kwargs[key] for key in ["testonly", "target_compatible_with", "compatible_with"] if key in kwargs}
     native.alias(name = module, actual = runtime, visibility = visibility, **common)
+    if static:
+        # Web validation is a standalone Node program and folds the project's
+        # static runtime even when ordinary source consumers select the shared
+        # variant. The private alias lets validation use the exact target named
+        # by package without deriving a repository naming convention.
+        native.alias(
+            name = "_validation_static",
+            actual = static,
+            visibility = ["//visibility:private"],
+            **common
+        )
     definitions = [module.upper().replace("-", "_").replace(".", "_") + "_STATIC=1"] if linkage == "static" else []
     if type(components) != "dict":
         fail("package components must map each component to its sibling dependencies")

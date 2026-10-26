@@ -66,14 +66,14 @@ bazel run :format
 bazel build ...
 bazel run :tests
 bazel run :benchmarks --config=release
-bazel run :tests --config=web_tests
+bazel run :tests --config=web
 ```
 
 The format target applies canonical source formatting, structural policy and
 comment quality checks. The validation rule collects standalone test and
-benchmark programs from their standard directories. The `web_tests`
-configuration links the same tests with the pinned Emscripten runtime and runs
-them through the pinned Node host.
+benchmark programs from their standard directories. The public programs select
+the pinned Emscripten runtime and Node host when `--config=web` is requested,
+while their explicit `_binary` targets retain the hosted SDK platform.
 
 The recursive build covers the project while leaving release artifacts
 explicit. Library projects build binary SDKs for every configured target with:

@@ -329,7 +329,7 @@ def verify(toolchain, checksum_manifest, dependency_manifest, host, mixed=False)
                 verify_vscode(root, workspace, toolchain, directory)
                 subprocess.run([
                     "bazel", "--batch", "--output_base=" + str(root / "bazel"),
-                    "run", "//:tests", "--config=web_tests",
+                    "run", "//:tests", "--config=web",
                     "--distdir=" + str(toolchain.parent),
                     "--distdir=" + str(directory),
                 ], cwd=workspace, check=True)

@@ -7,5 +7,4 @@ build:release --strip=always
 build:linux --platforms=@tetro_toolchain//:linux_x86_64
 build:windows --platforms=@tetro_toolchain//:windows_x64
 build:web --platforms=@tetro_toolchain//:wasm32
-build:web_tests --platforms=@tetro_toolchain//:wasm32_runner
 try-import %workspace%/.bazelrc.local
