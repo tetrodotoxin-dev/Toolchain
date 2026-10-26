@@ -491,6 +491,11 @@ def package_release(name, static = None, shared = None, project = None, platform
     additional linker inputs require explicit distribution support. Dependency
     SDKs provide their link requirements through the importer's deps.
 
+    A header defines TOOLCHAIN_PRIVATE_HEADER as 1 before its first include to
+    remain local to source compilation. Header archives and component metadata
+    omit marked files. Every include from a published header must resolve to
+    another published header; packaging rejects dependencies on marked files.
+
     Args:
         name: Release packaging target name.
         static: Optional static_library target. Supply at least one variant.
