@@ -319,6 +319,8 @@ def verify(toolchain, checksum_manifest, dependency_manifest, host, mixed=False)
         (workspace / "source").mkdir()
         shutil.copyfile(sources / "source.tpl", workspace / "source/BUILD.bazel")
         shutil.copyfile(sources / "style.cpp", workspace / "source/style.cpp")
+        (workspace / "multiple").mkdir()
+        shutil.copyfile(sources / "multiple.tpl", workspace / "multiple/BUILD")
         (workspace / "validation/tests").mkdir(parents=True)
         (workspace / "validation/benchmarks").mkdir(parents=True)
         shutil.copyfile(sources / "web_test.cpp", workspace / "validation/tests/web.cpp")
@@ -345,6 +347,14 @@ def verify(toolchain, checksum_manifest, dependency_manifest, host, mixed=False)
             for output, template in [("MODULE.bazel", "MODULE.tpl"), ("BUILD", "BUILD.tpl")]:
                 (workspace / output).write_text(substitute((sources / template).read_text(), values))
             if linkage == "static" and not mixed:
+                selected = subprocess.check_output([
+                    "bazel", "--batch", "--output_base=" + str(root / "bazel"),
+                    "query", "labels(actual, //multiple:_validation_static)",
+                    "--distdir=" + str(toolchain.parent),
+                    "--distdir=" + str(directory),
+                ], cwd=workspace, text=True).strip()
+                assert selected == "//source:toolchain_test", selected
+                print("Multiple SDK packages preserve the primary validation runtime.", flush=True)
                 for action in ["--all", "--check"]:
                     subprocess.run([
                         "bazel", "--batch", "--output_base=" + str(root / "bazel"),

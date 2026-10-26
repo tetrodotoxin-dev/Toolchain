@@ -222,6 +222,7 @@ py_test(
         "//:_candidate_snapshot",
         "//validation/data:sdk/BUILD.tpl",
         "//validation/data:sdk/MODULE.tpl",
+        "//validation/data:sdk/multiple.tpl",
         "//validation/data:sdk/consumer.c",
         "//validation/data:sdk/dependency.c",
         "//validation/data:sdk/dependency.tpl",
