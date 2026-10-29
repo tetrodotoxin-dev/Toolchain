@@ -88,9 +88,9 @@ VALIDATION_TEST(Reporting, failure) {
   EXPECT_EQ(1.25f, 0.0f);
   EXPECT_EQ(-2.5, 0.0);
 
-  const S8 small = -128;
+  const S8 minimum = -128;
   const U64 large = U64(-1);
-  EXPECT_EQ(small, 0);
+  EXPECT_EQ(minimum, 0);
   EXPECT_EQ(large, 0u);
   EXPECT_EQ(SmallEnum::Negative, SmallEnum::Zero);
   EXPECT_EQ(SignedEnum::Minimum, SignedEnum::Zero);

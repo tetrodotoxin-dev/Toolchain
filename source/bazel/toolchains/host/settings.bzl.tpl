@@ -3,6 +3,7 @@
 """Paths selected from the pinned LLVM host-tool distribution."""
 
 HOST_SYSTEM = "__HOST_SYSTEM__"
+SHELL = "__SHELL__"
 CXX = "__CXX__"
 CLANG = "__CLANG__"
 CLANG_FORMAT = "__CLANG_FORMAT__"

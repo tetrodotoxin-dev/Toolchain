@@ -68,6 +68,7 @@ filegroup(
 # Relocated consumers must find the host runtime, even with this file present.
 genrule(
     name = "system_host_stub",
+    target_compatible_with = ["@platforms//os:linux"],
     testonly = True,
     srcs = [":system_host_shared"],
     outs = ["link/libsystem_host.so"],

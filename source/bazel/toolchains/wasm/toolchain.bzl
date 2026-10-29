@@ -234,6 +234,7 @@ def wasm_targets():
     wasm_cc_toolchain_config(
         name = "wasm32_config",
         headers = "@emscripten_sysroot//:headers",
+        tags = ["manual"],
     )
 
     cc_toolchain(
@@ -249,9 +250,10 @@ def wasm_targets():
         supports_param_files = 1,
         toolchain_config = ":wasm32_config",
         toolchain_identifier = "clang-wasm32",
+        tags = ["manual"],
     )
 
-    native.filegroup(name = "wasm_files", srcs = ["@host_tools//:files", "@emscripten_sysroot//:headers"])
+    native.filegroup(name = "wasm_files", srcs = ["@host_tools//:files", "@emscripten_sysroot//:headers"], tags = ["manual"])
 
     native.toolchain(
         name = "cc_toolchain_for_wasm32",
@@ -272,6 +274,7 @@ def wasm_targets():
         name = "wasm32_runner_config",
         node = "@emscripten_node//:node",
         sdk = "@emscripten_sdk//:files",
+        tags = ["manual"],
     )
 
     cc_toolchain(
@@ -287,10 +290,12 @@ def wasm_targets():
         supports_param_files = 1,
         toolchain_config = ":wasm32_runner_config",
         toolchain_identifier = "emscripten-validation-runner",
+        tags = ["manual"],
     )
 
     native.filegroup(
         name = "wasm_runner_files",
+        tags = ["manual"],
         srcs = [
             "@emscripten_node//:files",
             "@emscripten_sdk//:files",

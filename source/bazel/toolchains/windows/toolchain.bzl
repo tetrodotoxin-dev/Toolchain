@@ -65,6 +65,7 @@ def windows_toolchain_config():
     """Declare the windows_config target using clang-cl and the Windows SDK."""
     windows_config(
         name = "windows_config",
+        tags = ["manual"],
         abi_version = "msvc",
         all_compile_flags = [
             "/clang:-resource-dir=" + RESOURCE_INCLUDE.removesuffix("/include"),
@@ -153,6 +154,7 @@ def windows_targets():
         strip_files = ":windows_empty",
         supports_param_files = 1,
         toolchain_config = ":windows_config",
+        tags = ["manual"],
     )
 
     native.toolchain(
@@ -171,6 +173,7 @@ def windows_targets():
 
     native.filegroup(
         name = "windows_files",
+        tags = ["manual"],
         srcs = [
             "@host_tools//:files",
             "@windows_sdk//:files",

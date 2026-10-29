@@ -95,6 +95,7 @@ def _tests(deps, web_deps, web_threads, data):
     )
     cc_binary(
         name = "tests_web_binary",
+        tags = ["manual"],
         testonly = True,
         srcs = sources,
         deps = web_deps + [Label("//source/toolchain/validation:test")],
@@ -113,6 +114,7 @@ def _benchmarks(deps, web_deps, web_threads, data):
     )
     cc_binary(
         name = "benchmarks_web_binary",
+        tags = ["manual"],
         testonly = True,
         srcs = sources,
         deps = web_deps + [Label("//source/toolchain/validation:benchmark")],
@@ -133,6 +135,7 @@ def _select_runner(name, web_binary, web_threads):
     node = Label("@emscripten_node//:node")
     _web_runner(
         name = runner,
+        tags = ["manual"],
         testonly = True,
         binary = ":" + web_binary,
         node = node,

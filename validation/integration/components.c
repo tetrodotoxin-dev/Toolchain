@@ -3,7 +3,7 @@
 #include "toolchain/toolchain.h"
 #include "validation/data/components/consumer/value.h"
 
-#if __has_include("validation/data/components/unrelated/value.h")
+#ifdef TOOLCHAIN_COMPONENT_UNRELATED_VALUE
 #error The selected component exposes an unrelated sibling.
 #endif
 

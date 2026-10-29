@@ -19,6 +19,22 @@ _DISTRIBUTIONS = {
     "windows": ("windows-amd64", "5db93697f379d76fa8c97e17a9359f4e7458f0a15d8d03a7e2254a14d660a250"),
 }
 
+def _shell(ctx, system):
+    """Find Bash, including the copy bundled beside Git for Windows."""
+    selected = ctx.os.environ.get("BAZEL_SH")
+    if selected:
+        return selected.replace("\\", "/")
+    selected = ctx.which("bash.exe" if system == "windows" else "bash")
+    if selected and not (system == "windows" and "/windows/system32/" in str(selected).replace("\\", "/").lower()):
+        return str(selected).replace("\\", "/")
+    if system == "windows":
+        git = ctx.which("git.exe")
+        if git:
+            selected = git.dirname.get_child("../bin/bash.exe")
+            if selected.exists:
+                return str(selected).replace("\\", "/")
+    return ""
+
 def _host(ctx):
     """Acquire host LLVM tools and publish their paths in settings.bzl.
 
@@ -55,7 +71,7 @@ def _host(ctx):
         "STRIP": "llvm-strip",
         "COV": "llvm-cov",
     }
-    values = {"HOST_SYSTEM": system}
+    values = {"HOST_SYSTEM": system, "SHELL": _shell(ctx, system)}
     files = []
     for name, executable in executables.items():
         location = "llvm/bin/" + executable + suffix
@@ -107,5 +123,5 @@ host_tools = repository_rule(
         "_build": attr.label(default = Label("//source/bazel:toolchains/host/BUILD.tpl")),
         "_settings": attr.label(default = Label("//source/bazel:toolchains/host/settings.bzl.tpl")),
     },
-    environ = ["BAZEL_LLVM", "PATH", "TEMP"],
+    environ = ["BAZEL_LLVM", "BAZEL_SH", "PATH", "TEMP"],
 )

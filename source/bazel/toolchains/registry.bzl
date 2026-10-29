@@ -18,7 +18,9 @@ def toolchains():
     """Declare every supported target toolchain.
 
     Called once from the repository root BUILD file to define the public
-    labels used by consuming modules for toolchain registration.
+    labels used by consuming modules for toolchain registration. Compiler
+    implementations and SDK file groups are manual targets; normal build
+    dependencies select only the requested platform's tools.
     """
     linux_targets()
     wasm_targets()

@@ -2,6 +2,7 @@ load("@host_tools//:settings.bzl", "CXX", "NM")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_python//python:py_test.bzl", "py_test")
 load("//source/bazel:package.bzl", "package_release")
+load(":components.bzl", "component_headers")
 load(":validation_data.bzl", "validation_data_test")
 
 package(default_visibility = ["//:__pkg__"])
@@ -107,11 +108,22 @@ py_test(
 
 # These native leaves prove the component graph and both library linkages in the
 # current checkout before archive construction adds another repository boundary.
+component_headers(
+    name = "component_headers",
+    component = "//validation/data:consumer",
+    required = [
+        "//validation/data:components/consumer/value.h",
+        "//validation/data:components/foundation/value.h",
+        "//validation/data:sdk/public.h",
+    ],
+    excluded = ["//validation/data:components/unrelated/value.h"],
+)
+
 cc_test(
     name = "components",
     size = "small",
     srcs = ["components.c"],
-    deps = ["//validation/data:consumer"],
+    deps = [":component_headers"],
 )
 
 cc_test(
@@ -195,17 +207,21 @@ package_release(
 )
 
 # The checksum output group is the release inventory consumed by sdk.py.
+# Like its release input, it stays out of local wildcard builds.
 filegroup(
     name = "checksum",
+    tags = ["manual"],
     testonly = True,
     srcs = [":fixture"],
     output_group = "checksum",
 )
 
 # This test creates a fresh Bazel workspace and consumes the candidate source
-# and binary archives through their public module extension.
+# and binary archives through their public module extension. The complete
+# platform matrix is explicit, including through the integration suite.
 py_test(
     name = "sdk",
+    tags = ["manual"],
     size = "medium",
     srcs = ["sdk.py"],
     args = [
@@ -241,6 +257,7 @@ py_test(
 # Toolchain checkout. Its leaves stay individually runnable during diagnosis.
 test_suite(
     name = "integration",
+    tags = ["manual"],
     tests = [
         ":comment_quality",
         ":compile_allocation",

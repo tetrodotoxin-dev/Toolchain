@@ -6,6 +6,7 @@ module(
 bazel_dep(name = "rules_cc", version = "0.2.17")
 bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "rules_pkg", version = "1.3.0")
+bazel_dep(name = "rules_shell", version = "0.6.1")
 
 bazel_dep(name = "rules_python", version = "1.7.0", dev_dependency = True)
 
@@ -34,3 +35,5 @@ host_tools = use_repo_rule("//source/bazel:toolchains/host/repository.bzl", "hos
 host_tools(name = "host_tools")
 
 register_toolchains("//:cc_toolchain_for_linux_x86_64", "//:cc_toolchain_for_wasm32", "//:cc_toolchain_for_wasm32_runner", "//:cc_toolchain_for_windows_x64")
+
+register_toolchains("@host_tools//:shell_toolchain")

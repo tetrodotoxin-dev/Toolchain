@@ -135,7 +135,7 @@ cc_toolchain_config = rule(implementation = _impl, attrs = {}, provides = [CcToo
 # buildifier: disable=unnamed-macro
 def linux_targets():
     """Declare the Linux SDK files, compiler, platform and selection key."""
-    cc_toolchain_config(name = "linux_x86_64_toolchain_config")
+    cc_toolchain_config(name = "linux_x86_64_toolchain_config", tags = ["manual"])
 
     cc_toolchain(
         name = "linux_x86_64_toolchain",
@@ -148,11 +148,12 @@ def linux_targets():
         supports_param_files = 0,
         toolchain_config = ":linux_x86_64_toolchain_config",
         toolchain_identifier = "linux_x86_64-toolchain",
+        tags = ["manual"],
     )
 
-    native.filegroup(name = "linux_compiler_files", srcs = ["@host_tools//:files", "@linux_sdk//:compiler"])
-    native.filegroup(name = "linux_linker_files", srcs = ["@host_tools//:files", "@linux_sdk//:linker"])
-    native.filegroup(name = "linux_files", srcs = [":linux_compiler_files", ":linux_linker_files"])
+    native.filegroup(name = "linux_compiler_files", srcs = ["@host_tools//:files", "@linux_sdk//:compiler"], tags = ["manual"])
+    native.filegroup(name = "linux_linker_files", srcs = ["@host_tools//:files", "@linux_sdk//:linker"], tags = ["manual"])
+    native.filegroup(name = "linux_files", srcs = [":linux_compiler_files", ":linux_linker_files"], tags = ["manual"])
 
     native.toolchain(
         name = "cc_toolchain_for_linux_x86_64",
