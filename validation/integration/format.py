@@ -60,6 +60,7 @@ if __name__ == "__main__":
             "Generated format configuration at .vscode/.clang-format.\n"
         ), result.stdout
         generated = configuration.read_text()
+        assert b"\r" not in configuration.read_bytes()
         toolchain = generated.index("'^\"toolchain/")
         runtime = generated.index("'^\"runtime/")
         foundation = generated.index("'^\"foundation/")
@@ -68,9 +69,9 @@ if __name__ == "__main__":
         assert not (root / ".clang-format").exists()
 
         valid = source / "valid.cpp"
-        valid.write_text(
-            '#include "valid.hpp"\n'
-            "using namespace Example::Module;\nint main(){return 0;}\n"
+        valid.write_bytes(
+            b'#include "valid.hpp"\r\n'
+            b"using namespace Example::Module;\r\nint main(){return 0;}\r\n"
         )
         result = run(
             formatter,
@@ -92,6 +93,7 @@ if __name__ == "__main__":
             "  return 0;\n"
             "}\n"
         ), valid.read_text()
+        assert b"\r" not in valid.read_bytes()
         result = run(formatter, root, "--check", "source/valid.cpp")
         assert result.stdout == (
             comment_status(0, 0, 0, 0, 0)
@@ -1395,6 +1397,7 @@ if __name__ == "__main__":
         assert "multiline braced entities" in result.stderr
         run(formatter, root, "source/body_boundaries.hpp")
         formatted_boundaries = body_boundaries.read_text()
+        assert b"\r" not in body_boundaries.read_bytes()
         assert "value(value) {}\n  BodyBoundaries" in formatted_boundaries
         assert "    value++;\n  }\n\n  BodyBoundaries" in formatted_boundaries
         assert "  }\n\n  auto operator=" in formatted_boundaries, repr(

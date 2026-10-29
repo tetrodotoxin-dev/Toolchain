@@ -1,6 +1,7 @@
 # http://clang.llvm.org/docs/ClangFormatStyleOptions.html
 BasedOnStyle: Chromium
 Standard: Latest
+LineEnding: LF
 AttributeMacros: [EXPORTED]
 
 # Conditional branches separate their directives from declarations and

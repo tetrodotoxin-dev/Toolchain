@@ -156,6 +156,7 @@ def verify_vscode(root, workspace, toolchain, directory):
         "tasks.json",
     }
     settings = json.loads((generated / "settings.json").read_text())
+    assert settings["files.eol"] == "\n"
     assert settings["[c]"]["editor.defaultFormatter"] == "ms-vscode.cpptools"
     assert settings["[c]"]["editor.formatOnSave"] is True
     assert settings["[cpp]"]["editor.defaultFormatter"] == "ms-vscode.cpptools"

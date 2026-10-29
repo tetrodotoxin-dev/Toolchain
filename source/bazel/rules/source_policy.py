@@ -1571,7 +1571,7 @@ def canonicalize_source(path, root, project):
         canonical_code, _ = lexical(canonical)
         canonical = remove_standard_integer_headers(canonical, canonical_code)
     if canonical != source:
-        path.write_text(canonical)
+        path.write_text(canonical, newline="\n")
 
 
 def format_source(path):
@@ -1592,7 +1592,7 @@ def format_source(path):
     for offset in sorted(insertions, reverse=True):
         source = source[:offset] + "\n" + source[offset:]
     if insertions:
-        path.write_text(source)
+        path.write_text(source, newline="\n")
 
 
 def source_errors(

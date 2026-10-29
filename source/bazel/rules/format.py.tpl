@@ -206,10 +206,10 @@ def main():
         if not destination.is_relative_to(root):
             parser.error("Generated configuration path leaves the workspace")
         destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_text(expected_configuration)
+        destination.write_text(expected_configuration, newline="\n")
         print(
             "Generated format configuration at "
-            + str(destination.relative_to(root))
+            + destination.relative_to(root).as_posix()
             + "."
         )
         return 0
@@ -236,7 +236,7 @@ def main():
 
     with tempfile.TemporaryDirectory(prefix="toolchain-format-") as temporary:
         generated = Path(temporary) / ".clang-format"
-        generated.write_text(expected_configuration)
+        generated.write_text(expected_configuration, newline="\n")
         command = [
             CLANG_FORMAT,
             "--Werror",
