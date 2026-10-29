@@ -58,10 +58,11 @@ def verify_tests(program, reporting, skipped, empty, source):
                       "00 7F FF ", "aXc!", "a\0X", "<value>", "range"]:
             assert re.search(r"ACTUAL = " + value + r"\n", output), output
         assert output.count("ACTUAL = <value>\n") == 2, output
-        failures = output.split("Failed tests:\n", 1)[1].split("Slow tests", 1)[0]
+        # Reproducible compiler paths use the target's directory separator.
+        failures = output.split("Failed tests:\n", 1)[1].split("Slow tests", 1)[0].replace("\\", "/")
         assert locations["failure"] in failures, output
         assert locations["assertion"] in failures, output
-        slow = output.split("Slow tests (>= 1000 ms):\n", 1)[1]
+        slow = output.split("Slow tests (>= 1000 ms):\n", 1)[1].replace("\\", "/")
         assert locations["slow_pass"] in slow, output
         if arguments:
             assert "Pass Rate:" not in output and "Total Time:" not in output, output

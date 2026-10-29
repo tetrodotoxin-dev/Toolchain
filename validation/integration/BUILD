@@ -253,6 +253,19 @@ py_test(
     deps = ["@rules_python//python/runfiles"],
 )
 
+# Independent output roots force fresh release and SDK actions. Debug builds
+# retain their source records without imposing byte equality on those records.
+py_test(
+    name = "reproducibility",
+    size = "large",
+    srcs = ["reproducibility.py"],
+    args = ["$(rlocationpath //:_candidate_snapshot)"],
+    data = ["//:_candidate_snapshot"],
+    deps = ["@rules_python//python/runfiles"],
+    env_inherit = ["PATH"],
+    tags = ["manual"],
+)
+
 # This target is the complete process, linkage and packaging boundary for a
 # Toolchain checkout. Its leaves stay individually runnable during diagnosis.
 test_suite(
@@ -264,6 +277,7 @@ test_suite(
         ":components",
         ":format",
         ":harness",
+        ":reproducibility",
         ":sdk",
         ":shared",
         ":snapshot",

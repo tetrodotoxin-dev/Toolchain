@@ -6,10 +6,23 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import sys
 
 
 def linux(root):
+    # Bazel can extract a Linux file link as a Windows directory junction.
+    # Materialize those files so the Windows-hosted linker can read them.
+    if os.name == "nt":
+        for path in root.rglob("*"):
+            if path.lstat().st_reparse_tag == stat.IO_REPARSE_TAG_MOUNT_POINT:
+                target = Path(os.readlink(path).removeprefix("\\\\?\\"))
+                if target.is_file():
+                    if not target.resolve().is_relative_to(root.resolve()):
+                        raise ValueError(f"SDK link leaves its sysroot: {path}")
+                    path.rmdir()
+                    shutil.copyfile(target, path)
+
     # Debian's absolute links describe the target filesystem. Repointing them
     # into this sysroot keeps linker and Bazel resolution target-owned.
     for path in root.rglob("*"):
@@ -81,7 +94,7 @@ def windows(root, virtual_root):
                 # Headers keep virtual names so later includes use this view.
                 entries.append({"type": "file", "name": child.name,
                                 "use-external-name": child.is_relative_to(root / "lib"),
-                                "external-contents": child.resolve().as_posix()})
+                                "external-contents": virtual_root + "/" + child.relative_to(root).as_posix()})
         return {"type": "directory", "name": name, "contents": entries}
 
     overlay = {"version": 0, "case-sensitive": False, "use-external-names": False,

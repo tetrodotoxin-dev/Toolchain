@@ -73,6 +73,7 @@ genrule(
     srcs = [":system_host_shared"],
     outs = ["link/libsystem_host.so"],
     cmd = "cp $(location :system_host_shared) $@",
+    cmd_bat = 'copy /Y "$(location :system_host_shared)" "$@" >nul',
 )
 
 cc_import(

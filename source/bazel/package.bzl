@@ -2,7 +2,6 @@
 
 """Package one project's headers and target linker outputs."""
 
-load("@host_tools//:settings.bzl", "PYTHON")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load(":toolchains/platforms.bzl", "PLATFORMS")
@@ -360,9 +359,9 @@ def _package(ctx):
     manifest = ctx.actions.declare_file(ctx.label.name + ".json")
     ctx.actions.write(manifest, json.encode({output.path: archives[output.basename] for output in outputs}))
     ctx.actions.run(
-        executable = PYTHON,
-        arguments = [ctx.file._writer.path, manifest.path, checksum.path],
-        inputs = depset(inputs + [manifest, ctx.file._writer]),
+        executable = ctx.attr._writer[DefaultInfo].files_to_run,
+        arguments = [manifest.path, checksum.path],
+        inputs = depset(inputs + [manifest]),
         outputs = outputs + [checksum],
         mnemonic = "PackageRelease",
     )
@@ -392,7 +391,7 @@ _package_release = rule(implementation = _package, attrs = {
         ],
         allow_files = True,
     ),
-    "_writer": attr.label(default = Label("//source/bazel:release/package.py"), allow_single_file = True),
+    "_writer": attr.label(default = Label("//source/bazel:release_writer"), executable = True, cfg = "exec"),
     "_allowlist_function_transition": attr.label(default = "@bazel_tools//tools/allowlists/function_transition_allowlist"),
 })
 

@@ -61,7 +61,7 @@ def package(manifest, checksums):
     outputs = json.loads(Path(manifest).read_text())
     private_headers = validate_private_headers(private_header_inventory(outputs))
     digests = []
-    for destination, files in outputs.items():
+    for destination, files in sorted(outputs.items()):
         seen = {}
         with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
             for source, name in sorted(files, key=lambda entry: entry[1]):
@@ -93,12 +93,13 @@ def package(manifest, checksums):
                     continue
                 seen[name] = digest
                 info = zipfile.ZipInfo(name, (1980, 1, 1, 0, 0, 0))
+                info.create_system = 3
                 info.compress_type = zipfile.ZIP_DEFLATED
-                info.external_attr = (0o100755 if Path(source).stat().st_mode & 0o111 else 0o100644) << 16
+                info.external_attr = 0o100644 << 16
                 archive.writestr(info, content, compresslevel=9)
         digest = hashlib.sha256(Path(destination).read_bytes()).hexdigest()
         digests.append(f"{digest}  {Path(destination).name}\n")
-    Path(checksums).write_text("".join(digests))
+    Path(checksums).write_text("".join(digests), encoding="utf-8", newline="\n")
 
 
 if __name__ == "__main__":

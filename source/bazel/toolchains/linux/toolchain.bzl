@@ -14,6 +14,7 @@ load("@host_tools//:settings.bzl", "AR", "COV", "CPP", "CXX", "ELF_LINKER", "HOS
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load("@rules_cc//cc/toolchains:cc_toolchain.bzl", "cc_toolchain")
 load("@rules_cc//cc/toolchains:cc_toolchain_config_info.bzl", "CcToolchainConfigInfo")
+load(":toolchains/reproducible.bzl", "COMPILE_FLAGS")
 
 _TARGET_TRIPLE = "x86_64-linux-gnu"
 _GCC_DIRECTORY = "usr/lib/gcc/" + _TARGET_TRIPLE + "/11"
@@ -99,6 +100,7 @@ def _impl(ctx):
         ctx = ctx,
         features = [
             feature(name = "supports_pic", enabled = True),
+            _flags("reproducible_compile", _COMPILE, COMPILE_FLAGS),
             _flags("target_sdk", _COMPILE + _LINK, ["--target=" + _TARGET_TRIPLE, "--sysroot=" + sdk, "--gcc-install-dir=" + sdk + "/" + _GCC_DIRECTORY]),
             feature(name = "pic", enabled = True, flag_sets = [flag_set(actions = _COMPILE, flag_groups = [flag_group(flags = ["-fPIC"], expand_if_available = "pic")])]),
             _flags("common_compile", _COMPILE, ["-Wall", "-Werror", "-Wmissing-declarations", "-fvisibility=hidden", "-fno-exceptions", "-fno-rtti", "-march=x86-64-v3", "-mrdrnd", "-no-canonical-prefixes", "-resource-dir", RESOURCE_INCLUDE.removesuffix("/include")]),

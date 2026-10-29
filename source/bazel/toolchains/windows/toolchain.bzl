@@ -15,6 +15,7 @@ load("@host_tools//:settings.bzl", "ARCHIVER", "CLANG", "HOST_SYSTEM", "LINKER",
 # buildifier: disable=bzl-visibility
 load("@rules_cc//cc/private/toolchain:windows_cc_toolchain_config.bzl", windows_config = "cc_toolchain_config")
 load("@rules_cc//cc/toolchains:cc_toolchain.bzl", "cc_toolchain")
+load(":toolchains/reproducible.bzl", "COMPILE_FLAGS")
 
 def _sdk(ctx):
     """Assemble MSVC and Windows SDK files from downloads or an installed SDK.
@@ -61,6 +62,12 @@ windows_sdk = repository_rule(implementation = _sdk, attrs = {
     "_normalize": attr.label(default = Label("//source:sdk/normalize.py")),
 }, environ = ["TETRO_WINDOWS_SDK"])
 
+def _host_tool(path):
+    """Resolve a host executable from the execution root without embedding it."""
+    package_root = Label("//:windows").workspace_root
+    prefix = "../" * len(package_root.split("/")) if package_root else ""
+    return prefix + Label("@host_tools//:files").workspace_root + "/" + path
+
 def windows_toolchain_config():
     """Declare the windows_config target using clang-cl and the Windows SDK."""
     windows_config(
@@ -68,6 +75,9 @@ def windows_toolchain_config():
         tags = ["manual"],
         abi_version = "msvc",
         all_compile_flags = [
+            "/Brepro",
+            "/X",
+            "/clang:-gno-codeview-command-line",
             "/clang:-resource-dir=" + RESOURCE_INCLUDE.removesuffix("/include"),
             "/clang:-ivfsoverlay",
             "/clang:" + Label("@windows_sdk//:files").workspace_root + "/case.yaml",
@@ -79,7 +89,7 @@ def windows_toolchain_config():
             "/clang:-fno-exceptions",
             "/clang:-fno-rtti",
             "/clang:-Werror=missing-declarations",
-        ] + ["/imsvc" + Label("@windows_sdk//:files").workspace_root + "/include/" + part for part in [
+        ] + ["/clang:" + flag for flag in COMPILE_FLAGS] + ["/imsvc" + RESOURCE_INCLUDE] + ["/imsvc" + Label("@windows_sdk//:files").workspace_root + "/include/" + part for part in [
             "crt",
             "ucrt",
             "shared",
@@ -95,20 +105,22 @@ def windows_toolchain_config():
             Label("@windows_sdk//:files").workspace_root + "/include",
         ],
         cxx_flags = ["/std:c++latest"],
-        default_link_flags = ["/DEBUG:FULL", "/vfsoverlay:" + Label("@windows_sdk//:files").workspace_root + "/case.yaml"] + ["/LIBPATH:" + Label("@windows_sdk//:files").workspace_root + "/lib/" + part for part in [
+        dbg_mode_debug_flag = "/DEBUG:FULL",
+        fastbuild_mode_debug_flag = "/DEBUG:FULL",
+        default_link_flags = ["/timestamp:0", "/pdbaltpath:%%_PDB%%", "/pdbsourcepath:.", "/lldignoreenv", "/vfsoverlay:" + Label("@windows_sdk//:files").workspace_root + "/case.yaml"] + ["/LIBPATH:" + Label("@windows_sdk//:files").workspace_root + "/lib/" + part for part in [
             "crt",
             "ucrt",
             "um",
         ]],
         host_system_name = HOST_SYSTEM,
-        msvc_cl_path = CLANG,
+        msvc_cl_path = _host_tool("llvm/bin/" + CLANG.split("/")[-1]),
         msvc_env_include = Label("@windows_sdk//:files").workspace_root + "/include/crt",
         msvc_env_lib = Label("@windows_sdk//:files").workspace_root + "/lib/crt",
         msvc_env_path = PATH,
         msvc_env_tmp = TEMP,
-        msvc_lib_path = ARCHIVER,
-        msvc_link_path = LINKER,
-        msvc_ml_path = CLANG,
+        msvc_lib_path = _host_tool(("llvm/bin/" if "/llvm/bin/" in ARCHIVER else "") + ARCHIVER.split("/")[-1]),
+        msvc_link_path = _host_tool("llvm/bin/" + LINKER.split("/")[-1]),
+        msvc_ml_path = _host_tool("llvm/bin/" + CLANG.split("/")[-1]),
         target_libc = "ucrt",
         target_system_name = "windows",
         toolchain_identifier = "clang-windows-x64",

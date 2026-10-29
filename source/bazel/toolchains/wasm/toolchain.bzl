@@ -8,6 +8,7 @@ load("@host_tools//:settings.bzl", "AR", "COV", "CPP", "CXX", "HOST_SYSTEM", "NM
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load("@rules_cc//cc/toolchains:cc_toolchain.bzl", "cc_toolchain")
 load("@rules_cc//cc/toolchains:cc_toolchain_config_info.bzl", "CcToolchainConfigInfo")
+load(":toolchains/reproducible.bzl", "COMPILE_FLAGS")
 
 def _config(ctx):
     """Configure Clang and LLD for modules hosted by Emscripten.
@@ -29,7 +30,7 @@ def _config(ctx):
             feature(name = "dbg", flag_sets = [flag_set(actions = compile_actions, flag_groups = [flag_group(flags = ["-O0", "-g"])])]),
             feature(name = "wasm", enabled = True, flag_sets = [
                 flag_set(actions = compile_actions + link_actions, flag_groups = [flag_group(flags = ["--target=wasm32-unknown-emscripten"])]),
-                flag_set(actions = compile_actions, flag_groups = [flag_group(flags = [
+                flag_set(actions = compile_actions, flag_groups = [flag_group(flags = COMPILE_FLAGS + [
                     "-resource-dir",
                     RESOURCE_INCLUDE.removesuffix("/include"),
                     "-fPIC",
@@ -122,7 +123,7 @@ def _runner_config(ctx):
                 ],
             )]),
             feature(name = "runner_compile", enabled = True, flag_sets = [
-                flag_set(actions = compile_actions, flag_groups = [flag_group(flags = [
+                flag_set(actions = compile_actions, flag_groups = [flag_group(flags = COMPILE_FLAGS + [
                     "-Wall",
                     "-Werror",
                     "-Wmissing-declarations",
