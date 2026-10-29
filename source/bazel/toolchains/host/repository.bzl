@@ -71,7 +71,12 @@ def _host(ctx):
         if not selected.exists:
             fail("LLVM installation is missing " + str(selected))
         values[name] = str(selected).replace("\\", "/")
-        files.extend([location, "llvm/bin/" + selected.realpath.basename])
+        files.append(location)
+
+        # LLVM aliases need their resolved executable in runfiles. Windows may
+        # copy an alias instead, leaving the selected path as the actual file.
+        if selected.realpath.basename != selected.basename:
+            files.append("llvm/bin/" + selected.realpath.basename)
     resource = ctx.execute([values["CXX"], "-print-resource-dir"])
     if resource.return_code:
         fail(resource.stderr)
