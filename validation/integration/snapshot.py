@@ -2,9 +2,12 @@
 
 """Verify that snapshots preserve one clean Git commit exactly."""
 
+from contextlib import redirect_stderr, redirect_stdout
 import hashlib
+import io
 import os
 from pathlib import Path
+import runpy
 import subprocess
 import sys
 import tarfile
@@ -13,23 +16,17 @@ import tempfile
 from python.runfiles import runfiles
 
 
-def run(command, root, status=0):
-    environment = os.environ.copy()
-    environment["BUILD_WORKSPACE_DIRECTORY"] = str(root)
-    result = subprocess.run(
-        command,
-        cwd=root,
-        env=environment,
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == status, result.stdout + result.stderr
-    return result
+def run(snapshot, root, version, status=0):
+    output = io.StringIO()
+    with redirect_stdout(output), redirect_stderr(output):
+        result = snapshot(root, "tetro_toolchain", version)
+    assert result == status, output.getvalue()
+    return output.getvalue()
 
 
 if __name__ == "__main__":
     resolver = runfiles.Create()
-    program = resolver.Rlocation(sys.argv[1])
+    snapshot = runpy.run_path(resolver.Rlocation(sys.argv[1]))["snapshot"]
     version = sys.argv[2]
     with tempfile.TemporaryDirectory(prefix="toolchain-snapshot-test-") as temporary:
         root = Path(temporary)
@@ -75,9 +72,9 @@ if __name__ == "__main__":
             text=True,
             check=True,
         ).stdout.strip()
-        first = run([program], root)
+        first = run(snapshot, root, version)
         archive = root / f".bin/release/tetro_toolchain-{version}-source.tar.gz"
-        assert archive.exists(), first.stdout
+        assert archive.exists(), first
         digest = hashlib.sha256(archive.read_bytes()).hexdigest()
         assert archive.with_name(archive.name + ".sha256").read_text() == (
             digest + "  " + archive.name + "\n"
@@ -85,18 +82,18 @@ if __name__ == "__main__":
         assert archive.with_name(archive.name + ".commit").read_text() == (
             commit + "\n"
         )
-        with tarfile.open(archive, "r:gz") as snapshot:
-            names = snapshot.getnames()
+        with tarfile.open(archive, "r:gz") as contents:
+            names = contents.getnames()
             assert names == [
                 ".gitignore",
                 "README.md",
                 "source",
                 "source/tool.sh",
             ], names
-            assert snapshot.getmember("source/tool.sh").mode & 0o111
-        run([program], root)
+            assert contents.getmember("source/tool.sh").mode & 0o111
+        run(snapshot, root, version)
         assert hashlib.sha256(archive.read_bytes()).hexdigest() == digest
         (root / "README.md").write_text("dirty fixture\n")
-        failure = run([program], root, status=1)
-        assert "snapshot requires a clean Git worktree" in failure.stderr
+        failure = run(snapshot, root, version, status=1)
+        assert "snapshot requires a clean Git worktree" in failure
     print("Git snapshot checks passed.")

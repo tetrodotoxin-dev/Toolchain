@@ -163,10 +163,10 @@ SNAPSHOT = check(
     name = "snapshot",
     srcs = ["snapshot.py"],
     args = [
-        "$(rlocationpath //:snapshot)",
+        "$(rlocationpath //source/bazel:release/sdk.py)",
         module_version(),
     ],
-    data = ["//:snapshot"],
+    data = ["//source/bazel:release/sdk.py"],
     deps = ["@rules_python//python/runfiles"],
 )
 

@@ -405,9 +405,10 @@ def package(name = "sdk", module = None, components = {}, static = None, shared 
     These declarations own their visibility, so a root BUILD can load package
     directly as its complete publication surface.
 
-    `bazel run :sdk` formats the workspace and runs optimized host tests before
-    building the selected archives. A failed stage stops the release. The
-    archive target remains separate so each build observes the formatted source.
+    `bazel run :sdk` formats the workspace, runs optimized host tests and builds
+    the selected archives. It then archives the clean Git commit as the release's
+    source snapshot. A failed stage stops the release. Formatting changes must
+    be committed before the release can finish.
 
     Args:
         name: SDK release command name, defaulting to sdk.
@@ -481,7 +482,7 @@ def package(name = "sdk", module = None, components = {}, static = None, shared 
         name = name,
         srcs = [Label("//source/bazel:release/sdk.py")],
         main = Label("//source/bazel:release/sdk.py"),
-        args = ["//" + native.package_name() + ":" + archives],
+        args = [native.module_name(), native.module_version(), "//" + native.package_name() + ":" + archives],
         python_version = "3.11.14",
         visibility = visibility,
         tags = tags,

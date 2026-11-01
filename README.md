@@ -65,23 +65,17 @@ When importing you can use `sdks.component()` to declare the external dependenci
 
 ## Testing
 
-Toolchain provides a `validation()` rule that enables testing. Similar to source code
-validation code is stored under `validation/<type>/`. Validation supports both `tests`
-and `benchmarks` for validation.
+Similar to source code validation code is stored under `validation/<type>/`.
+Validation supports both `tests` and `benchmarks` for as validation types.
 
-To keep the enviornment simple all tests are built as stand alone binary executables and
-`bazel test ...` isn't supported by toolchain projects. This avoids several dependencies
-such as Bash on Windows. To execute tests from the commandline use `bazel run :tests`
-instead.
+To enable validation simply add the `validation()` macro to the root `BUILD` file. 
+That adds the `:tests` and `:benchmarks` targets automatically.
+Both programs can use any test artifacts under `validation/data`.
 
 ## Development
 
-Call `validation()` and `snapshot()` from the root `BUILD` file. Validation
-links the project library and compiles the sources under `validation/tests` and
-`validation/benchmarks` into the `:tests` and `:benchmarks` programs. Both
-programs receive the artifacts under `validation/data`.
-
-Repositories using Toolchain share these core bazel commands:
+Repositories using Toolchain share these core bazel commands. With the
+exception of the standard `build` command, all other commands use `bazel run :<command>`:
 
 ```sh
 # Perform a complete host local build (default is --config=debug)
@@ -101,6 +95,11 @@ bazel run :benchmarks --config=release
 bazel run :tests_web
 bazel run :benchmarks_web
 ```
+
+To keep the enviornment simple all tests are built as stand alone binary executables and
+`bazel test ...` isn't supported by toolchain projects. This avoids several dependencies
+such as Bash on Windows. To execute tests from the commandline use `bazel run :tests`
+instead.
 
 ## Release gates
 
@@ -130,15 +129,12 @@ the license. Everything is packaged in one shot to make distribution setup easy.
 > Cross platform builds are supported, but executing Windows tests still requires a dedicated
 > requires a dedicated Windows host environment.
 
-Every project additionally can create a source snapshot from a clean Git commit with:
-
-```sh
-bazel run :snapshot
-```
-
 The snapshot contains the complete committed repository and should be provided
 with the SDK for any published builds. Binaries built from the Source should generate
 the exact hashes provided by the SDK.
+
+Every project additionally creates a source snapshot from a clean Git commit that was used to
+generate the SDK.
 
 ### Toolchain releases
 

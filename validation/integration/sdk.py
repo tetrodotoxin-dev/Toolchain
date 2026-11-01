@@ -397,27 +397,50 @@ def verify(toolchain, checksum_manifest, dependency_manifest, host, objdump, mix
                     "run", "//:repack", "--distdir=" + str(toolchain.parent),
                     "--distdir=" + str(directory),
                 ]
+                subprocess.run([
+                    "bazel", "--output_base=" + str(root / "bazel"),
+                    "run", "//:format",
+                ], cwd=workspace, check=True)
+                (workspace / ".gitignore").write_text(".bin/\n.bazelrc.local\nMODULE.bazel.lock\n.vscode/\n")
+                for command in [
+                    ["git", "init", "--quiet"],
+                    ["git", "add", "."],
+                    ["git", "-c", "user.name=Toolchain Validation", "-c", "user.email=validation@tetrodotoxin.dev",
+                     "commit", "--quiet", "-m", "SDK release fixture"],
+                ]:
+                    subprocess.run(command, cwd=workspace, check=True)
                 subprocess.run(release, cwd=workspace, check=True)
                 assert not (workspace / ".clang-format").exists()
-                print("Candidate SDK release passed formatting, host tests and packaging.", flush=True)
+                snapshot = workspace / (".bin/release/consumer-" + version + "-source.tar.gz")
+                assert snapshot.exists()
+                commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=workspace, text=True)
+                assert snapshot.with_name(snapshot.name + ".commit").read_text() == commit
+                assert snapshot.with_name(snapshot.name + ".sha256").read_text() == checksum(snapshot) + "  " + snapshot.name + "\n"
+                with tarfile.open(snapshot, "r:gz") as archive:
+                    assert archive.extractfile("MODULE.bazel").read() == (workspace / "MODULE.bazel").read_bytes()
+                snapshot.unlink()
+                print("Candidate SDK release passed formatting, host tests, packaging and its source snapshot.", flush=True)
                 test = workspace / "validation/tests/web.cpp"
                 valid_test = test.read_text()
                 warning = workspace / "source/release_gate.cpp"
+                dirty = workspace / "release_gate.txt"
                 for path, content, diagnostic in [
                     (warning, "// The buffer stores each value.\nS32 value;\n", "comment quality Warn"),
                     (test, valid_test.replace("U32(42)", "U32(43)"), "Failed tests:"),
+                    (dirty, "uncommitted source\n", "snapshot requires a clean Git worktree"),
                 ]:
                     try:
                         path.write_text(content)
                         blocked = subprocess.run(release, cwd=workspace, capture_output=True, text=True)
                         assert blocked.returncode != 0, blocked.stdout + blocked.stderr
                         assert diagnostic in blocked.stdout + blocked.stderr, blocked.stdout + blocked.stderr
+                        assert not snapshot.exists()
                     finally:
                         if path == test:
                             test.write_text(valid_test)
                         else:
                             path.unlink()
-                print("Formatting warnings and failing host tests both block SDK release.", flush=True)
+                print("Formatting warnings, failing host tests and a dirty worktree block the release snapshot.", flush=True)
                 verify_vscode(root, workspace, toolchain, directory)
                 subprocess.run([
                     "bazel", "--output_base=" + str(root / "bazel"),
