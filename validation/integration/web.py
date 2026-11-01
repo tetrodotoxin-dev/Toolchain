@@ -5,6 +5,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -64,5 +65,9 @@ if __name__ == "__main__":
             program_link = root / "runfiles/_main/tests_web_binary"
             program_link.parent.mkdir(parents=True)
             program_link.symlink_to(program)
-        run(tests, *arguments, environment=environment, directory=root, status=17)
+        # Relocation isolates the supplied runfiles from any adjacent tree
+        # left by a previous `bazel run` of the original executable.
+        launcher = root / Path(tests).name
+        shutil.copy(tests, launcher)
+        run(str(launcher), *arguments, environment=environment, directory=root, status=17)
     print("Web tests, benchmark filtering, runfiles, arguments and exit status passed.")

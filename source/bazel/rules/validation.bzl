@@ -33,6 +33,11 @@ _wasm_runner_transition = transition(
     outputs = ["//command_line_option:platforms", _FEATURES],
 )
 
+def _runfile(ctx, file):
+    """Use the same canonical runfiles key in both host launchers."""
+    path = file.short_path
+    return path[3:] if path.startswith("../") else ctx.workspace_name + "/" + path
+
 def _web_runner_impl(ctx):
     """Generate one host launcher for an Emscripten validation program."""
     executable = ctx.actions.declare_file(ctx.label.name + (".cmd" if HOST_SYSTEM == "windows" else ""))
@@ -43,10 +48,8 @@ def _web_runner_impl(ctx):
         template = ctx.file._template,
         output = executable,
         substitutions = {
-            "__NODE__": node.short_path,
-            "__PROGRAM__": binary.short_path,
-            "__NODE_RLOCATION__": node.short_path[3:] if node.short_path.startswith("../") else ctx.workspace_name + "/" + node.short_path,
-            "__PROGRAM_RLOCATION__": binary.short_path[3:] if binary.short_path.startswith("../") else ctx.workspace_name + "/" + binary.short_path,
+            "__NODE__": _runfile(ctx, node),
+            "__PROGRAM__": _runfile(ctx, binary),
         },
         is_executable = True,
     )
@@ -87,52 +90,24 @@ def _sources(directory):
         fail("validation/" + directory + " must contain validation sources")
     return sources
 
-def _tests(deps, web_deps, web_threads, data):
-    sources = _sources("tests")
+def _program(name, runtime, deps, web_deps, web_threads, data):
+    """Declare matching native and Web programs and select their public runner."""
+    sources = _sources(name)
     cc_binary(
-        name = "tests_binary",
+        name = name + "_binary",
         testonly = True,
         srcs = sources,
-        deps = deps + [Label("//source/toolchain/validation:test")],
+        deps = deps + [runtime],
         data = data,
     )
     cc_binary(
-        name = "tests_web_binary",
+        name = name + "_web_binary",
         tags = ["manual"],
         testonly = True,
         srcs = sources,
-        deps = web_deps + [Label("//source/toolchain/validation:test")],
+        deps = web_deps + [runtime],
         data = data,
     )
-    _select_runner("tests", "tests_web_binary", web_threads)
-
-def _benchmarks(deps, web_deps, web_threads, data):
-    sources = _sources("benchmarks")
-    cc_binary(
-        name = "benchmarks_binary",
-        testonly = True,
-        srcs = sources,
-        deps = deps + [Label("//source/toolchain/validation:benchmark")],
-        data = data,
-    )
-    cc_binary(
-        name = "benchmarks_web_binary",
-        tags = ["manual"],
-        testonly = True,
-        srcs = sources,
-        deps = web_deps + [Label("//source/toolchain/validation:benchmark")],
-        data = data,
-    )
-    _select_runner("benchmarks", "benchmarks_web_binary", web_threads)
-
-def _select_runner(name, web_binary, web_threads):
-    """Expose native programs directly and host standalone Web programs in Node.
-
-    Args:
-        name: Public validation target and its private binary prefix.
-        web_binary: Private executable linked with the Web program dependencies.
-        web_threads: Whether Web validation enables Emscripten threads.
-    """
     binary = name + "_binary"
     runner = name + "_web_runner"
     node = Label("@emscripten_node//:node")
@@ -140,7 +115,7 @@ def _select_runner(name, web_binary, web_threads):
         name = runner,
         tags = ["manual"],
         testonly = True,
-        binary = ":" + web_binary,
+        binary = ":" + name + "_web_binary",
         node = node,
         threads = web_threads,
     )
@@ -197,5 +172,19 @@ def validation(
     web_tests = test_deps if web_test_deps == None else web_test_deps
     web_benchmarks = benchmark_deps if web_benchmark_deps == None else web_benchmark_deps
     data = native.glob(["validation/data/**"], allow_empty = True)
-    _tests(common + test_deps, web_common + web_tests, web_threads, data + test_data)
-    _benchmarks(common + benchmark_deps, web_common + web_benchmarks, web_threads, data + benchmark_data)
+    _program(
+        name = "tests",
+        runtime = Label("//source/toolchain/validation:test"),
+        deps = common + test_deps,
+        web_deps = web_common + web_tests,
+        web_threads = web_threads,
+        data = data + test_data,
+    )
+    _program(
+        name = "benchmarks",
+        runtime = Label("//source/toolchain/validation:benchmark"),
+        deps = common + benchmark_deps,
+        web_deps = web_common + web_benchmarks,
+        web_threads = web_threads,
+        data = data + benchmark_data,
+    )

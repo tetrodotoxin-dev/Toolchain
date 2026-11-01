@@ -1,17 +1,15 @@
 # Copyright (c) 2023-present Matt Kaes and contributors
 
+load("@tetro_toolchain//source/bazel:toolchains/wasm/sdk.bzl", "wasm_tools")
+
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "__NODE__",
 ])
 
-filegroup(
+wasm_tools(
     name = "node",
+    paths = __TOOLS__,
     srcs = ["__NODE__"],
-)
-
-filegroup(
-    name = "files",
-    srcs = glob(["**"]),
 )

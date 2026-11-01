@@ -9,7 +9,49 @@ load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load("@rules_cc//cc/toolchains:cc_toolchain.bzl", "cc_toolchain")
 load("@rules_cc//cc/toolchains:cc_toolchain_config_info.bzl", "CcToolchainConfigInfo")
 load(":toolchains/reproducible.bzl", "COMPILE_FLAGS")
-load(":toolchains/wasm/sdk.bzl", "WasmSdkInfo")
+load(":toolchains/wasm/sdk.bzl", "WasmToolsInfo")
+
+_COMPILE = [ACTION_NAMES.c_compile, ACTION_NAMES.cpp_compile]
+_LINK = [ACTION_NAMES.cpp_link_executable, ACTION_NAMES.cpp_link_dynamic_library, ACTION_NAMES.cpp_link_nodeps_dynamic_library]
+
+def _flags(name, actions, flags, enabled = True):
+    """Apply one ordered flag list to the selected compiler actions."""
+    return feature(name = name, enabled = enabled, flag_sets = [flag_set(actions = actions, flag_groups = [flag_group(flags = flags)])])
+
+def _common_features():
+    """Keep language, optimization and portability policy equal in both modes."""
+    return [
+        feature(name = "supports_pic", enabled = True),
+        _flags("opt", _COMPILE, ["-O3", "-DNDEBUG"], False),
+        _flags("dbg", _COMPILE, ["-O0", "-g"], False),
+        _flags("common_compile", _COMPILE, COMPILE_FLAGS + [
+            "-fPIC",
+            "-fvisibility=hidden",
+            "-fno-exceptions",
+            "-fno-rtti",
+            "-Werror=missing-declarations",
+            "-msimd128",
+        ]),
+        _flags("cpp_language", [ACTION_NAMES.cpp_compile], ["-std=c++26", "-fvisibility-inlines-hidden"]),
+        _flags("c_language", [ACTION_NAMES.c_compile], ["-xc", "-std=c23"]),
+    ]
+
+def _create_config(ctx, features, tools, includes, identifier, compiler):
+    """Share the target ABI while each mode supplies its runtime and tools."""
+    return cc_common.create_cc_toolchain_config_info(
+        ctx = ctx,
+        features = _common_features() + features,
+        tool_paths = [tool_path(name = name, path = path) for name, path in tools.items()],
+        cxx_builtin_include_directories = includes,
+        toolchain_identifier = identifier,
+        host_system_name = HOST_SYSTEM,
+        target_system_name = "wasm32",
+        target_cpu = "wasm32",
+        target_libc = "emscripten",
+        compiler = compiler,
+        abi_version = "unknown",
+        abi_libc_version = "4.0.20",
+    )
 
 def _config(ctx):
     """Configure Clang and LLD for modules hosted by Emscripten.
@@ -21,71 +63,44 @@ def _config(ctx):
         CcToolchainConfigInfo for the wasm32 target.
     """
     headers = ctx.attr.headers.label.workspace_root
-    compile_actions = [ACTION_NAMES.c_compile, ACTION_NAMES.cpp_compile]
-    link_actions = [ACTION_NAMES.cpp_link_executable, ACTION_NAMES.cpp_link_dynamic_library, ACTION_NAMES.cpp_link_nodeps_dynamic_library]
-    return cc_common.create_cc_toolchain_config_info(
+    return _create_config(
         ctx = ctx,
         features = [
-            feature(name = "supports_pic", enabled = True),
-            feature(name = "opt", flag_sets = [flag_set(actions = compile_actions, flag_groups = [flag_group(flags = ["-O3", "-DNDEBUG"])])]),
-            feature(name = "dbg", flag_sets = [flag_set(actions = compile_actions, flag_groups = [flag_group(flags = ["-O0", "-g"])])]),
-            feature(name = "wasm", enabled = True, flag_sets = [
-                flag_set(actions = compile_actions + link_actions, flag_groups = [flag_group(flags = ["--target=wasm32-unknown-emscripten"])]),
-                flag_set(actions = compile_actions, flag_groups = [flag_group(flags = COMPILE_FLAGS + [
-                    "-resource-dir",
-                    RESOURCE_INCLUDE.removesuffix("/include"),
-                    "-fPIC",
-                    "-fvisibility=hidden",
-                    "-fno-exceptions",
-                    "-fno-rtti",
-                    "-Werror=missing-declarations",
-                    "-msimd128",
-                ])]),
-                flag_set(actions = [ACTION_NAMES.cpp_compile], flag_groups = [flag_group(flags = [
-                    "-std=c++26",
-                    "-fvisibility-inlines-hidden",
-                    "-nostdinc++",
-                    "-isystem",
-                    headers + "/c++/v1",
-                    "-isystem",
-                    headers + "/compat",
-                    "-isystem",
-                    headers,
-                ])]),
-                flag_set(actions = [ACTION_NAMES.c_compile], flag_groups = [flag_group(flags = ["-xc", "-std=c23", "-isystem", headers])]),
-                # The embedding application supplies shared memory, table and
-                # runtime imports. Clang and LLD emit the module directly.
-                flag_set(actions = link_actions, flag_groups = [flag_group(flags = [
-                    "-nostdlib",
-                    "-Wl,--no-entry",
-                    "-Wl,--import-memory",
-                    "-Wl,--experimental-pic",
-                    "-Wl,--unresolved-symbols=import-dynamic",
-                ])]),
-                # PIE lets hosted executables import shared modules. LLD's
-                # ordinary executable mode searches only static archives.
-                flag_set(actions = [ACTION_NAMES.cpp_link_executable], flag_groups = [flag_group(flags = ["-Wl,--pie"])]),
+            _flags("wasm_target", _COMPILE + _LINK, ["--target=wasm32-unknown-emscripten"]),
+            _flags("resource_headers", _COMPILE, ["-resource-dir", RESOURCE_INCLUDE.removesuffix("/include")]),
+            _flags("cpp_headers", [ACTION_NAMES.cpp_compile], [
+                "-nostdinc++",
+                "-isystem", headers + "/c++/v1",
+                "-isystem", headers + "/compat",
+                "-isystem", headers,
             ]),
+            _flags("c_headers", [ACTION_NAMES.c_compile], ["-isystem", headers]),
+            # The embedding application supplies shared memory, table and
+            # runtime imports. Clang and LLD emit the module directly.
+            _flags("hosted_link", _LINK, [
+                "-nostdlib",
+                "-Wl,--no-entry",
+                "-Wl,--import-memory",
+                "-Wl,--experimental-pic",
+                "-Wl,--unresolved-symbols=import-dynamic",
+            ]),
+            # PIE lets hosted executables import shared modules. LLD's
+            # ordinary executable mode searches only static archives.
+            _flags("hosted_pie", [ACTION_NAMES.cpp_link_executable], ["-Wl,--pie"]),
         ],
-        tool_paths = [tool_path(name = name, path = path) for name, path in [
-            ("gcc", CXX),
-            ("ld", WASM_LINKER),
-            ("ar", AR),
-            ("cpp", CPP),
-            ("gcov", COV),
-            ("nm", NM),
-            ("objdump", OBJDUMP),
-            ("strip", STRIP),
-        ]],
-        cxx_builtin_include_directories = [RESOURCE_INCLUDE, headers],
-        toolchain_identifier = "clang-wasm32",
-        host_system_name = HOST_SYSTEM,
-        target_system_name = "wasm32",
-        target_cpu = "wasm32",
-        target_libc = "emscripten",
+        tools = {
+            "gcc": CXX,
+            "ld": WASM_LINKER,
+            "ar": AR,
+            "cpp": CPP,
+            "gcov": COV,
+            "nm": NM,
+            "objdump": OBJDUMP,
+            "strip": STRIP,
+        },
+        includes = [RESOURCE_INCLUDE, headers],
+        identifier = "clang-wasm32",
         compiler = "clang",
-        abi_version = "unknown",
-        abi_libc_version = "4.0.20",
     )
 
 wasm_cc_toolchain_config = rule(
@@ -104,60 +119,31 @@ def _runner_config(ctx):
         CcToolchainConfigInfo for executable Web validation.
     """
     sdk = ctx.attr.sdk.label.workspace_root
-    windows = HOST_SYSTEM == "windows"
-    # rules_cc requires normalized tool paths. A dependency toolchain cannot
-    # reach the sibling SDK repository through relative parent references.
-    sdk_tool = ctx.attr.sdk[WasmSdkInfo].root if windows else "/proc/self/cwd/" + sdk
-    suffix = ".exe" if windows else ""
-    node = ctx.file.node.path if windows else "/proc/self/cwd/" + ctx.file.node.path
     resource_directory = sdk + "/lib/clang/22"
     sysroot_include = sdk + "/emscripten/cache/sysroot/include"
-    compile_actions = [ACTION_NAMES.c_compile, ACTION_NAMES.cpp_compile]
-    link_actions = [ACTION_NAMES.cpp_link_executable, ACTION_NAMES.cpp_link_dynamic_library, ACTION_NAMES.cpp_link_nodeps_dynamic_library]
-    return cc_common.create_cc_toolchain_config_info(
+    return _create_config(
         ctx = ctx,
         features = [
-            feature(name = "supports_pic", enabled = True),
-            feature(name = "opt", flag_sets = [flag_set(actions = compile_actions, flag_groups = [flag_group(flags = ["-O3", "-DNDEBUG"])])]),
-            feature(name = "dbg", flag_sets = [flag_set(actions = compile_actions, flag_groups = [flag_group(flags = ["-O0", "-g"])])]),
             feature(name = "emscripten_environment", enabled = True, env_sets = [env_set(
-                actions = compile_actions + link_actions,
+                actions = _COMPILE + _LINK,
                 env_entries = [
-                    env_entry(key = "EM_NODE_JS", value = node),
+                    env_entry(key = "EM_NODE_JS", value = ctx.attr.node[WasmToolsInfo].paths["node"]),
                     env_entry(key = "PYTHON", value = PYTHON),
                     env_entry(key = "EMSDK_PYTHON", value = PYTHON),
                     env_entry(key = "PYTHONDONTWRITEBYTECODE", value = "1"),
                 ],
             )]),
-            feature(name = "runner_compile", enabled = True, flag_sets = [
-                flag_set(actions = compile_actions, flag_groups = [flag_group(flags = COMPILE_FLAGS + [
-                    "-Wall",
-                    "-Werror",
-                    "-Wmissing-declarations",
-                    "-fPIC",
-                    "-fvisibility=hidden",
-                    "-fno-exceptions",
-                    "-fno-rtti",
-                    "-msimd128",
-                    "-nostdinc",
-                    "-resource-dir",
-                    resource_directory,
-                    "-isystem",
-                    resource_directory + "/include",
-                    "-isystem",
-                    sysroot_include + "/c++/v1",
-                    "-isystem",
-                    sysroot_include + "/compat",
-                    "-isystem",
-                    sysroot_include,
-                ])]),
-                flag_set(actions = [ACTION_NAMES.cpp_compile], flag_groups = [flag_group(flags = [
-                    "-std=c++26",
-                    "-fvisibility-inlines-hidden",
-                ])]),
-                flag_set(actions = [ACTION_NAMES.c_compile], flag_groups = [flag_group(flags = ["-xc", "-std=c23"])]),
+            _flags("runner_compile", _COMPILE, [
+                "-Wall",
+                "-Werror",
+                "-nostdinc",
+                "-resource-dir", resource_directory,
+                "-isystem", resource_directory + "/include",
+                "-isystem", sysroot_include + "/c++/v1",
+                "-isystem", sysroot_include + "/compat",
+                "-isystem", sysroot_include,
             ]),
-            feature(name = "runner_link", enabled = True, flag_sets = [flag_set(actions = link_actions, flag_groups = [flag_group(flags = [
+            _flags("runner_link", _LINK, [
                 "-sSINGLE_FILE=1",
                 "-sENVIRONMENT=node",
                 "-sEXIT_RUNTIME=1",
@@ -167,39 +153,24 @@ def _runner_config(ctx):
                 # A fixed heap retains the allocator suite's large-capacity
                 # cases without changing their memory-growth behavior.
                 "-sINITIAL_MEMORY=268435456",
-            ])])]),
+            ]),
             feature(name = "wasm_threads", flag_sets = [
-                flag_set(actions = compile_actions, flag_groups = [flag_group(flags = ["-pthread"])]),
-                flag_set(actions = link_actions, flag_groups = [flag_group(flags = [
+                flag_set(actions = _COMPILE, flag_groups = [flag_group(flags = ["-pthread"])]),
+                flag_set(actions = _LINK, flag_groups = [flag_group(flags = [
                     "-pthread",
                     "-sPTHREAD_POOL_SIZE=4",
                 ])]),
             ]),
         ],
-        tool_paths = [tool_path(name = name, path = path) for name, path in [
-            ("gcc", sdk_tool + ("/em++.bat" if windows else "/emscripten/em++")),
-            ("ld", sdk_tool + "/bin/wasm-ld" + suffix),
-            ("ar", sdk_tool + "/bin/llvm-ar" + suffix),
-            ("cpp", sdk_tool + "/bin/clang-cpp" + suffix),
-            ("gcov", sdk_tool + "/bin/llvm-cov" + suffix),
-            ("nm", sdk_tool + "/bin/llvm-nm" + suffix),
-            ("objdump", sdk_tool + "/bin/llvm-objdump" + suffix),
-            ("strip", sdk_tool + "/bin/llvm-strip" + suffix),
-        ]],
-        cxx_builtin_include_directories = [
+        tools = ctx.attr.sdk[WasmToolsInfo].paths,
+        includes = [
             resource_directory + "/include",
             sysroot_include + "/c++/v1",
             sysroot_include + "/compat",
             sysroot_include,
         ],
-        toolchain_identifier = "emscripten-validation-runner",
-        host_system_name = HOST_SYSTEM,
-        target_system_name = "wasm32",
-        target_cpu = "wasm32",
-        target_libc = "emscripten",
+        identifier = "emscripten-validation-runner",
         compiler = "emscripten",
-        abi_version = "unknown",
-        abi_libc_version = "4.0.20",
     )
 
 wasm_runner_cc_toolchain_config = rule(
@@ -290,7 +261,7 @@ def wasm_targets():
         all_files = ":wasm_runner_files",
         ar_files = "@emscripten_sdk//:files",
         as_files = "@emscripten_sdk//:files",
-        compiler_files = "@emscripten_sdk//:files",
+        compiler_files = ":wasm_runner_files",
         dwp_files = "@emscripten_sdk//:files",
         linker_files = ":wasm_runner_files",
         objcopy_files = "@emscripten_sdk//:files",
@@ -305,7 +276,7 @@ def wasm_targets():
         name = "wasm_runner_files",
         tags = ["manual"],
         srcs = [
-            "@emscripten_node//:files",
+            "@emscripten_node//:node",
             "@emscripten_sdk//:files",
         ],
     )

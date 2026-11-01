@@ -1,4 +1,4 @@
-load("@host_tools//:settings.bzl", "CXX", "NM")
+load("@host_tools//:settings.bzl", "CXX", "OBJDUMP")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_python//python:py_test.bzl", "py_test")
 load("//source/bazel:package.bzl", "package_release")
@@ -104,6 +104,7 @@ py_test(
     args = ["$(rlocationpath //:format)"],
     data = ["//:format"],
     deps = ["@rules_python//python/runfiles"],
+    env_inherit = ["PATH"],
 )
 
 # These native leaves prove the component graph and both library linkages in the
@@ -146,21 +147,17 @@ cc_test(
     ],
 )
 
-py_test(
+cc_test(
     name = "symbols",
     size = "small",
-    srcs = ["symbols.py"],
-    args = [
-        "$(rlocationpath @host_tools//:llvm/bin/" + NM.split("/")[-1] + ")",
-        "$(rlocationpath :shared)",
-        "$(rlocationpath //validation/data:binary)",
+    srcs = [
+        "library.c",
+        "symbols.c",
     ],
-    data = [
-        ":shared",
-        "//validation/data:binary",
-        "@host_tools//:llvm/bin/" + NM.split("/")[-1],
+    deps = [
+        "//validation/data:shared",
+        "//validation/data:system_host",
     ],
-    deps = ["@rules_python//python/runfiles"],
 )
 
 py_test(
@@ -173,6 +170,7 @@ py_test(
     ],
     data = ["//:snapshot"],
     deps = ["@rules_python//python/runfiles"],
+    env_inherit = ["PATH"],
 )
 
 # The primary fixture publishes the component surface and the runtime graph
@@ -222,13 +220,14 @@ filegroup(
 py_test(
     name = "sdk",
     tags = ["manual"],
-    size = "medium",
+    size = "large",
     srcs = ["sdk.py"],
     args = [
         "$(rlocationpath //:_candidate_snapshot)",
         "$(rlocationpath :checksum)",
         "$(rlocationpath //validation/integration/linkage:checksum)",
         "$(rlocationpath //validation/data:system_host_binary)",
+        "$(rlocationpath @host_tools//:llvm/bin/" + OBJDUMP.split("/")[-1] + ")",
     ],
     data = [
         "sdk.c",
@@ -236,8 +235,9 @@ py_test(
         ":dependency",
         ":fixture",
         "//:_candidate_snapshot",
-        "//validation/data:sdk/BUILD.tpl",
-        "//validation/data:sdk/MODULE.tpl",
+        "//source/bazel:release/package.py",
+        "//validation/data:sdk/build.tpl",
+        "//validation/data:sdk/module.tpl",
         "//validation/data:sdk/multiple.tpl",
         "//validation/data:sdk/consumer.c",
         "//validation/data:sdk/dependency.c",
@@ -249,8 +249,10 @@ py_test(
         "//validation/data:system_host_binary",
         "//validation/integration/linkage:checksum",
         "//validation/integration/linkage:fixture",
+        "@host_tools//:llvm/bin/" + OBJDUMP.split("/")[-1],
     ],
     deps = ["@rules_python//python/runfiles"],
+    env_inherit = ["PATH"],
 )
 
 # Independent output roots force fresh release and SDK actions. Debug builds

@@ -64,7 +64,7 @@ def _sdk(ctx):
     )
 
 linux_sdk = repository_rule(implementation = _sdk, attrs = {
-    "_build": attr.label(default = Label("//source/bazel:toolchains/linux/sdk.BUILD.tpl")),
+    "_build": attr.label(default = Label("//source/bazel:toolchains/linux/sdk.build.tpl")),
     "_packages": attr.label(default = Label("//source:sdk/linux.json")),
     "_normalize": attr.label(default = Label("//source:sdk/normalize.py")),
 })

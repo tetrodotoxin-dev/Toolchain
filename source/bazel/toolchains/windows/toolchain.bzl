@@ -57,7 +57,7 @@ def _sdk(ctx):
     ctx.template("BUILD.bazel", ctx.attr._build)
 
 windows_sdk = repository_rule(implementation = _sdk, attrs = {
-    "_build": attr.label(default = Label("//source/bazel:toolchains/windows/sdk.BUILD.tpl")),
+    "_build": attr.label(default = Label("//source/bazel:toolchains/windows/sdk.build.tpl")),
     "_packages": attr.label(default = Label("//source:sdk/windows.json")),
     "_normalize": attr.label(default = Label("//source:sdk/normalize.py")),
 }, environ = ["TETRO_WINDOWS_SDK"])

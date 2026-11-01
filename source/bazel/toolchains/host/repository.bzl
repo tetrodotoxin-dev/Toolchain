@@ -120,7 +120,7 @@ def _host(ctx):
 host_tools = repository_rule(
     implementation = _host,
     attrs = {
-        "_build": attr.label(default = Label("//source/bazel:toolchains/host/BUILD.tpl")),
+        "_build": attr.label(default = Label("//source/bazel:toolchains/host/build.tpl")),
         "_settings": attr.label(default = Label("//source/bazel:toolchains/host/settings.bzl.tpl")),
     },
     environ = ["BAZEL_LLVM", "BAZEL_SH", "PATH", "TEMP"],

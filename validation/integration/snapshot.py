@@ -52,6 +52,11 @@ if __name__ == "__main__":
         (root / "README.md").write_text("snapshot fixture\n")
         (root / "ignored.txt").write_text("ignored\n")
         subprocess.run(["git", "add", "."], cwd=root, check=True)
+        subprocess.run(
+            ["git", "update-index", "--chmod=+x", "source/tool.sh"],
+            cwd=root,
+            check=True,
+        )
         environment = os.environ.copy()
         environment.update({
             "GIT_AUTHOR_DATE": "2000-01-01T00:00:00+00:00",

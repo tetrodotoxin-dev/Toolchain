@@ -1,19 +1,19 @@
 # Copyright (c) 2023-present Matt Kaes and contributors
 
-"""Expose the downloaded SDK and its host executable directory."""
+"""Expose downloaded Emscripten and Node executables with their input files."""
 
-WasmSdkInfo = provider(fields = {"root": "Absolute host path to the downloaded SDK."})
+WasmToolsInfo = provider(fields = {"paths": "Tool names mapped to absolute host executable paths."})
 
 def _files(ctx):
     return [
         DefaultInfo(files = depset(ctx.files.srcs)),
-        WasmSdkInfo(root = ctx.attr.root),
+        WasmToolsInfo(paths = ctx.attr.paths),
     ]
 
-wasm_sdk_files = rule(
+wasm_tools = rule(
     implementation = _files,
     attrs = {
         "srcs": attr.label_list(allow_files = True),
-        "root": attr.string(mandatory = True),
+        "paths": attr.string_dict(mandatory = True),
     },
 )

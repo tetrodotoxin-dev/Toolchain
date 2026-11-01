@@ -264,7 +264,7 @@ _sdk_repository = repository_rule(implementation = _sdk, attrs = {
     "component_deps": attr.string_list_dict(),
     "implementation_deps": attr.string_list(),
     "linkage": attr.string(default = "shared", values = ["static", "shared"]),
-    "_template": attr.label(default = Label("//source/bazel:release/sdk.BUILD.tpl")),
+    "_template": attr.label(default = Label("//source/bazel:release/sdk.build.tpl")),
 })
 
 def _dependencies(ctx):

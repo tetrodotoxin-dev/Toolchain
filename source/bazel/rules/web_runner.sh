@@ -6,4 +6,4 @@ runfiles="$0.runfiles"
 if [[ ! -d "$runfiles" ]]; then
   runfiles="${RUNFILES_DIR:?Web validation runfiles are unavailable}"
 fi
-exec "$runfiles/_main/__NODE__" "$runfiles/_main/__PROGRAM__" "$@"
+exec "$runfiles/__NODE__" "$runfiles/__PROGRAM__" "$@"

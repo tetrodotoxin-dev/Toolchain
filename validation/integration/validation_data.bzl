@@ -21,13 +21,11 @@ def _validation_data_impl(ctx):
     if test_data in benchmarks:
         fail("Benchmarks contain test-only runtime data: " + test_data)
 
-    executable = ctx.actions.declare_file(ctx.label.name + ".sh")
-    ctx.actions.write(executable, "#!/bin/sh\nexit 0\n", is_executable = True)
-    return DefaultInfo(executable = executable)
+    return [AnalysisTestResultInfo(success = True, message = "Validation runtime artifacts are correctly separated.")]
 
 validation_data_test = rule(
     implementation = _validation_data_impl,
-    test = True,
+    analysis_test = True,
     attrs = {
         "benchmarks": attr.label(mandatory = True),
         "benchmark_data": attr.label(allow_single_file = True, mandatory = True),

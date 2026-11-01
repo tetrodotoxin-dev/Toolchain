@@ -6,7 +6,7 @@ load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 def candidate_snapshot():
     """Declare the test-only Toolchain archive consumed by sdk.py."""
-    template = "validation/data/sdk/toolchain.BUILD.tpl"
+    template = "validation/data/sdk/toolchain.build.tpl"
     pkg_tar(
         name = "_candidate_snapshot",
         srcs = [
@@ -16,7 +16,7 @@ def candidate_snapshot():
             "MODULE.bazel",
             "defs.bzl",
             "//source:sources",
-            "//validation/data:sdk/toolchain.BUILD.tpl",
+            "//validation/data:sdk/toolchain.build.tpl",
         ],
         extension = "tar.gz",
         mode = "0644",

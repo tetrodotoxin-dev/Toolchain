@@ -21,6 +21,11 @@ import tarfile
 import tempfile
 import zipfile
 
+WINDOWS = os.name == "nt"
+PLATFORM = "windows-x86_64-msvc" if WINDOWS else "linux-x86_64-v3"
+CONSUMER_LIBRARY = "consumer_library.dll" if WINDOWS else "libconsumer_library.so"
+EXECUTABLE = "consumer.exe" if WINDOWS else "consumer"
+
 
 def checksum(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -48,7 +53,9 @@ def verify_runtime(directory, archive_path, host):
                str(directory / metadata["library"])]
     missing_host = subprocess.run(command, cwd=directory, env=environment,
                                   capture_output=True, text=True)
-    assert missing_host.returncode != 0 and host.name in missing_host.stderr, missing_host.stderr
+    assert missing_host.returncode != 0, missing_host.stdout
+    if not WINDOWS:
+        assert host.name in missing_host.stderr, missing_host.stderr
     command.append(str(host))
     subprocess.run(command, cwd=directory, env=environment, check=True)
     for library in metadata["runtime"]:
@@ -58,7 +65,9 @@ def verify_runtime(directory, archive_path, host):
         try:
             result = subprocess.run(command, cwd=directory, env=environment,
                                     capture_output=True, text=True)
-            assert result.returncode != 0 and path.name in result.stderr, result.stderr
+            assert result.returncode != 0, f"Removed runtime dependency still loaded: {path.name}\n{result.stdout}"
+            if not WINDOWS:
+                assert path.name in result.stderr, result.stderr
         finally:
             missing.rename(path)
     print("Relocated shared SDK loaded; each missing dependency was rejected.", flush=True)
@@ -125,7 +134,7 @@ def verify_dependency_conflict(root, workspace, toolchain, directory, dependency
         variant: checksum(altered / name),
     }))
     conflict["dependency_pin"] = substitute((sources / "dependency.tpl").read_text(), conflict)
-    (workspace / "MODULE.bazel").write_text(substitute((sources / "MODULE.tpl").read_text(), conflict))
+    (workspace / "MODULE.bazel").write_text(substitute((sources / "module.tpl").read_text(), conflict))
     result = subprocess.run([
         "bazel", "--batch", "--output_base=" + str(root / "bazel"),
         "build", "//:component" if component else "//:consumer", "--distdir=" + str(altered),
@@ -188,7 +197,7 @@ def verify_missing_variant(root, workspace, toolchain, directory, sources, value
         key: digest for key, digest in pins.items()
         if key == "headers" or key.endswith("-static")
     }))
-    (workspace / "MODULE.bazel").write_text(substitute((sources / "MODULE.tpl").read_text(), missing))
+    (workspace / "MODULE.bazel").write_text(substitute((sources / "module.tpl").read_text(), missing))
     result = subprocess.run([
         "bazel", "--batch", "--output_base=" + str(root / "bazel"),
         "build", "//:consumer", "--distdir=" + str(toolchain.parent),
@@ -198,7 +207,7 @@ def verify_missing_variant(root, workspace, toolchain, directory, sources, value
     print("Missing linkage failed without selecting another variant.", flush=True)
 
 
-def verify(toolchain, checksum_manifest, dependency_manifest, host, mixed=False):
+def verify(toolchain, checksum_manifest, dependency_manifest, host, objdump, mixed=False):
     toolchain = Path(toolchain).resolve()
     directory = Path(checksum_manifest).resolve().parent
     dependency_directory = Path(dependency_manifest).resolve().parent
@@ -308,6 +317,12 @@ def verify(toolchain, checksum_manifest, dependency_manifest, host, mixed=False)
     # Candidate archives supply every SDK header, library and Bazel rule.
     with tempfile.TemporaryDirectory(prefix="toolchain-sdk-test-") as temporary:
         root = Path(temporary)
+        # Only the system-provided runtime belongs on the host search path.
+        # Other producer outputs must not mask missing packaged dependencies.
+        host_directory = root / "host-runtime"
+        host_directory.mkdir()
+        shutil.copyfile(host, host_directory / host.name)
+        host = host_directory / host.name
         workspace = root / "consumer"
         workspace.mkdir()
         for name, content in project_files.items():
@@ -315,8 +330,10 @@ def verify(toolchain, checksum_manifest, dependency_manifest, host, mixed=False)
         # Both fixture families share the separately packaged dependency SDK.
         # These are pinned local test artifacts served by Bazel's distdir.
         with (workspace / ".bazelrc").open("a") as options:
-            options.write("\ncommon --distdir=" + str(dependency_directory) + "\n")
-            options.write("test --test_env=LD_LIBRARY_PATH=" + str(host.parent) + "\n")
+            options.write("\ncommon --distdir=" + json.dumps(dependency_directory.as_posix()) + "\n")
+            runtime_variable = "PATH" if WINDOWS else "LD_LIBRARY_PATH"
+            os.environ[runtime_variable] = str(host.parent) + os.pathsep + os.environ.get(runtime_variable, "")
+            options.write("test --test_env=" + runtime_variable + "\n")
         (workspace / "source").mkdir()
         shutil.copyfile(sources / "source.tpl", workspace / "source/BUILD.bazel")
         shutil.copyfile(sources / "style.cpp", workspace / "source/style.cpp")
@@ -333,6 +350,7 @@ def verify(toolchain, checksum_manifest, dependency_manifest, host, mixed=False)
             dependency_linkage = ("shared" if linkage == "static" else "static") if mixed else linkage
             values = {
                 "version": version,
+                "platform": PLATFORM,
                 "toolchain_sha256": checksum(toolchain),
                 "linkage": linkage,
                 "dependency_linkage": dependency_linkage,
@@ -345,8 +363,9 @@ def verify(toolchain, checksum_manifest, dependency_manifest, host, mixed=False)
                 "dependencies": repr([] if linkage == "shared" and dependency_linkage == "static" else ["@dependency//:tetro_toolchain"]),
             }
             values["dependency_pin"] = substitute(values["dependency_pin"], values)
-            for output, template in [("MODULE.bazel", "MODULE.tpl"), ("BUILD", "BUILD.tpl")]:
+            for output, template in [("MODULE.bazel", "module.tpl"), ("BUILD", "build.tpl")]:
                 (workspace / output).write_text(substitute((sources / template).read_text(), values))
+            (workspace / "multiple/BUILD").write_text(substitute((sources / "multiple.tpl").read_text(), values))
             if linkage == "static" and not mixed:
                 selected = subprocess.check_output([
                     "bazel", "--batch", "--output_base=" + str(root / "bazel"),
@@ -382,14 +401,15 @@ def verify(toolchain, checksum_manifest, dependency_manifest, host, mixed=False)
             if not output_directory.exists():
                 output_directory = workspace / "bazel-bin"
             subprocess.run([sys.executable, str(Path(__file__).resolve()), "--load-consumer",
-                            str(output_directory / "libconsumer_library.so"), str(host)], check=True)
+                            str(output_directory / CONSUMER_LIBRARY), str(host)], check=True)
             if linkage == "static":
-                dynamic = subprocess.run(["readelf", "-d", str(output_directory / "consumer")], capture_output=True, text=True, check=True).stdout
-                assert ("libdependency_shared.so" in dynamic) == (dependency_linkage == "shared"), dynamic
+                dynamic = subprocess.run([str(objdump), "-p", str(output_directory / EXECUTABLE)], capture_output=True, text=True, check=True).stdout
+                dependency_name = "dependency_shared.dll" if WINDOWS else "libdependency_shared.so"
+                assert (dependency_name in dynamic) == (dependency_linkage == "shared"), dynamic
                 if dependency_linkage == "static":
-                    assert "libruntime.so" not in dynamic, dynamic
+                    assert ("runtime.dll" if WINDOWS else "libruntime.so") not in dynamic, dynamic
             assert not list(output_directory.glob("*-source.zip"))
-            original = directory / ("toolchain_test-" + version + "-linux-x86_64-v3-" + linkage + ".zip")
+            original = directory / ("toolchain_test-" + version + "-" + PLATFORM + "-" + linkage + ".zip")
             repacked = output_directory / original.name
             with zipfile.ZipFile(original) as before, zipfile.ZipFile(repacked) as after:
                 before_components = json.loads(before.read("sdk.json"))["components"]
@@ -417,7 +437,7 @@ def verify(toolchain, checksum_manifest, dependency_manifest, host, mixed=False)
                 assert sorted(checksum_bytes(before.read(item["library"])) for item in before_archives) == sorted(checksum_bytes(after.read(item["library"])) for item in after_archives)
             if linkage == "shared":
                 verify_runtime(root / "repacked", repacked, host)
-            for platform in ["windows_x64", "wasm32"]:
+            for platform in ["linux_x86_64", "windows_x64", "wasm32"]:
                 subprocess.run([
                     "bazel", "--batch", "--output_base=" + str(root / "bazel"),
                     "build", "//:consumer", "//:component", "//:alternate/consumer", "//:consumer_library_shared", "--platforms=@tetro_toolchain//:" + platform,
@@ -431,7 +451,7 @@ def verify(toolchain, checksum_manifest, dependency_manifest, host, mixed=False)
                 # The complete SDK can link using only its bundled dependencies.
                 # Component header imports remain separately declared.
                 standalone = dict(values, dependencies="[]")
-                (workspace / "MODULE.bazel").write_text(substitute((sources / "MODULE.tpl").read_text(), standalone))
+                (workspace / "MODULE.bazel").write_text(substitute((sources / "module.tpl").read_text(), standalone))
                 subprocess.run([
                     "bazel", "--batch", "--output_base=" + str(root / "bazel"),
                     "test", "//:consumer", "--nocache_test_results",
@@ -448,7 +468,7 @@ def verify(toolchain, checksum_manifest, dependency_manifest, host, mixed=False)
                                        sources, values, pins["tetro_toolchain"], component=True)
         else:
             verify_missing_variant(root, workspace, toolchain, directory, sources, values, pins["toolchain_test"])
-        metadata = verify_runtime(root / "relocated", directory / ("toolchain_test-" + version + "-linux-x86_64-v3-shared.zip"), host)
+        metadata = verify_runtime(root / "relocated", directory / ("toolchain_test-" + version + "-" + PLATFORM + "-shared.zip"), host)
         # The release manifest owns every relocated path, so fixture target
         # names can evolve independently from this collision check.
         if metadata["runtime"]:
@@ -460,6 +480,9 @@ def verify(toolchain, checksum_manifest, dependency_manifest, host, mixed=False)
 if __name__ == "__main__":
     if sys.argv[1] in ["--load", "--load-consumer"]:
         import ctypes
+        if WINDOWS:
+            # The fixture resolves its plugin by name through LoadLibraryW.
+            os.environ["PATH"] = str(Path(sys.argv[2]).parent) + os.pathsep + os.environ.get("PATH", "")
         if len(sys.argv) > 3:
             ctypes.CDLL(sys.argv[3], mode=ctypes.RTLD_GLOBAL)
         library = ctypes.CDLL(sys.argv[2])
@@ -471,7 +494,7 @@ if __name__ == "__main__":
     else:
         from python.runfiles import runfiles
         resolver = runfiles.Create()
-        toolchain, matching, mixed, host = [Path(resolver.Rlocation(argument)).resolve() for argument in sys.argv[1:]]
+        toolchain, matching, mixed, host, objdump = [Path(resolver.Rlocation(argument)).resolve() for argument in sys.argv[1:]]
         repository = Path(__file__).resolve().parents[2]
         with tempfile.TemporaryDirectory(prefix="toolchain-private-header-") as temporary:
             verify_private_header_boundary(
@@ -482,5 +505,8 @@ if __name__ == "__main__":
         # and editor installation, including when this test uses `bazel run`.
         os.environ.pop("BUILD_WORKSPACE_DIRECTORY", None)
         os.environ.pop("BUILD_WORKING_DIRECTORY", None)
-        verify(toolchain, matching, matching, host)
-        verify(toolchain, mixed, matching, host, mixed=True)
+        for key in list(os.environ):
+            if key.startswith("RUNFILES_"):
+                del os.environ[key]
+        verify(toolchain, matching, matching, host, objdump)
+        verify(toolchain, mixed, matching, host, objdump, mixed=True)

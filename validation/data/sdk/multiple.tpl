@@ -10,19 +10,19 @@ package(
     name = "cpu_sdk",
     module = "auxiliary_cpu",
     static = "//source:api",
-    platforms = ["linux-x86_64-v3"],
+    platforms = ["{platform}"],
 )
 
 package(
     name = "primary_sdk",
     module = "consumer",
     static = "//source:toolchain_test",
-    platforms = ["linux-x86_64-v3"],
+    platforms = ["{platform}"],
 )
 
 package(
     name = "accelerator_sdk",
     module = "auxiliary_accelerator",
     static = "//source:public",
-    platforms = ["linux-x86_64-v3"],
+    platforms = ["{platform}"],
 )

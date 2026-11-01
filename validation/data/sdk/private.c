@@ -3,8 +3,9 @@
 
 #include "toolchain/toolchain.h"
 
-// The linkage test looks for this hidden symbol in the shared library and its
-// consumer to detect a private archive linked into both.
+// The alwayslink archive contributes this helper to the shared library.
+// The consumer defines its own helper with this name, so leaking the archive
+// into that executable produces a duplicate definition.
 C_LINKAGE HIDDEN S32 toolchain_private_entry(S32 value) {
   return value;
 }
