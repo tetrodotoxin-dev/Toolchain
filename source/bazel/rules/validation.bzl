@@ -16,8 +16,8 @@ _FEATURES = "//command_line_option:features"
 
 # Runnable Web targets compile their private binary with Emscripten's Node
 # runtime while ordinary Web binaries retain the hosted SDK platform. This
-# target transition lets `bazel run :tests --config=web` select an executable
-# program without changing `:tests_binary` or SDK compilation.
+# target transition lets `bazel run :tests_web` select an executable program
+# while native programs and SDK compilation keep their own toolchains.
 def _wasm_runner(settings, attr):
     features = [feature for feature in settings[_FEATURES] if feature != "wasm_threads"]
     if attr.threads:
@@ -91,10 +91,10 @@ def _sources(directory):
     return sources
 
 def _program(name, runtime, deps, web_deps, web_threads, data):
-    """Declare matching native and Web programs and select their public runner."""
+    """Declare native binaries and separate Node runners for Web validation."""
     sources = _sources(name)
     cc_binary(
-        name = name + "_binary",
+        name = name,
         testonly = True,
         srcs = sources,
         deps = deps + [runtime],
@@ -108,23 +108,13 @@ def _program(name, runtime, deps, web_deps, web_threads, data):
         deps = web_deps + [runtime],
         data = data,
     )
-    binary = name + "_binary"
-    runner = name + "_web_runner"
-    node = Label("@emscripten_node//:node")
     _web_runner(
-        name = runner,
+        name = name + "_web",
         tags = ["manual"],
         testonly = True,
         binary = ":" + name + "_web_binary",
-        node = node,
+        node = Label("@emscripten_node//:node"),
         threads = web_threads,
-    )
-    native.alias(
-        name = name,
-        actual = select({
-            Label("@tetro_toolchain//:web"): ":" + runner,
-            "//conditions:default": ":" + binary,
-        }),
     )
 
 def validation(

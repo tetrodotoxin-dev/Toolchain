@@ -1,7 +1,6 @@
 # Copyright (c) 2023-present Matt Kaes and contributors
 
-load("@tetro_toolchain//source/bazel:toolchains/wasm/sdk.bzl", "wasm_tools")
-load("@tetro_toolchain//source/bazel:toolchains/wasm/toolchain.bzl", "wasm_runner_cc_toolchain_config")
+load("@tetro_toolchain//source/bazel:toolchains/cc.bzl", "wasm_runner_cc_toolchain_config")
 load("@rules_cc//cc/toolchains:cc_toolchain.bzl", "cc_toolchain")
 
 package(default_visibility = ["//visibility:public"])
@@ -10,9 +9,8 @@ exports_files([
     "emscripten/em++",
 ])
 
-wasm_tools(
+filegroup(
     name = "files",
-    tools = __TOOLS__,
     srcs = glob(["**"]),
 )
 
@@ -20,6 +18,7 @@ wasm_runner_cc_toolchain_config(
     name = "config",
     node = "@emscripten_node//:node",
     sdk = ":files",
+    tools = __TOOLS__,
     tags = ["manual"],
 )
 

@@ -1,9 +1,9 @@
 load("@host_tools//:settings.bzl", "CXX", "OBJDUMP")
-load("@rules_cc//cc:cc_test.bzl", "cc_test")
-load("@rules_python//python:py_test.bzl", "py_test")
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("//source/bazel:package.bzl", "package_release")
 load(":components.bzl", "component_headers")
-load(":validation_data.bzl", "validation_data_test")
+load(":runner.bzl", "check", "runner")
+load(":validation_data.bzl", "validation_data")
 
 package(default_visibility = ["//:__pkg__"])
 
@@ -17,17 +17,17 @@ filegroup(
     srcs = ["components.c"],
 )
 
-validation_data_test(
+validation_data(
     name = "validation_data",
+    testonly = True,
     benchmark_data = ":validation_benchmark_data",
-    benchmarks = "//:benchmarks_binary",
+    benchmarks = "//:benchmarks",
     test_data = ":validation_test_data",
-    tests = "//:tests_binary",
+    tests = "//:tests",
 )
 
-py_test(
+COMMENT_QUALITY = check(
     name = "comment_quality",
-    size = "small",
     srcs = ["comment_quality.py"],
     args = [
         "$(rlocationpath //source/bazel:rules/comment_quality.py)",
@@ -40,9 +40,8 @@ py_test(
     deps = ["@rules_python//python/runfiles"],
 )
 
-py_test(
+COMPILE_ALLOCATION = check(
     name = "compile_allocation",
-    size = "small",
     srcs = ["compile_allocation.py"],
     args = [
         "$(rlocationpath @host_tools//:llvm/bin/" + CXX.split("/")[-1] + ")",
@@ -56,9 +55,8 @@ py_test(
     deps = ["@rules_python//python/runfiles"],
 )
 
-py_test(
+LIFETIME = check(
     name = "lifetime",
-    size = "small",
     srcs = ["lifetime.py"],
     args = [
         "$(rlocationpath @host_tools//:llvm/bin/" + CXX.split("/")[-1] + ")",
@@ -74,9 +72,8 @@ py_test(
 
 # The reporting fixture exercises every result path through the public runner.
 # Its process status and output preserve the contract seen by repository tests.
-py_test(
+HARNESS = check(
     name = "harness",
-    size = "small",
     srcs = ["harness.py"],
     args = [
         "$(rlocationpath //:tests)",
@@ -97,14 +94,12 @@ py_test(
     deps = ["@rules_python//python/runfiles"],
 )
 
-py_test(
+FORMAT = check(
     name = "format",
-    size = "small",
     srcs = ["format.py"],
     args = ["$(rlocationpath //:format)"],
     data = ["//:format"],
     deps = ["@rules_python//python/runfiles"],
-    env_inherit = ["PATH"],
 )
 
 # These native leaves prove the component graph and both library linkages in the
@@ -120,16 +115,18 @@ component_headers(
     excluded = ["//validation/data:components/unrelated/value.h"],
 )
 
-cc_test(
+cc_binary(
     name = "components",
-    size = "small",
+    testonly = True,
+    linkstatic = False,
     srcs = ["components.c"],
     deps = [":component_headers"],
 )
 
-cc_test(
+cc_binary(
     name = "static",
-    size = "small",
+    testonly = True,
+    linkstatic = False,
     srcs = ["library.c"],
     deps = [
         "//validation/data:static",
@@ -137,9 +134,10 @@ cc_test(
     ],
 )
 
-cc_test(
+cc_binary(
     name = "shared",
-    size = "small",
+    testonly = True,
+    linkstatic = False,
     srcs = ["library.c"],
     deps = [
         "//validation/data:shared",
@@ -147,9 +145,10 @@ cc_test(
     ],
 )
 
-cc_test(
+cc_binary(
     name = "symbols",
-    size = "small",
+    testonly = True,
+    linkstatic = False,
     srcs = [
         "library.c",
         "symbols.c",
@@ -160,9 +159,8 @@ cc_test(
     ],
 )
 
-py_test(
+SNAPSHOT = check(
     name = "snapshot",
-    size = "small",
     srcs = ["snapshot.py"],
     args = [
         "$(rlocationpath //:snapshot)",
@@ -170,7 +168,6 @@ py_test(
     ],
     data = ["//:snapshot"],
     deps = ["@rules_python//python/runfiles"],
-    env_inherit = ["PATH"],
 )
 
 # The primary fixture publishes the component surface and the runtime graph
@@ -217,11 +214,10 @@ filegroup(
 # This test creates a fresh Bazel workspace and consumes the candidate source
 # and binary archives through their public module extension. The complete
 # platform matrix is explicit, including through the integration suite.
-[
-    py_test(
+SDK = [
+    check(
         name = "sdk_" + case,
         tags = ["manual"],
-        size = "large",
         main = "sdk.py",
         srcs = ["sdk.py"],
         args = [
@@ -255,43 +251,38 @@ filegroup(
             "@host_tools//:llvm/bin/" + OBJDUMP.split("/")[-1],
         ],
         deps = ["@rules_python//python/runfiles"],
-        env_inherit = ["PATH", "HOME", "USERPROFILE", "XDG_CACHE_HOME"],
     )
     for case in ["matching", "mixed"]
 ]
 
-test_suite(
+runner(
     name = "sdk",
-    tags = ["manual"],
-    tests = [":sdk_matching", ":sdk_mixed"],
+    checks = SDK,
 )
 
 # Independent output roots force fresh release and SDK actions. Debug builds
 # retain their source records without imposing byte equality on those records.
-py_test(
+REPRODUCIBILITY = check(
     name = "reproducibility",
-    size = "large",
     srcs = ["reproducibility.py"],
     args = ["$(rlocationpath //:_candidate_snapshot)"],
     data = ["//:_candidate_snapshot"],
     deps = ["@rules_python//python/runfiles"],
-    env_inherit = ["PATH", "HOME", "USERPROFILE", "XDG_CACHE_HOME"],
     tags = ["manual"],
 )
 
 # Web runners build the standalone platform explicitly, even on a native host.
-py_test(
+WEB = check(
     name = "web",
-    size = "medium",
     srcs = ["web.py"],
     args = [
-        "$(rlocationpath //:tests_web_runner)",
-        "$(rlocationpath //:benchmarks_web_runner)",
+        "$(rlocationpath //:tests_web)",
+        "$(rlocationpath //:benchmarks_web)",
         "$(rlocationpath @emscripten_node//:node)",
     ],
     data = [
-        "//:tests_web_runner",
-        "//:benchmarks_web_runner",
+        "//:tests_web",
+        "//:benchmarks_web",
         "@emscripten_node//:node",
     ],
     deps = ["@rules_python//python/runfiles"],
@@ -300,22 +291,9 @@ py_test(
 
 # This target is the complete process, linkage and packaging boundary for a
 # Toolchain checkout. Its leaves stay individually runnable during diagnosis.
-test_suite(
+runner(
     name = "integration",
-    tags = ["manual"],
-    tests = [
-        ":comment_quality",
-        ":compile_allocation",
-        ":components",
-        ":format",
-        ":harness",
-        ":reproducibility",
-        ":sdk",
-        ":shared",
-        ":snapshot",
-        ":static",
-        ":symbols",
-        ":validation_data",
-        ":web",
-    ],
+    checks = [COMMENT_QUALITY, COMPILE_ALLOCATION, FORMAT, HARNESS, REPRODUCIBILITY, SNAPSHOT, WEB] + SDK,
+    binaries = [":components", ":shared", ":static", ":symbols"],
+    data = [":validation_data"],
 )

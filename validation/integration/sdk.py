@@ -178,6 +178,14 @@ def verify_vscode(root, workspace, toolchain, directory):
     )
     formatter = Path(settings["C_Cpp.clang_format_path"])
     assert formatter.is_file()
+    tasks = json.loads((generated / "tasks.json").read_text())["tasks"]
+    build = next(task for task in tasks if task["label"] == "[Debug] Build All")
+    subprocess.run([
+        "bazel", "--output_base=" + str(root / "bazel"), *build["args"],
+    ], cwd=workspace, check=True)
+    for launch in json.loads((generated / "launch.json").read_text())["configurations"]:
+        program = launch.get("windows", {}).get("program", launch["program"]) if WINDOWS else launch["program"]
+        assert Path(program.replace("${workspaceFolder}", str(workspace))).is_file(), program
     result = subprocess.run(
         [
             str(formatter),
@@ -333,14 +341,16 @@ def verify(toolchain, checksum_manifest, dependency_manifest, host, objdump, mix
             check=True,
         )
         for name, content in project_files.items():
+            if name == ".bazelrc":
+                content = b"\n".join(line for line in content.splitlines() if not line.startswith(b"build")) + b"\n"
             (workspace / name).write_bytes(content)
         # Both fixture families share the separately packaged dependency SDK.
         # These are pinned local test artifacts served by Bazel's distdir.
         with (workspace / ".bazelrc").open("a") as options:
-            options.write("\ncommon --distdir=" + json.dumps(dependency_directory.as_posix()) + "\n")
+            for archive_directory in [dependency_directory, toolchain.parent, directory]:
+                options.write("\ncommon --distdir=" + json.dumps(archive_directory.as_posix()) + "\n")
             runtime_variable = "PATH" if WINDOWS else "LD_LIBRARY_PATH"
             os.environ[runtime_variable] = str(host.parent) + os.pathsep + os.environ.get(runtime_variable, "")
-            options.write("test --test_env=" + runtime_variable + "\n")
         (workspace / "source").mkdir()
         shutil.copyfile(sources / "source.tpl", workspace / "source/BUILD.bazel")
         shutil.copyfile(sources / "style.cpp", workspace / "source/style.cpp")
@@ -382,31 +392,51 @@ def verify(toolchain, checksum_manifest, dependency_manifest, host, objdump, mix
                 ], cwd=workspace, text=True).strip()
                 assert selected == "//source:toolchain_test", selected
                 print("Multiple SDK packages preserve the primary validation runtime.", flush=True)
-                for action in ["--all", "--check"]:
-                    subprocess.run([
-                        "bazel", "--output_base=" + str(root / "bazel"),
-                        "run", "//:format", "--distdir=" + str(toolchain.parent),
-                        "--", action,
-                    ], cwd=workspace, check=True)
+                release = [
+                    "bazel", "--output_base=" + str(root / "bazel"),
+                    "run", "//:repack", "--distdir=" + str(toolchain.parent),
+                    "--distdir=" + str(directory),
+                ]
+                subprocess.run(release, cwd=workspace, check=True)
                 assert not (workspace / ".clang-format").exists()
-                print("Candidate formatter passed in the external consumer.", flush=True)
+                print("Candidate SDK release passed formatting, host tests and packaging.", flush=True)
+                test = workspace / "validation/tests/web.cpp"
+                valid_test = test.read_text()
+                warning = workspace / "source/release_gate.cpp"
+                for path, content, diagnostic in [
+                    (warning, "// The buffer stores each value.\nS32 value;\n", "comment quality Warn"),
+                    (test, valid_test.replace("U32(42)", "U32(43)"), "Failed tests:"),
+                ]:
+                    try:
+                        path.write_text(content)
+                        blocked = subprocess.run(release, cwd=workspace, capture_output=True, text=True)
+                        assert blocked.returncode != 0, blocked.stdout + blocked.stderr
+                        assert diagnostic in blocked.stdout + blocked.stderr, blocked.stdout + blocked.stderr
+                    finally:
+                        if path == test:
+                            test.write_text(valid_test)
+                        else:
+                            path.unlink()
+                print("Formatting warnings and failing host tests both block SDK release.", flush=True)
                 verify_vscode(root, workspace, toolchain, directory)
                 subprocess.run([
                     "bazel", "--output_base=" + str(root / "bazel"),
-                    "run", "//:tests", "--config=web",
+                    "run", "//:tests_web",
                     "--distdir=" + str(toolchain.parent),
                     "--distdir=" + str(directory),
                 ], cwd=workspace, check=True)
                 print("Candidate Web validation runner passed.", flush=True)
             subprocess.run([
                 "bazel", "--output_base=" + str(root / "bazel"),
-                "test", "//:consumer", "//:component", "//:alternate/consumer", "//:consumer_library_shared", "//:repack", "--nocache_test_results",
+                "build", "//:consumer", "//:component", "//:alternate/consumer", "//:consumer_library_shared", "//:_repack_archives",
                 "--distdir=" + str(toolchain.parent), "--distdir=" + str(directory),
             ], cwd=workspace, check=True)
-            print(linkage + " SDK consumer passed", flush=True)
             output_directory = workspace / ".bin/bin"
             if not output_directory.exists():
                 output_directory = workspace / "bazel-bin"
+            for executable in [EXECUTABLE, "component.exe" if WINDOWS else "component", "alternate/" + EXECUTABLE]:
+                subprocess.run([str(output_directory / executable)], cwd=workspace, check=True)
+            print(linkage + " SDK consumer passed", flush=True)
             subprocess.run([sys.executable, str(Path(__file__).resolve()), "--load-consumer",
                             str(output_directory / CONSUMER_LIBRARY), str(host)], check=True)
             if linkage == "static":
@@ -461,9 +491,10 @@ def verify(toolchain, checksum_manifest, dependency_manifest, host, objdump, mix
                 (workspace / "MODULE.bazel").write_text(substitute((sources / "module.tpl").read_text(), standalone))
                 subprocess.run([
                     "bazel", "--output_base=" + str(root / "bazel"),
-                    "test", "//:consumer", "--nocache_test_results",
+                    "build", "//:consumer",
                     "--distdir=" + str(toolchain.parent), "--distdir=" + str(directory),
                 ], cwd=workspace, check=True)
+                subprocess.run([str(output_directory / EXECUTABLE)], cwd=workspace, check=True)
                 print("Static SDK linked using bundled dependencies.", flush=True)
                 verify_dependency_conflict(root, workspace, toolchain, directory, dependency_directory,
                                            sources, values, pins["tetro_toolchain"])

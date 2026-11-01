@@ -9,7 +9,7 @@
       "args": [
         "build",
         "...",
-        "--config=debug"
+        "-c", "dbg", "--symlink_prefix=.bin/"
       ],
       "group": {"kind": "build", "isDefault": true},
       "problemMatcher": "$gcc"
@@ -21,7 +21,7 @@
       "args": [
         "build",
         "...",
-        "--config=release"
+        "-c", "opt", "--strip=always", "--symlink_prefix=.bin/"
       ],
       "group": "build",
       "problemMatcher": "$gcc"
@@ -34,10 +34,10 @@
       "problemMatcher": "$gcc"
     },
     {
-      "label": "[Check] Source Style",
+      "label": "[Format] Sources",
       "type": "process",
       "command": "bazel",
-      "args": ["run", "//:format", "--", "--check"],
+      "args": ["run", "//:format"],
       "group": "test",
       "problemMatcher": "$gcc"
     },
@@ -45,7 +45,7 @@
       "label": "[Debug] Tests",
       "type": "process",
       "command": "bazel",
-      "args": ["run", "//:tests", "--config=debug"],
+      "args": ["run", "//:tests", "-c", "dbg"],
       "group": "test",
       "problemMatcher": "$gcc"
     },
@@ -53,7 +53,7 @@
       "label": "[Release] Tests",
       "type": "process",
       "command": "bazel",
-      "args": ["run", "//:tests", "--config=release"],
+      "args": ["run", "//:tests", "-c", "opt"],
       "group": "test",
       "problemMatcher": "$gcc"
     },
@@ -61,7 +61,7 @@
       "label": "[Release] Integration",
       "type": "process",
       "command": "bazel",
-      "args": ["test", "//validation/integration:integration", "--config=release"],
+      "args": ["run", "//validation/integration:integration", "-c", "opt"],
       "group": "test",
       "problemMatcher": "$gcc"
     },
@@ -69,14 +69,14 @@
       "label": "[Debug] Benchmarks",
       "type": "process",
       "command": "bazel",
-      "args": ["run", "//:benchmarks", "--config=debug"],
+      "args": ["run", "//:benchmarks", "-c", "dbg"],
       "problemMatcher": "$gcc"
     },
     {
       "label": "[Release] Benchmarks",
       "type": "process",
       "command": "bazel",
-      "args": ["run", "//:benchmarks", "--config=release"],
+      "args": ["run", "//:benchmarks", "-c", "opt"],
       "problemMatcher": "$gcc"
     }
   ]

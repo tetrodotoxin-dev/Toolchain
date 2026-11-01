@@ -169,16 +169,11 @@ def main():
         help="explicitly format every source file",
     )
     parser.add_argument(
-        "--check",
-        action="store_true",
-        help="verify formatting and source policy",
-    )
-    parser.add_argument(
         "--export-configuration",
         metavar="PATH",
         help="write the generated clang-format configuration inside the workspace",
     )
-    parser.add_argument("files", nargs="*", help="exact source files to format or check")
+    parser.add_argument("files", nargs="*", help="exact source files to format")
     arguments = parser.parse_args()
 
     workspace = os.environ.get("BUILD_WORKSPACE_DIRECTORY")
@@ -200,7 +195,7 @@ def main():
     except (OSError, SyntaxError, ValueError) as error:
         parser.error(str(error))
     if arguments.export_configuration:
-        if arguments.all or arguments.check or arguments.files:
+        if arguments.all or arguments.files:
             parser.error("--export-configuration selects one generated output")
         destination = (root / arguments.export_configuration).resolve()
         if not destination.is_relative_to(root):
@@ -213,7 +208,7 @@ def main():
             + "."
         )
         return 0
-    if arguments.all and (arguments.check or arguments.files):
+    if arguments.all and arguments.files:
         parser.error("--all selects the complete mutable source set")
     if arguments.all or not arguments.files:
         files = discover(root)
@@ -230,9 +225,8 @@ def main():
     comment_verdicts = []
     parsed = {}
 
-    if not arguments.check:
-        for path in files:
-            canonicalize_source(path, root, local_project)
+    for path in files:
+        canonicalize_source(path, root, local_project)
 
     with tempfile.TemporaryDirectory(prefix="toolchain-format-") as temporary:
         generated = Path(temporary) / ".clang-format"
@@ -244,13 +238,12 @@ def main():
             "--fallback-style=none",
             "--style=file:" + str(generated),
         ]
-        command.extend(["--dry-run"] if arguments.check else ["-i"])
+        command.append("-i")
         command.extend(str(path) for path in files)
         formatted = subprocess.run(command).returncode
 
-    if not arguments.check:
-        for path in files:
-            format_source(path)
+    for path in files:
+        format_source(path)
 
     for path in files:
         source = path.read_text()
@@ -284,10 +277,9 @@ def main():
     stream = sys.stderr if warnings or errors else sys.stdout
     print("\n".join(report), file=stream, flush=True)
 
-    if formatted or errors:
+    if formatted or warnings or errors:
         return 1
-    action = "Checked" if arguments.check else "Formatted"
-    print(f"{action} {len(files)} source files.")
+    print(f"Formatted {len(files)} source files.")
     return 0
 
 

@@ -152,7 +152,7 @@ archive_override(module_name = "tetro_toolchain", urls = [{json.dumps(archive.as
     command = [bazel, "--nosystem_rc", "--nohome_rc", "--output_base=" + str(base)]
     try:
         for targets in [
-            ["//:sdk"],
+            ["//:_sdk_archives"],
             ["//source:static", "//source:shared_shared", "--platforms=@tetro_toolchain//:windows_x64"],
             ["//source:static", "//source:shared_shared", "--platforms=@tetro_toolchain//:linux_x86_64"],
         ]:

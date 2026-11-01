@@ -123,7 +123,6 @@ def _node(ctx):
     )
     ctx.template("BUILD.bazel", ctx.attr._build, substitutions = {
         "__NODE__": pin.node,
-        "__TOOLS__": json.encode({pin.node: "node"}),
     })
     return ctx.repo_metadata(reproducible = True)
 

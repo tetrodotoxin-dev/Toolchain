@@ -73,14 +73,6 @@ if __name__ == "__main__":
             b'#include "valid.hpp"\r\n'
             b"using namespace Example::Module;\r\nint main(){return 0;}\r\n"
         )
-        result = run(
-            formatter,
-            root,
-            "--check",
-            "source/valid.cpp",
-            status=1,
-        )
-        assert "noncanonical numeric type 'int'" in result.stderr
         result = run(formatter, root, "source/valid.cpp")
         assert result.stdout == (
             comment_status(0, 0, 0, 0, 0)
@@ -94,11 +86,6 @@ if __name__ == "__main__":
             "}\n"
         ), valid.read_text()
         assert b"\r" not in valid.read_bytes()
-        result = run(formatter, root, "--check", "source/valid.cpp")
-        assert result.stdout == (
-            comment_status(0, 0, 0, 0, 0)
-            + "Checked 1 source files.\n"
-        ), result.stdout
 
         includes = source / "includes.cpp"
         includes.write_text(
@@ -189,18 +176,10 @@ if __name__ == "__main__":
         paired.with_suffix(".cpp").write_text(
             "#include <stddef.h>\n#include \"example/module/paired.hpp\"\n"
         )
-        result = run(
-            formatter,
-            root,
-            "--check",
-            "source/example/module/paired.cpp",
-            status=1,
-        )
-        assert "matching header" in result.stderr
-        paired.with_suffix(".cpp").write_text(
-            '#include "example/module/paired.hpp"\n#include <stddef.h>\n'
-        )
         run(formatter, root, "source/example/module/paired.cpp")
+        assert paired.with_suffix(".cpp").read_text().startswith(
+            '#include "example/module/paired.hpp"\n'
+        )
 
         image = source / "example" / "image"
         image.mkdir()
@@ -343,7 +322,6 @@ if __name__ == "__main__":
         run(
             formatter,
             root,
-            "--check",
             "source/implementation/platform/win32/window.hpp",
         )
 
@@ -458,7 +436,6 @@ if __name__ == "__main__":
             "}\n"
         )
         run(formatter, root, "source/indexed_statements.cpp")
-        run(formatter, root, "--check", "source/indexed_statements.cpp")
 
         preprocessor = source / "preprocessor.cpp"
         preprocessor.write_text(
@@ -501,7 +478,6 @@ if __name__ == "__main__":
         result = run(
             formatter,
             root,
-            "--check",
             "source/first_type.cpp",
             status=1,
         )
@@ -531,10 +507,10 @@ if __name__ == "__main__":
             "// The buffer stores each value.\n"
             "S32 value;\n"
         )
-        result = run(formatter, root, "source/warned_comment.cpp")
+        result = run(formatter, root, "source/warned_comment.cpp", status=1)
         assert "comment quality Warn" in result.stderr
         assert comment_status(1, 0, 1, 0, 45) in result.stderr
-        assert result.stdout == "Formatted 1 source files.\n", result.stdout
+        assert not result.stdout, result.stdout
         warned_comment.unlink()
 
         rejected_comment = source / "rejected_comment.cpp"
@@ -572,13 +548,13 @@ if __name__ == "__main__":
         accepted_comment = source / "accepted_comment.cpp"
         accepted_comment.write_text(
             "// Copyright (c) 2023-present Matt Kaes and contributors\n"
+            "\n"
             "// A missing value has no endpoint and cannot provide storage without a\n"
             "// candidate. Compare bytes rather than addresses instead of relying on\n"
             "// pointer identity because an address is not a value identity.\n"
             "S32 value;\n"
         )
         run(formatter, root, "source/accepted_comment.cpp")
-        run(formatter, root, "--check", "source/accepted_comment.cpp")
 
         invalid_declarations = {
             "const_cast.cpp": (
@@ -907,7 +883,6 @@ if __name__ == "__main__":
             "};\n"
         )
         run(formatter, root, "source/explained_explicits.hpp")
-        run(formatter, root, "--check", "source/explained_explicits.hpp")
 
         deleted_operation = source / "deleted_operation.hpp"
         deleted_operation.write_text(
@@ -989,7 +964,6 @@ if __name__ == "__main__":
         )
         retention.write_text(retention_source)
         run(formatter, ttx_root, retention_path)
-        run(formatter, ttx_root, "--check", retention_path)
 
         # Approval belongs to both the TTX project and this complete C path.
         for other_path in [
@@ -1060,6 +1034,7 @@ if __name__ == "__main__":
             "#pragma once\n\n"
             "namespace Toolchain::Memory {\n\n"
             "// Lifetime begins values in storage supplied by the caller.\n"
+            "// Placement new uses that storage without allocating another block.\n"
             "class Lifetime {\n"
             " public:\n"
             "  static constexpr auto construct(void* allocation) -> S32* {\n"
@@ -1082,6 +1057,7 @@ if __name__ == "__main__":
             "#pragma once\n\n"
             "namespace Toolchain::Memory {\n\n"
             "// Lifetime begins values in storage supplied by the caller.\n"
+            "// Placement new uses that storage without allocating another block.\n"
             "class Lifetime {\n"
             " public:\n"
             "  static constexpr auto construct(void* address) -> S32* {\n"
@@ -1114,17 +1090,7 @@ if __name__ == "__main__":
             )
             + "std::uint64_t qualified_u64 = 0;\n"
         )
-        result = run(
-            formatter,
-            root,
-            "--check",
-            "source/fixed_alias.cpp",
-            status=1,
-        )
-        for alias in fixed_aliases:
-            assert f"noncanonical numeric type '{alias}'" in result.stderr
         run(formatter, root, "source/fixed_alias.cpp")
-        run(formatter, root, "--check", "source/fixed_alias.cpp")
         canonical = fixed_alias.read_text()
         for alias, replacement in fixed_aliases.items():
             assert alias not in canonical
@@ -1141,16 +1107,7 @@ if __name__ == "__main__":
             "// lexical policy masks comments.\n"
             "S32 value = 0;\n"
         )
-        result = run(
-            formatter,
-            root,
-            "--check",
-            "source/standard_headers.cpp",
-            status=1,
-        )
-        assert result.stderr.count("standard integer header") == 2
         run(formatter, root, "source/standard_headers.cpp")
-        run(formatter, root, "--check", "source/standard_headers.cpp")
         canonical = standard_headers.read_text()
         assert '#include "inttypes.h"' not in canonical
         assert canonical.count("#include <stdint.h>") == 1
@@ -1288,10 +1245,7 @@ if __name__ == "__main__":
         for name, content in repairable_paragraphs.items():
             path = source / name
             path.write_text(content)
-            result = run(formatter, root, "--check", "source/" + name, status=1)
-            assert "lexical paragraphs" in result.stderr
             run(formatter, root, "source/" + name)
-            run(formatter, root, "--check", "source/" + name)
             assert "\n\n" in path.read_text()
             path.unlink()
 
@@ -1325,14 +1279,6 @@ if __name__ == "__main__":
             "  return second;\n"
             "}\n"
         )
-        result = run(
-            formatter,
-            root,
-            "--check",
-            "source/independent_blocks.cpp",
-            status=1,
-        )
-        assert "lexical paragraphs" in result.stderr
         run(formatter, root, "source/independent_blocks.cpp")
         formatted_blocks = independent_blocks.read_text()
         assert "  }\n\n  for" in formatted_blocks
@@ -1343,7 +1289,6 @@ if __name__ == "__main__":
         assert "  } while (second);\n\n  return" in formatted_blocks
         run(formatter, root, "source/independent_blocks.cpp")
         assert independent_blocks.read_text() == formatted_blocks
-        run(formatter, root, "--check", "source/independent_blocks.cpp")
 
         attached_else = source / "attached_else.cpp"
         attached_else.write_text(
@@ -1361,7 +1306,6 @@ if __name__ == "__main__":
         formatted_else = attached_else.read_text()
         assert "  } else if" in formatted_else
         assert "  } else {" in formatted_else
-        run(formatter, root, "--check", "source/attached_else.cpp")
 
         body_boundaries = source / "body_boundaries.hpp"
         body_boundaries.write_text(
@@ -1387,14 +1331,6 @@ if __name__ == "__main__":
             "  S32 value;\n"
             "};\n"
         )
-        result = run(
-            formatter,
-            root,
-            "--check",
-            "source/body_boundaries.hpp",
-            status=1,
-        )
-        assert "multiline braced entities" in result.stderr
         run(formatter, root, "source/body_boundaries.hpp")
         formatted_boundaries = body_boundaries.read_text()
         assert b"\r" not in body_boundaries.read_bytes()
@@ -1406,7 +1342,6 @@ if __name__ == "__main__":
         assert "    return *this;\n  }\n\n  ~BodyBoundaries" in formatted_boundaries
         run(formatter, root, "source/body_boundaries.hpp")
         assert body_boundaries.read_text() == formatted_boundaries
-        run(formatter, root, "--check", "source/body_boundaries.hpp")
 
         requires_expression = source / "requires_expression.hpp"
         requires_expression.write_text(
@@ -1423,7 +1358,6 @@ if __name__ == "__main__":
         run(formatter, root, "source/requires_expression.hpp")
         formatted_requires = requires_expression.read_text()
         assert "  }\ninline auto size" in formatted_requires, repr(formatted_requires)
-        run(formatter, root, "--check", "source/requires_expression.hpp")
 
         type_boundaries = source / "type_boundaries.hpp"
         type_boundaries.write_text(
@@ -1436,17 +1370,8 @@ if __name__ == "__main__":
             "  S32 value;\n"
             "};\n"
         )
-        result = run(
-            formatter,
-            root,
-            "--check",
-            "source/type_boundaries.hpp",
-            status=1,
-        )
-        assert "multiline braced entities" in result.stderr
         run(formatter, root, "source/type_boundaries.hpp")
         assert "};\n\n// Second type\nstruct SecondType" in type_boundaries.read_text()
-        run(formatter, root, "--check", "source/type_boundaries.hpp")
 
         repairable_preprocessor = {
             "conditional.cpp": (
@@ -1463,14 +1388,13 @@ if __name__ == "__main__":
         for name, content in repairable_preprocessor.items():
             path = source / name
             path.write_text(content)
-            result = run(formatter, root, "--check", "source/" + name, status=1)
-            assert "conditional code" in result.stderr or "definition groups" in result.stderr
             run(formatter, root, "source/" + name)
-            run(formatter, root, "--check", "source/" + name)
             path.unlink()
 
         run(formatter, root, "--all")
-        run(formatter, root, "--check")
+        canonical = {path: path.read_bytes() for path in source.rglob("*") if path.is_file()}
+        run(formatter, root)
+        assert all(path.read_bytes() == content for path, content in canonical.items())
         assert not (root / ".clang-format").exists()
 
         default_source = source / "default.cpp"

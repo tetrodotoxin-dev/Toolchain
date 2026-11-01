@@ -21,11 +21,10 @@ def _validation_data_impl(ctx):
     if test_data in benchmarks:
         fail("Benchmarks contain test-only runtime data: " + test_data)
 
-    return [AnalysisTestResultInfo(success = True, message = "Validation runtime artifacts are correctly separated.")]
+    return [DefaultInfo()]
 
-validation_data_test = rule(
+validation_data = rule(
     implementation = _validation_data_impl,
-    analysis_test = True,
     attrs = {
         "benchmarks": attr.label(mandatory = True),
         "benchmark_data": attr.label(allow_single_file = True, mandatory = True),

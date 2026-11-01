@@ -8,22 +8,6 @@ separate inputs because the host chooses which tools run, while the target
 chooses the headers and libraries they consume.
 """
 
-def _shell(ctx, system):
-    """Find Bash, including the copy bundled beside Git for Windows."""
-    selected = ctx.os.environ.get("BAZEL_SH")
-    if selected:
-        return selected.replace("\\", "/")
-    selected = ctx.which("bash.exe" if system == "windows" else "bash")
-    if selected and not (system == "windows" and "/windows/system32/" in str(selected).replace("\\", "/").lower()):
-        return str(selected).replace("\\", "/")
-    if system == "windows":
-        git = ctx.which("git.exe")
-        if git:
-            selected = git.dirname.get_child("../bin/bash.exe")
-            if selected.exists:
-                return str(selected).replace("\\", "/")
-    return ""
-
 def _host(ctx):
     """Publish host settings beside a view of the selected LLVM files.
 
@@ -51,7 +35,7 @@ def _host(ctx):
         "STRIP": "llvm-strip",
         "COV": "llvm-cov",
     }
-    values = {"HOST_SYSTEM": system, "SHELL": _shell(ctx, system)}
+    values = {"HOST_SYSTEM": system}
     files = []
     for name, executable in executables.items():
         location = "llvm/bin/" + executable + suffix
@@ -101,5 +85,5 @@ host_tools = repository_rule(
         "_build": attr.label(default = Label("//source/bazel:toolchains/host/build.tpl")),
         "_settings": attr.label(default = Label("//source/bazel:toolchains/host/settings.bzl.tpl")),
     },
-    environ = ["BAZEL_LLVM", "BAZEL_SH", "PATH", "TEMP"],
+    environ = ["BAZEL_LLVM", "PATH", "TEMP"],
 )

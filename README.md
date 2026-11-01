@@ -63,12 +63,16 @@ benefit is it limits the number of public headers that need to be forwarded.
 To include only the `render` component we defined above you can use `@project//:render`. 
 When importing you can use `sdks.component()` to declare the external dependencies each component requires.
 
-
 ## Testing
 
 Toolchain provides a `validation()` rule that enables testing. Similar to source code
 validation code is stored under `validation/<type>/`. Validation supports both `tests`
 and `benchmarks` for validation.
+
+To keep the enviornment simple all tests are built as stand alone binary executables and
+`bazel test ...` isn't supported by toolchain projects. This avoids several dependencies
+such as Bash on Windows. To execute tests from the commandline use `bazel run :tests`
+instead.
 
 ## Development
 
@@ -94,57 +98,59 @@ bazel run :tests
 bazel run :benchmarks --config=release
 
 # Most hosts can also run tests for other configurations with the most common being Web.
-bazel run :tests --config=web
+bazel run :tests_web
+bazel run :benchmarks_web
 ```
 
-The `:format` command canonicalizes the code and does it's best to cover code styling
-and standardization that clang-format can't catch. It attempts to apply as many fixes
-as possible automatically and should be run frequently. Harder to catch cases like
-common problematic comment patterns use a classifier.
+## Release gates
+
+Along with standard tests, Toolchain provides a `:format` command canonicalizes the code
+and does it's best to cover code styling and standardization that clang-format can't catch.
+It attempts to apply as many fixes as possible automatically and should be run frequently. 
+Harder to catch cases like common problematic comment patterns use a classifier.
 
 **Code must clear all `:format` checks including warnings before merging into `main`.**
 
-The recursive build command can be used to build all artifacts for the current host's target platform.
-This makes it easy to run local tests and iterate locally but building it does not build
-full artifacts sutible for an SDK release. The `:sdk` can be used when code is ready for 
-release and will build an SDK distribution for all platforms regardless of configuration or host.
+### Oneshot release packaging
 
-Library projects build binary SDKs for every configured target with:
+The recursive build command `bazel build ...` can be used to build all artifacts for the current host's target platform.
+This makes it easy to run local tests and iterate without the overhead of release packaging.
+For a full release Toolchain provides `bazel build :sdk`.
+
+Running the command in release will build and package release artifacts for every target:
 
 ```sh
 bazel build :sdk --config=release
 ```
 
-Every project creates its source snapshot from a clean Git commit with:
+The SDK contains public headers, libraries, runtime dependencies, metadata and
+the license. Everything is packaged in one shot to make distribution setup easy.
+
+> [!WARNING]
+> Cross platform builds are supported, but executing Windows tests still requires a dedicated
+> requires a dedicated Windows host environment.
+
+Every project additionally can create a source snapshot from a clean Git commit with:
 
 ```sh
 bazel run :snapshot
 ```
 
-The SDK contains public headers, libraries, runtime dependencies, metadata and
-the license. Everything is packaged in one shot to make distribution setup easy.
-
 The snapshot contains the complete committed repository and should be provided
 with the SDK for any published builds. Binaries built from the Source should generate
-the exact hashes provided by the SDK. Toolchain only ships a snapshot since
-Bazel consumes its Starlark and compiler declarations as source.
+the exact hashes provided by the SDK.
 
-Toolchain provides extra integration tests for validating the toolchain itself:
+### Toolchain releases
+
+Toolchain only ships a snapshot since Bazel consumes its Starlark and compiler declarations
+as source. Toolchain provides extra integration tests for validating the toolchain itself by
+preforming a mock SDK release.
+
+It can be run with a single command as well in place of `:sdk`:
 
 ```sh
-bazel test //validation/integration:integration
+bazel run //validation/integration:integration
 ```
-
-Pinned LLVM, target SDKs and Node use Bazel's shared repository contents cache,
-so fresh workspaces can reuse their extracted files. Host settings are generated
-for each workspace, and SDK normalization uses the declared Python toolchain.
-The `BAZEL_LLVM` and `TETRO_WINDOWS_SDK` overrides select local
-installations without adding those installations to the shared contents cache.
-
-The SDK and reproducibility checks share pinned dependency files while keeping
-their consumer workspaces and build outputs independent. The `:sdk_matching` and
-`:sdk_mixed` tests in `//validation/integration` can run separately; `:sdk` and
-`:integration` include both cases.
 
 ## Human workflows
 
@@ -156,11 +162,6 @@ provides a VS Code workflow since it streamlines cross platform development.
 For a full VS Code setup, run `bazel run :vscode` to generate a
 Toolchain compatible folder environment. It's optional but greatly
 reduces editor integration setup.
-
-### Extra Windows Config
-
-On Windows, Toolchain discovers Bash using PATH or beside Git for Windows for
-Bazel's integration test launcher. If you are using a non-standard setup you can set `BAZEL_SH` to point to a custom Bash location.
 
 Toolchain's implementation lives under [`source/bazel`](source/bazel), and
 [`validation`](validation) exercises its public contract.

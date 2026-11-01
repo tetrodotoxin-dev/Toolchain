@@ -1,6 +1,6 @@
 """Consume and repackage the generated Toolchain validation SDK."""
 
-load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@tetro_toolchain//:defs.bzl", "format", "library", "package", "validation", "vscode")
 
 package(
@@ -28,24 +28,27 @@ library(
     module = "toolchain_consumer",
 )
 
-cc_test(
+cc_binary(
     # Separate applications keep their selected runtime closures together.
     # Windows stages dependency DLLs beside each executable.
     name = "alternate/consumer",
+    linkstatic = False,
     srcs = ["dependency.c"],
     local_defines = ["EXPECT_STATIC={alternate_static}"],
     deps = ["@alternate//:tetro_toolchain"],
 )
 
-cc_test(
+cc_binary(
     name = "consumer",
+    linkstatic = False,
     srcs = ["consumer.c"],
     local_defines = ["EXPECT_STATIC={static}"],
     deps = [":toolchain_test"],
 )
 
-cc_test(
+cc_binary(
     name = "component",
+    linkstatic = False,
     srcs = ["consumer.c"],
     local_defines = [
         "EXPECT_STATIC={static}",

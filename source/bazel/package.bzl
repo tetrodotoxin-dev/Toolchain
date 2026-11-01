@@ -4,6 +4,7 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
+load("@rules_python//python:py_binary.bzl", "py_binary")
 load(":toolchains/platforms.bzl", "PLATFORMS")
 
 _TARGETS = {name: str(target.platform) for name, target in PLATFORMS.items()}
@@ -396,7 +397,7 @@ _package_release = rule(implementation = _package, attrs = {
 })
 
 def package(name = "sdk", module = None, components = {}, static = None, shared = None, linkage = None, visibility = ["//visibility:public"], tags = ["manual"], **kwargs):
-    """Publish a module's library, component interfaces and SDK target.
+    """Publish a module's library, component interfaces and SDK release command.
 
     The //source package supplies //source:<module> and //source:<component>.
     Root component targets expose those header interfaces and link the common
@@ -404,8 +405,12 @@ def package(name = "sdk", module = None, components = {}, static = None, shared 
     These declarations own their visibility, so a root BUILD can load package
     directly as its complete publication surface.
 
+    `bazel run :sdk` formats the workspace and runs optimized host tests before
+    building the selected archives. A failed stage stops the release. The
+    archive target remains separate so each build observes the formatted source.
+
     Args:
-        name: SDK target name, defaulting to sdk.
+        name: SDK release command name, defaulting to sdk.
         module: Published library identity, defaulting to the Bazel module name.
         components: Component names mapped to their sibling dependencies. Each
             component header interface lives in //source.
@@ -460,16 +465,26 @@ def package(name = "sdk", module = None, components = {}, static = None, shared 
             visibility = visibility,
             **common
         )
+    archives = "_" + name + "_archives"
     package_release(
-        name = name,
+        name = archives,
         project = module,
         components = {"//source:" + component: component for component in component_names},
         component_dependencies = component_dependencies,
         static = static,
         shared = shared,
-        visibility = visibility,
+        visibility = ["//visibility:private"],
         tags = tags,
         **kwargs
+    )
+    py_binary(
+        name = name,
+        srcs = [Label("//source/bazel:release/sdk.py")],
+        main = Label("//source/bazel:release/sdk.py"),
+        args = ["//" + native.package_name() + ":" + archives],
+        python_version = "3.11.14",
+        visibility = visibility,
+        tags = tags,
     )
 
 def package_release(name, static = None, shared = None, project = None, platforms = None, components = {}, component_dependencies = {}, **kwargs):

@@ -85,13 +85,12 @@ def format():
 
     A call without arguments formats every C and C++ file under the standard
     source directories. Exact file arguments select a review-sized mutable set,
-    while --all states the complete selection explicitly. --check validates the
-    selected files, or the complete standard tree when used by itself, and
-    enforces the SDK::Module import shape. Every source scan prints aggregate
-    comment quality status, rejects quality failures and reports comments that
-    need human review. Each explicit constructor carries its own comment naming
-    the conversion boundary it protects. Mutable runs generate the repository's
-    include buckets from MODULE.bazel. Checks verify that generated
+    while --all states the complete selection explicitly. Every run formats
+    the selection and enforces the SDK::Module import shape. Source scans print
+    aggregate comment quality status; warnings and rejections fail the command.
+    Each explicit constructor carries its own comment naming the conversion
+    boundary it protects. Runs generate the repository's include buckets from
+    MODULE.bazel. Source validation verifies that generated
     configuration together with namespace structure, complete declarations,
     state ownership, preprocessor boundaries, multiline brace boundaries and
     lexical paragraph order in the selected sources.
