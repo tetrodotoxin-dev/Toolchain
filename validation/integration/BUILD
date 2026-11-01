@@ -266,6 +266,25 @@ py_test(
     tags = ["manual"],
 )
 
+# Web runners build the standalone platform explicitly, even on a native host.
+py_test(
+    name = "web",
+    size = "medium",
+    srcs = ["web.py"],
+    args = [
+        "$(rlocationpath //:tests_web_runner)",
+        "$(rlocationpath //:benchmarks_web_runner)",
+        "$(rlocationpath @emscripten_node//:node)",
+    ],
+    data = [
+        "//:tests_web_runner",
+        "//:benchmarks_web_runner",
+        "@emscripten_node//:node",
+    ],
+    deps = ["@rules_python//python/runfiles"],
+    tags = ["manual"],
+)
+
 # This target is the complete process, linkage and packaging boundary for a
 # Toolchain checkout. Its leaves stay individually runnable during diagnosis.
 test_suite(
@@ -284,5 +303,6 @@ test_suite(
         ":static",
         ":symbols",
         ":validation_data",
+        ":web",
     ],
 )

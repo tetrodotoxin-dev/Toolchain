@@ -10,5 +10,6 @@ static Harness WebBenchmark = {
 };
 
 VALIDATION_BENCHMARK(WebBenchmark, compiles) {
-  Benchmark::prevent_optimization(U32(42));
+  auto value = U32(42);
+  Benchmark::prevent_optimization(value);
 }

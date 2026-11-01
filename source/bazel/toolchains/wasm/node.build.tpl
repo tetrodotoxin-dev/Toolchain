@@ -3,12 +3,12 @@
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
-    "bin/node",
+    "__NODE__",
 ])
 
 filegroup(
     name = "node",
-    srcs = ["bin/node"],
+    srcs = ["__NODE__"],
 )
 
 filegroup(

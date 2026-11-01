@@ -9,6 +9,7 @@ load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load("@rules_cc//cc/toolchains:cc_toolchain.bzl", "cc_toolchain")
 load("@rules_cc//cc/toolchains:cc_toolchain_config_info.bzl", "CcToolchainConfigInfo")
 load(":toolchains/reproducible.bzl", "COMPILE_FLAGS")
+load(":toolchains/wasm/sdk.bzl", "WasmSdkInfo")
 
 def _config(ctx):
     """Configure Clang and LLD for modules hosted by Emscripten.
@@ -103,8 +104,12 @@ def _runner_config(ctx):
         CcToolchainConfigInfo for executable Web validation.
     """
     sdk = ctx.attr.sdk.label.workspace_root
-    sdk_tool = "/proc/self/cwd/" + sdk
-    node = "/proc/self/cwd/" + ctx.attr.node.label.workspace_root + "/bin/node"
+    windows = HOST_SYSTEM == "windows"
+    # rules_cc requires normalized tool paths. A dependency toolchain cannot
+    # reach the sibling SDK repository through relative parent references.
+    sdk_tool = ctx.attr.sdk[WasmSdkInfo].root if windows else "/proc/self/cwd/" + sdk
+    suffix = ".exe" if windows else ""
+    node = ctx.file.node.path if windows else "/proc/self/cwd/" + ctx.file.node.path
     resource_directory = sdk + "/lib/clang/22"
     sysroot_include = sdk + "/emscripten/cache/sysroot/include"
     compile_actions = [ACTION_NAMES.c_compile, ACTION_NAMES.cpp_compile]
@@ -120,6 +125,8 @@ def _runner_config(ctx):
                 env_entries = [
                     env_entry(key = "EM_NODE_JS", value = node),
                     env_entry(key = "PYTHON", value = PYTHON),
+                    env_entry(key = "EMSDK_PYTHON", value = PYTHON),
+                    env_entry(key = "PYTHONDONTWRITEBYTECODE", value = "1"),
                 ],
             )]),
             feature(name = "runner_compile", enabled = True, flag_sets = [
@@ -170,14 +177,14 @@ def _runner_config(ctx):
             ]),
         ],
         tool_paths = [tool_path(name = name, path = path) for name, path in [
-            ("gcc", sdk_tool + "/emscripten/em++"),
-            ("ld", sdk_tool + "/bin/wasm-ld"),
-            ("ar", sdk_tool + "/bin/llvm-ar"),
-            ("cpp", sdk_tool + "/bin/clang-cpp"),
-            ("gcov", sdk_tool + "/bin/llvm-cov"),
-            ("nm", sdk_tool + "/bin/llvm-nm"),
-            ("objdump", sdk_tool + "/bin/llvm-objdump"),
-            ("strip", sdk_tool + "/bin/llvm-strip"),
+            ("gcc", sdk_tool + ("/em++.bat" if windows else "/emscripten/em++")),
+            ("ld", sdk_tool + "/bin/wasm-ld" + suffix),
+            ("ar", sdk_tool + "/bin/llvm-ar" + suffix),
+            ("cpp", sdk_tool + "/bin/clang-cpp" + suffix),
+            ("gcov", sdk_tool + "/bin/llvm-cov" + suffix),
+            ("nm", sdk_tool + "/bin/llvm-nm" + suffix),
+            ("objdump", sdk_tool + "/bin/llvm-objdump" + suffix),
+            ("strip", sdk_tool + "/bin/llvm-strip" + suffix),
         ]],
         cxx_builtin_include_directories = [
             resource_directory + "/include",
@@ -198,7 +205,7 @@ def _runner_config(ctx):
 wasm_runner_cc_toolchain_config = rule(
     implementation = _runner_config,
     attrs = {
-        "node": attr.label(mandatory = True),
+        "node": attr.label(mandatory = True, allow_single_file = True),
         "sdk": attr.label(mandatory = True),
     },
     provides = [CcToolchainConfigInfo],
@@ -306,7 +313,7 @@ def wasm_targets():
     native.toolchain(
         name = "cc_toolchain_for_wasm32_runner",
         exec_compatible_with = [
-            "@platforms//os:linux",
+            "@platforms//os:" + HOST_SYSTEM,
             "@platforms//cpu:x86_64",
         ],
         target_compatible_with = [

@@ -7,6 +7,7 @@ validation/benchmarks. Tests and benchmarks remain runnable programs because
 their reports and filters are part of the developer interface.
 """
 
+load("@host_tools//:settings.bzl", "HOST_SYSTEM")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 
 _SOURCE_EXTENSIONS = ["c", "cpp", "h", "hpp"]
@@ -34,7 +35,7 @@ _wasm_runner_transition = transition(
 
 def _web_runner_impl(ctx):
     """Generate one host launcher for an Emscripten validation program."""
-    executable = ctx.actions.declare_file(ctx.label.name)
+    executable = ctx.actions.declare_file(ctx.label.name + (".cmd" if HOST_SYSTEM == "windows" else ""))
     binary = ctx.file.binary
     binary_target = ctx.attr.binary[0]
     node = ctx.file.node
@@ -44,6 +45,8 @@ def _web_runner_impl(ctx):
         substitutions = {
             "__NODE__": node.short_path,
             "__PROGRAM__": binary.short_path,
+            "__NODE_RLOCATION__": node.short_path[3:] if node.short_path.startswith("../") else ctx.workspace_name + "/" + node.short_path,
+            "__PROGRAM_RLOCATION__": binary.short_path[3:] if binary.short_path.startswith("../") else ctx.workspace_name + "/" + binary.short_path,
         },
         is_executable = True,
     )
@@ -64,7 +67,7 @@ _web_runner = rule(
         "node": attr.label(mandatory = True, allow_single_file = True),
         "threads": attr.bool(default = True),
         "_template": attr.label(
-            default = Label("//source/bazel:rules/web_runner.sh"),
+            default = Label("//source/bazel:rules/web_runner.cmd.tpl" if HOST_SYSTEM == "windows" else "//source/bazel:rules/web_runner.sh"),
             allow_single_file = True,
         ),
         "_allowlist_function_transition": attr.label(
