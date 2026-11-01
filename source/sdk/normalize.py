@@ -14,14 +14,20 @@ def linux(root):
     # Bazel can extract a Linux file link as a Windows directory junction.
     # Materialize those files so the Windows-hosted linker can read them.
     if os.name == "nt":
-        for path in root.rglob("*"):
-            if path.lstat().st_reparse_tag == stat.IO_REPARSE_TAG_MOUNT_POINT:
-                target = Path(os.readlink(path).removeprefix("\\\\?\\"))
-                if target.is_file():
-                    if not target.resolve().is_relative_to(root.resolve()):
-                        raise ValueError(f"SDK link leaves its sysroot: {path}")
-                    path.rmdir()
-                    shutil.copyfile(target, path)
+        for parent, directories, files in os.walk(root):
+            for name in directories + files:
+                path = Path(parent) / name
+                if path.lstat().st_reparse_tag == stat.IO_REPARSE_TAG_MOUNT_POINT:
+                    if name in directories:
+                        directories.remove(name)
+                    target = Path(os.readlink(path).removeprefix("\\\\?\\"))
+                    if target.is_file():
+                        if not target.resolve().is_relative_to(root.resolve()):
+                            raise ValueError(f"SDK link leaves its sysroot: {path}")
+                        path.rmdir()
+                        shutil.copyfile(target, path)
+                    elif not target.exists():
+                        path.rmdir()
 
     # Debian's absolute links describe the target filesystem. Repointing them
     # into this sysroot keeps linker and Bazel resolution target-owned.

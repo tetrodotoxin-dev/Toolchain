@@ -127,7 +127,7 @@ def _runner_config(ctx):
             feature(name = "emscripten_environment", enabled = True, env_sets = [env_set(
                 actions = _COMPILE + _LINK,
                 env_entries = [
-                    env_entry(key = "EM_NODE_JS", value = ctx.attr.node[WasmToolsInfo].paths["node"]),
+                    env_entry(key = "EM_NODE_JS", value = ctx.attr.node[WasmToolsInfo].tools["node"].path),
                     env_entry(key = "PYTHON", value = PYTHON),
                     env_entry(key = "EMSDK_PYTHON", value = PYTHON),
                     env_entry(key = "PYTHONDONTWRITEBYTECODE", value = "1"),
@@ -162,13 +162,13 @@ def _runner_config(ctx):
                 ])]),
             ]),
         ],
-        tools = ctx.attr.sdk[WasmToolsInfo].paths,
-        includes = [
+        tools = {name: file.path.removeprefix(sdk + "/") for name, file in ctx.attr.sdk[WasmToolsInfo].tools.items()},
+        includes = ["%workspace%/" + path for path in [
             resource_directory + "/include",
             sysroot_include + "/c++/v1",
             sysroot_include + "/compat",
             sysroot_include,
-        ],
+        ]],
         identifier = "emscripten-validation-runner",
         compiler = "emscripten",
     )
@@ -249,37 +249,9 @@ def wasm_targets():
         toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
     )
 
-    wasm_runner_cc_toolchain_config(
-        name = "wasm32_runner_config",
-        node = "@emscripten_node//:node",
-        sdk = "@emscripten_sdk//:files",
-        tags = ["manual"],
-    )
-
-    cc_toolchain(
-        name = "wasm32_runner_toolchain",
-        all_files = ":wasm_runner_files",
-        ar_files = "@emscripten_sdk//:files",
-        as_files = "@emscripten_sdk//:files",
-        compiler_files = ":wasm_runner_files",
-        dwp_files = "@emscripten_sdk//:files",
-        linker_files = ":wasm_runner_files",
-        objcopy_files = "@emscripten_sdk//:files",
-        strip_files = "@emscripten_sdk//:files",
-        supports_param_files = 1,
-        toolchain_config = ":wasm32_runner_config",
-        toolchain_identifier = "emscripten-validation-runner",
-        tags = ["manual"],
-    )
-
-    native.filegroup(
-        name = "wasm_runner_files",
-        tags = ["manual"],
-        srcs = [
-            "@emscripten_node//:node",
-            "@emscripten_sdk//:files",
-        ],
-    )
+    native.alias(name = "wasm32_runner_config", actual = "@emscripten_sdk//:config", tags = ["manual"])
+    native.alias(name = "wasm32_runner_toolchain", actual = "@emscripten_sdk//:toolchain", tags = ["manual"])
+    native.alias(name = "wasm_runner_files", actual = "@emscripten_sdk//:runner_files", tags = ["manual"])
 
     native.toolchain(
         name = "cc_toolchain_for_wasm32_runner",

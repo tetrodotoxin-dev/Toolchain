@@ -14,7 +14,9 @@ python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 
 python.toolchain(python_version = "3.11.14")
 
-linux_sdk = use_repo_rule("//source/bazel:toolchains/linux/toolchain.bzl", "linux_sdk")
+use_repo(python, host_python = "python_3_11_14_host")
+
+linux_sdk = use_repo_rule("//source/bazel:toolchains/linux/repository.bzl", "linux_sdk")
 
 linux_sdk(name = "linux_sdk")
 
@@ -30,9 +32,13 @@ emscripten_node = use_repo_rule("//source/bazel:toolchains/wasm/repository.bzl",
 
 emscripten_node(name = "emscripten_node")
 
-windows_sdk = use_repo_rule("//source/bazel:toolchains/windows/toolchain.bzl", "windows_sdk")
+windows_sdk = use_repo_rule("//source/bazel:toolchains/windows/repository.bzl", "windows_sdk")
 
 windows_sdk(name = "windows_sdk")
+
+llvm_distribution = use_repo_rule("//source/bazel:toolchains/host/distribution.bzl", "llvm_distribution")
+
+llvm_distribution(name = "llvm_distribution")
 
 host_tools = use_repo_rule("//source/bazel:toolchains/host/repository.bzl", "host_tools")
 

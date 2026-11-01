@@ -1,13 +1,8 @@
 # Copyright (c) 2023-present Matt Kaes and contributors
 
-"""Supply the MSVC headers and libraries used with the selected LLVM tools.
+"""Configure clang-cl against the selected MSVC headers and libraries."""
 
-Pinned Microsoft archives are extracted only when a Windows target is requested.
-TETRO_WINDOWS_SDK selects an existing SDK in winsysroot layout when a developer
-wants to use an installed version instead.
-"""
-
-load("@host_tools//:settings.bzl", "ARCHIVER", "CLANG", "HOST_SYSTEM", "LINKER", "PATH", "PYTHON", "RESOURCE_INCLUDE", "TEMP")
+load("@host_tools//:settings.bzl", "ARCHIVER", "CLANG", "HOST_SYSTEM", "LINKER", "PATH", "RESOURCE_INCLUDE", "TEMP")
 
 # Pinned rules_cc 0.2.17 provides its MSVC configuration at this private path.
 # Reusing it keeps the Windows action grammar and import library handling in
@@ -16,51 +11,6 @@ load("@host_tools//:settings.bzl", "ARCHIVER", "CLANG", "HOST_SYSTEM", "LINKER",
 load("@rules_cc//cc/private/toolchain:windows_cc_toolchain_config.bzl", windows_config = "cc_toolchain_config")
 load("@rules_cc//cc/toolchains:cc_toolchain.bzl", "cc_toolchain")
 load(":toolchains/reproducible.bzl", "COMPILE_FLAGS")
-
-def _sdk(ctx):
-    """Assemble MSVC and Windows SDK files from downloads or an installed SDK.
-
-    Args:
-        ctx: Repository context with package pins, normalization tools and
-            the optional installed-SDK selection.
-    """
-    source = ctx.os.environ.get("TETRO_WINDOWS_SDK")
-    if source:
-        # An explicit installed SDK remains useful when testing a newer vendor
-        # release. The default path below always uses the pinned packages.
-        root = ctx.path(source)
-        crt = sorted(root.get_child("VC/Tools/MSVC").readdir())[-1]
-        sdk = root.get_child("Windows Kits/10")
-        version = sorted(sdk.get_child("Include").readdir())[-1].basename
-        ctx.symlink(crt.get_child("include"), "include/crt")
-        for name, path in {path.basename.lower(): path for path in crt.get_child("lib/x64").readdir()}.items():
-            ctx.symlink(path, "lib/crt/" + name)
-        for part in ["ucrt", "shared", "um", "winrt"]:
-            ctx.symlink(sdk.get_child("Include/" + version + "/" + part), "include/" + part)
-        for part in ["ucrt", "um"]:
-            for name, path in {path.basename.lower(): path for path in sdk.get_child("Lib/" + version + "/" + part + "/x64").readdir()}.items():
-                ctx.symlink(path, "lib/" + part + "/" + name)
-    else:
-        for index, package in enumerate(json.decode(ctx.read(ctx.attr._packages))):
-            archive = "archives/" + str(index) + ".zip"
-            ctx.download(url = package["url"], sha256 = package["sha256"], output = archive)
-            for prefix, output in package["trees"].items():
-                ctx.extract(archive, output = output, strip_prefix = prefix)
-            ctx.delete(archive)
-    ctx.file("normalize.py", ctx.read(ctx.attr._normalize))
-    normalized = ctx.execute([PYTHON, ctx.path("normalize.py"), "windows", "external/" + ctx.name])
-    if normalized.return_code:
-        fail(normalized.stderr)
-
-    # Runtime DLLs support local validation as development inputs. Product SDK
-    # archives select runtime libraries from their declared dependency graph.
-    ctx.template("BUILD.bazel", ctx.attr._build)
-
-windows_sdk = repository_rule(implementation = _sdk, attrs = {
-    "_build": attr.label(default = Label("//source/bazel:toolchains/windows/sdk.build.tpl")),
-    "_packages": attr.label(default = Label("//source:sdk/windows.json")),
-    "_normalize": attr.label(default = Label("//source:sdk/normalize.py")),
-}, environ = ["TETRO_WINDOWS_SDK"])
 
 def _host_tool(path):
     """Resolve a host executable from the execution root without embedding it."""

@@ -10,6 +10,7 @@ and WebAssembly consumers. Windows acquisition uses the pinned packages by
 default and honors an explicitly selected installed SDK.
 """
 
+from contextlib import ExitStack
 import hashlib
 import json
 import os
@@ -136,7 +137,7 @@ def verify_dependency_conflict(root, workspace, toolchain, directory, dependency
     conflict["dependency_pin"] = substitute((sources / "dependency.tpl").read_text(), conflict)
     (workspace / "MODULE.bazel").write_text(substitute((sources / "module.tpl").read_text(), conflict))
     result = subprocess.run([
-        "bazel", "--batch", "--output_base=" + str(root / "bazel"),
+        "bazel", "--output_base=" + str(root / "bazel"),
         "build", "//:component" if component else "//:consumer", "--distdir=" + str(altered),
         "--platforms=@tetro_toolchain//:" + ("windows_x64" if component else "linux_x86_64"),
         "--distdir=" + str(toolchain.parent), "--distdir=" + str(directory),
@@ -151,7 +152,7 @@ def verify_dependency_conflict(root, workspace, toolchain, directory, dependency
 
 def verify_vscode(root, workspace, toolchain, directory):
     subprocess.run([
-        "bazel", "--batch", "--output_base=" + str(root / "bazel"),
+        "bazel", "--output_base=" + str(root / "bazel"),
         "run", "//:vscode", "--distdir=" + str(toolchain.parent),
         "--distdir=" + str(directory),
     ], cwd=workspace, check=True)
@@ -199,7 +200,7 @@ def verify_missing_variant(root, workspace, toolchain, directory, sources, value
     }))
     (workspace / "MODULE.bazel").write_text(substitute((sources / "module.tpl").read_text(), missing))
     result = subprocess.run([
-        "bazel", "--batch", "--output_base=" + str(root / "bazel"),
+        "bazel", "--output_base=" + str(root / "bazel"),
         "build", "//:consumer", "--distdir=" + str(toolchain.parent),
         "--distdir=" + str(directory),
     ], cwd=workspace, capture_output=True, text=True)
@@ -315,7 +316,7 @@ def verify(toolchain, checksum_manifest, dependency_manifest, host, objdump, mix
 
     # The temporary workspace owns consumer configuration and one test source.
     # Candidate archives supply every SDK header, library and Bazel rule.
-    with tempfile.TemporaryDirectory(prefix="toolchain-sdk-test-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="toolchain-sdk-test-") as temporary, ExitStack() as cleanup:
         root = Path(temporary)
         # Only the system-provided runtime belongs on the host search path.
         # Other producer outputs must not mask missing packaged dependencies.
@@ -325,6 +326,12 @@ def verify(toolchain, checksum_manifest, dependency_manifest, host, objdump, mix
         host = host_directory / host.name
         workspace = root / "consumer"
         workspace.mkdir()
+        cleanup.callback(
+            subprocess.run,
+            ["bazel", "--output_base=" + str(root / "bazel"), "shutdown"],
+            cwd=workspace,
+            check=True,
+        )
         for name, content in project_files.items():
             (workspace / name).write_bytes(content)
         # Both fixture families share the separately packaged dependency SDK.
@@ -368,7 +375,7 @@ def verify(toolchain, checksum_manifest, dependency_manifest, host, objdump, mix
             (workspace / "multiple/BUILD").write_text(substitute((sources / "multiple.tpl").read_text(), values))
             if linkage == "static" and not mixed:
                 selected = subprocess.check_output([
-                    "bazel", "--batch", "--output_base=" + str(root / "bazel"),
+                    "bazel", "--output_base=" + str(root / "bazel"),
                     "query", "labels(actual, //multiple:_validation_static)",
                     "--distdir=" + str(toolchain.parent),
                     "--distdir=" + str(directory),
@@ -377,7 +384,7 @@ def verify(toolchain, checksum_manifest, dependency_manifest, host, objdump, mix
                 print("Multiple SDK packages preserve the primary validation runtime.", flush=True)
                 for action in ["--all", "--check"]:
                     subprocess.run([
-                        "bazel", "--batch", "--output_base=" + str(root / "bazel"),
+                        "bazel", "--output_base=" + str(root / "bazel"),
                         "run", "//:format", "--distdir=" + str(toolchain.parent),
                         "--", action,
                     ], cwd=workspace, check=True)
@@ -385,14 +392,14 @@ def verify(toolchain, checksum_manifest, dependency_manifest, host, objdump, mix
                 print("Candidate formatter passed in the external consumer.", flush=True)
                 verify_vscode(root, workspace, toolchain, directory)
                 subprocess.run([
-                    "bazel", "--batch", "--output_base=" + str(root / "bazel"),
+                    "bazel", "--output_base=" + str(root / "bazel"),
                     "run", "//:tests", "--config=web",
                     "--distdir=" + str(toolchain.parent),
                     "--distdir=" + str(directory),
                 ], cwd=workspace, check=True)
                 print("Candidate Web validation runner passed.", flush=True)
             subprocess.run([
-                "bazel", "--batch", "--output_base=" + str(root / "bazel"),
+                "bazel", "--output_base=" + str(root / "bazel"),
                 "test", "//:consumer", "//:component", "//:alternate/consumer", "//:consumer_library_shared", "//:repack", "--nocache_test_results",
                 "--distdir=" + str(toolchain.parent), "--distdir=" + str(directory),
             ], cwd=workspace, check=True)
@@ -439,7 +446,7 @@ def verify(toolchain, checksum_manifest, dependency_manifest, host, objdump, mix
                 verify_runtime(root / "repacked", repacked, host)
             for platform in ["linux_x86_64", "windows_x64", "wasm32"]:
                 subprocess.run([
-                    "bazel", "--batch", "--output_base=" + str(root / "bazel"),
+                    "bazel", "--output_base=" + str(root / "bazel"),
                     "build", "//:consumer", "//:component", "//:alternate/consumer", "//:consumer_library_shared", "--platforms=@tetro_toolchain//:" + platform,
                     "--distdir=" + str(toolchain.parent), "--distdir=" + str(directory),
                 ], cwd=workspace, check=True)
@@ -453,7 +460,7 @@ def verify(toolchain, checksum_manifest, dependency_manifest, host, objdump, mix
                 standalone = dict(values, dependencies="[]")
                 (workspace / "MODULE.bazel").write_text(substitute((sources / "module.tpl").read_text(), standalone))
                 subprocess.run([
-                    "bazel", "--batch", "--output_base=" + str(root / "bazel"),
+                    "bazel", "--output_base=" + str(root / "bazel"),
                     "test", "//:consumer", "--nocache_test_results",
                     "--distdir=" + str(toolchain.parent), "--distdir=" + str(directory),
                 ], cwd=workspace, check=True)
@@ -494,7 +501,9 @@ if __name__ == "__main__":
     else:
         from python.runfiles import runfiles
         resolver = runfiles.Create()
-        toolchain, matching, mixed, host, objdump = [Path(resolver.Rlocation(argument)).resolve() for argument in sys.argv[1:]]
+        toolchain, matching, mixed, host, objdump = [Path(resolver.Rlocation(argument)).resolve() for argument in sys.argv[1:-1]]
+        case = sys.argv[-1]
+        assert case in ["matching", "mixed"], case
         repository = Path(__file__).resolve().parents[2]
         with tempfile.TemporaryDirectory(prefix="toolchain-private-header-") as temporary:
             verify_private_header_boundary(
@@ -505,8 +514,9 @@ if __name__ == "__main__":
         # and editor installation, including when this test uses `bazel run`.
         os.environ.pop("BUILD_WORKSPACE_DIRECTORY", None)
         os.environ.pop("BUILD_WORKING_DIRECTORY", None)
+        os.environ["HOME"] = str(Path.home())
+        os.environ.pop("TEST_TMPDIR", None)
         for key in list(os.environ):
             if key.startswith("RUNFILES_"):
                 del os.environ[key]
-        verify(toolchain, matching, matching, host, objdump)
-        verify(toolchain, mixed, matching, host, objdump, mixed=True)
+        verify(toolchain, mixed if case == "mixed" else matching, matching, host, objdump, mixed=case == "mixed")

@@ -10,6 +10,6 @@ exports_files([
 
 wasm_tools(
     name = "node",
-    paths = __TOOLS__,
+    tools = __TOOLS__,
     srcs = ["__NODE__"],
 )

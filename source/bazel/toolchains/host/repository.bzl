@@ -8,17 +8,6 @@ separate inputs because the host chooses which tools run, while the target
 chooses the headers and libraries they consume.
 """
 
-_VERSION = "22.1.8"
-_RELEASE = "llvm-22.1.8-2"
-
-# These bundles own compiler executables, while each target toolchain selects
-# its runtime separately. Static Linux executables run on the supported host
-# directly.
-_DISTRIBUTIONS = {
-    "linux": ("linux-amd64-musl", "7e40cc03fec925670e478abf1bf432918e7c8ef745941dbb23abbd860386f265"),
-    "windows": ("windows-amd64", "5db93697f379d76fa8c97e17a9359f4e7458f0a15d8d03a7e2254a14d660a250"),
-}
-
 def _shell(ctx, system):
     """Find Bash, including the copy bundled beside Git for Windows."""
     selected = ctx.os.environ.get("BAZEL_SH")
@@ -36,25 +25,16 @@ def _shell(ctx, system):
     return ""
 
 def _host(ctx):
-    """Acquire host LLVM tools and publish their paths in settings.bzl.
+    """Publish host settings beside a view of the selected LLVM files.
 
     Args:
         ctx: Repository context supplying the host platform and environment.
     """
     system = ctx.os.name.lower()
     system = "windows" if "windows" in system else system
-    if system not in _DISTRIBUTIONS or ctx.os.arch not in ("amd64", "x86_64"):
-        fail("LLVM acquisition currently supports Linux and Windows x86_64 hosts")
-    override = ctx.os.environ.get("BAZEL_LLVM")
-    if override:
-        ctx.symlink(ctx.path(override), "llvm")
-    else:
-        host, checksum = _DISTRIBUTIONS[system]
-        ctx.download_and_extract(
-            url = "https://github.com/hermeticbuild/hermetic-llvm/releases/download/" + _RELEASE + "/llvm-toolchain-minimal-" + _VERSION + "-" + host + ".tar.zst",
-            sha256 = checksum,
-            output = "llvm",
-        )
+    # Distribution changes must refresh compiler-derived host settings.
+    ctx.watch(Label("//source/bazel:toolchains/host/distribution.bzl"))
+    ctx.symlink(ctx.path(ctx.attr._distribution).dirname.get_child("llvm"), "llvm")
     suffix = ".exe" if system == "windows" else ""
     executables = {
         "CXX": "clang++",
@@ -98,10 +78,7 @@ def _host(ctx):
         fail(resource.stderr)
 
     values["RESOURCE_INCLUDE"] = resource.stdout.strip().replace("\\", "/") + "/include"
-    python = ctx.which("python" if system == "windows" else "python3")
-    if not python:
-        fail("Python is required for packaging and export generation")
-
+    python = ctx.path(Label("@host_python//:BUILD.bazel")).dirname.get_child("python" + suffix)
     values["PYTHON"] = str(python).replace("\\", "/")
     values["PATH"] = ctx.os.environ.get("PATH", "")
     values["TEMP"] = ctx.os.environ.get("TEMP", "/tmp")
@@ -120,6 +97,7 @@ def _host(ctx):
 host_tools = repository_rule(
     implementation = _host,
     attrs = {
+        "_distribution": attr.label(default = Label("@llvm_distribution//:BUILD.bazel")),
         "_build": attr.label(default = Label("//source/bazel:toolchains/host/build.tpl")),
         "_settings": attr.label(default = Label("//source/bazel:toolchains/host/settings.bzl.tpl")),
     },

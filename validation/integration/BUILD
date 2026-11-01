@@ -217,42 +217,53 @@ filegroup(
 # This test creates a fresh Bazel workspace and consumes the candidate source
 # and binary archives through their public module extension. The complete
 # platform matrix is explicit, including through the integration suite.
-py_test(
+[
+    py_test(
+        name = "sdk_" + case,
+        tags = ["manual"],
+        size = "large",
+        main = "sdk.py",
+        srcs = ["sdk.py"],
+        args = [
+            "$(rlocationpath //:_candidate_snapshot)",
+            "$(rlocationpath :checksum)",
+            "$(rlocationpath //validation/integration/linkage:checksum)",
+            "$(rlocationpath //validation/data:system_host_binary)",
+            "$(rlocationpath @host_tools//:llvm/bin/" + OBJDUMP.split("/")[-1] + ")",
+            case,
+        ],
+        data = [
+            "sdk.c",
+            ":checksum",
+            ":dependency",
+            ":fixture",
+            "//:_candidate_snapshot",
+            "//source/bazel:release/package.py",
+            "//validation/data:sdk/build.tpl",
+            "//validation/data:sdk/module.tpl",
+            "//validation/data:sdk/multiple.tpl",
+            "//validation/data:sdk/consumer.c",
+            "//validation/data:sdk/dependency.c",
+            "//validation/data:sdk/dependency.tpl",
+            "//validation/data:sdk/source.tpl",
+            "//validation/data:sdk/style.cpp",
+            "//validation/data:sdk/web_benchmark.cpp",
+            "//validation/data:sdk/web_test.cpp",
+            "//validation/data:system_host_binary",
+            "//validation/integration/linkage:checksum",
+            "//validation/integration/linkage:fixture",
+            "@host_tools//:llvm/bin/" + OBJDUMP.split("/")[-1],
+        ],
+        deps = ["@rules_python//python/runfiles"],
+        env_inherit = ["PATH", "HOME", "USERPROFILE", "XDG_CACHE_HOME"],
+    )
+    for case in ["matching", "mixed"]
+]
+
+test_suite(
     name = "sdk",
     tags = ["manual"],
-    size = "large",
-    srcs = ["sdk.py"],
-    args = [
-        "$(rlocationpath //:_candidate_snapshot)",
-        "$(rlocationpath :checksum)",
-        "$(rlocationpath //validation/integration/linkage:checksum)",
-        "$(rlocationpath //validation/data:system_host_binary)",
-        "$(rlocationpath @host_tools//:llvm/bin/" + OBJDUMP.split("/")[-1] + ")",
-    ],
-    data = [
-        "sdk.c",
-        ":checksum",
-        ":dependency",
-        ":fixture",
-        "//:_candidate_snapshot",
-        "//source/bazel:release/package.py",
-        "//validation/data:sdk/build.tpl",
-        "//validation/data:sdk/module.tpl",
-        "//validation/data:sdk/multiple.tpl",
-        "//validation/data:sdk/consumer.c",
-        "//validation/data:sdk/dependency.c",
-        "//validation/data:sdk/dependency.tpl",
-        "//validation/data:sdk/source.tpl",
-        "//validation/data:sdk/style.cpp",
-        "//validation/data:sdk/web_benchmark.cpp",
-        "//validation/data:sdk/web_test.cpp",
-        "//validation/data:system_host_binary",
-        "//validation/integration/linkage:checksum",
-        "//validation/integration/linkage:fixture",
-        "@host_tools//:llvm/bin/" + OBJDUMP.split("/")[-1],
-    ],
-    deps = ["@rules_python//python/runfiles"],
-    env_inherit = ["PATH"],
+    tests = [":sdk_matching", ":sdk_mixed"],
 )
 
 # Independent output roots force fresh release and SDK actions. Debug builds
@@ -264,7 +275,7 @@ py_test(
     args = ["$(rlocationpath //:_candidate_snapshot)"],
     data = ["//:_candidate_snapshot"],
     deps = ["@rules_python//python/runfiles"],
-    env_inherit = ["PATH"],
+    env_inherit = ["PATH", "HOME", "USERPROFILE", "XDG_CACHE_HOME"],
     tags = ["manual"],
 )
 

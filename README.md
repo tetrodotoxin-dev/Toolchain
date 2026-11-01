@@ -135,6 +135,17 @@ Toolchain provides extra integration tests for validating the toolchain itself:
 bazel test //validation/integration:integration
 ```
 
+Pinned LLVM, target SDKs and Node use Bazel's shared repository contents cache,
+so fresh workspaces can reuse their extracted files. Host settings are generated
+for each workspace, and SDK normalization uses the declared Python toolchain.
+The `BAZEL_LLVM` and `TETRO_WINDOWS_SDK` overrides select local
+installations without adding those installations to the shared contents cache.
+
+The SDK and reproducibility checks share pinned dependency files while keeping
+their consumer workspaces and build outputs independent. The `:sdk_matching` and
+`:sdk_mixed` tests in `//validation/integration` can run separately; `:sdk` and
+`:integration` include both cases.
+
 ## Human workflows
 
 Even if contributors are using agents all workflows across all Tetrodotoxin projects

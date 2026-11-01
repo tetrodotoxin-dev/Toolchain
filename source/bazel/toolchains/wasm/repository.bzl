@@ -2,6 +2,8 @@
 
 """Pinned Emscripten inputs for hosted modules and validation runners."""
 
+load("//source:sdk/normalize.bzl", "copy_tool")
+
 _EMSCRIPTEN_RELEASE = "c387d7a7e9537d0041d2c3ae71b7538cc978104e"
 _NODE_VERSION = "22.16.0"
 
@@ -31,10 +33,6 @@ def _download_emscripten(ctx, host, strip_prefix):
         strip_prefix = strip_prefix,
     )
 
-def _tool_paths(ctx, paths):
-    """Resolve host executables once, at their repository boundary."""
-    return json.encode({name: str(ctx.path(path)).replace("\\", "/") for name, path in paths.items()})
-
 def _sysroot(ctx):
     """Extract the pinned Emscripten headers into a Bazel repository.
 
@@ -46,6 +44,7 @@ def _sysroot(ctx):
     # distribution contributes the compiler, linker and resource headers.
     _download_emscripten(ctx, "linux", "install/emscripten/cache/sysroot/include")
     ctx.template("BUILD", ctx.attr._build)
+    return ctx.repo_metadata(reproducible = True)
 
 emscripten_sysroot = repository_rule(
     implementation = _sysroot,
@@ -71,7 +70,7 @@ def _sdk(ctx):
     # Some bundles omit Clang's preprocessor alias. Clang selects that mode
     # from its filename, so expose the same tool in either host distribution.
     if not ctx.path("bin/clang-cpp" + suffix).exists:
-        ctx.symlink(ctx.path("bin/clang" + suffix), "bin/clang-cpp" + suffix)
+        copy_tool(ctx, "bin/clang" + suffix, "bin/clang-cpp" + suffix)
     if windows:
         # Keep Python imports from modifying the downloaded repository. The
         # toolchain supplies the selected interpreter through EMSDK_PYTHON.
@@ -97,7 +96,10 @@ FROZEN_CACHE = True
         "strip": "llvm-strip",
     }.items()}
     tools["gcc"] = "em++.bat" if windows else "emscripten/em++"
-    ctx.template("BUILD.bazel", ctx.attr._build, substitutions = {"__TOOLS__": _tool_paths(ctx, tools)})
+    ctx.template("BUILD.bazel", ctx.attr._build, substitutions = {
+        "__TOOLS__": json.encode({path: name for name, path in tools.items()}),
+    })
+    return ctx.repo_metadata(reproducible = True)
 
 emscripten_sdk = repository_rule(
     implementation = _sdk,
@@ -121,8 +123,9 @@ def _node(ctx):
     )
     ctx.template("BUILD.bazel", ctx.attr._build, substitutions = {
         "__NODE__": pin.node,
-        "__TOOLS__": _tool_paths(ctx, {"node": pin.node}),
+        "__TOOLS__": json.encode({pin.node: "node"}),
     })
+    return ctx.repo_metadata(reproducible = True)
 
 emscripten_node = repository_rule(
     implementation = _node,

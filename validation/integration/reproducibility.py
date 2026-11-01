@@ -2,6 +2,7 @@
 
 """Rebuild source libraries and complete SDKs in independent workspaces."""
 
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import os
@@ -144,20 +145,25 @@ archive_override(module_name = "tetro_toolchain", urls = [{json.dumps(archive.as
     environment = os.environ.copy()
     environment.pop("BUILD_WORKSPACE_DIRECTORY", None)
     environment.pop("BUILD_WORKING_DIRECTORY", None)
+    environment["HOME"] = str(Path.home())
+    environment.pop("TEST_TMPDIR", None)
     environment["PYTHONHASHSEED"] = str(number)
     base = root / "output"
-    command = [bazel, "--batch", "--nosystem_rc", "--nohome_rc", "--output_base=" + str(base)]
-    for targets in [
-        ["//:sdk"],
-        ["//source:static", "//source:shared_shared", "--platforms=@tetro_toolchain//:windows_x64"],
-        ["//source:static", "//source:shared_shared", "--platforms=@tetro_toolchain//:linux_x86_64"],
-    ]:
-        subprocess.run(command + ["build", *targets], cwd=workspace, env=environment, check=True)
-    forbidden = [root, archive.parent]
-    home = environment.get("USERPROFILE") or environment.get("HOME")
-    if home:
-        forbidden.append(Path(home))
-    return inventory(base / "execroot/_main/bazel-out", forbidden)
+    command = [bazel, "--nosystem_rc", "--nohome_rc", "--output_base=" + str(base)]
+    try:
+        for targets in [
+            ["//:sdk"],
+            ["//source:static", "//source:shared_shared", "--platforms=@tetro_toolchain//:windows_x64"],
+            ["//source:static", "//source:shared_shared", "--platforms=@tetro_toolchain//:linux_x86_64"],
+        ]:
+            subprocess.run(command + ["build", *targets], cwd=workspace, env=environment, check=True)
+        forbidden = [root, archive.parent]
+        home = environment.get("USERPROFILE") or environment.get("HOME")
+        if home:
+            forbidden.append(Path(home))
+        return inventory(base / "execroot/_main/bazel-out", forbidden)
+    finally:
+        subprocess.run(command + ["shutdown"], cwd=workspace, env=environment, check=True)
 
 
 if __name__ == "__main__":
@@ -167,8 +173,11 @@ if __name__ == "__main__":
     assert bazel, "The reproducibility integration check requires Bazel on PATH"
     with tempfile.TemporaryDirectory(prefix="repro-") as temporary:
         root = Path(temporary)
-        first = build(bazel, archive, root / "first", 1)
-        second = build(bazel, archive, root / "different-directory", 2)
+        with ThreadPoolExecutor(max_workers=2) as builds:
+            first_build = builds.submit(build, bazel, archive, root / "first", 1)
+            second_build = builds.submit(build, bazel, archive, root / "different-directory", 2)
+            first = first_build.result()
+            second = second_build.result()
         assert first.keys() == second.keys(), (first.keys() - second.keys(), second.keys() - first.keys())
         differences = [name for name in first if first[name] != second[name]]
         assert not differences, "Non-reproducible artifacts:\n" + "\n".join(differences)
