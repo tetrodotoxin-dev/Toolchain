@@ -162,8 +162,7 @@ def select(root, names):
 def format_batch(arguments):
     """Format and check one independent batch, retaining source order."""
     files, root, project, namespace_roots, configuration = arguments
-    for path in files:
-        canonicalize_source(path, root, project)
+    analyses = {path: canonicalize_source(path, root, project) for path in files}
     formatted = subprocess.run([
         CLANG_FORMAT,
         "--Werror",
@@ -175,9 +174,10 @@ def format_batch(arguments):
     ], capture_output=True, text=True, encoding="utf-8")
     results = []
     for path in files:
-        source, code, comments = format_source(path)
-        errors = source_errors(path, root, project, namespace_roots, source, code)
-        verdicts = classify_comments(path, source, comments, code)
+        analysis = format_source(path, analyses[path])
+        source, code = analysis.source, analysis.code
+        errors = source_errors(path, root, project, namespace_roots, analysis)
+        verdicts = classify_comments(path, source, analysis.comments, code)
         results.append((path, source, code, errors, verdicts))
     return formatted.returncode, formatted.stdout, formatted.stderr, results
 

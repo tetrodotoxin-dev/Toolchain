@@ -2,6 +2,7 @@
 
 """Validate C and C++ structure that clang-format leaves semantic."""
 
+from functools import cached_property
 import hashlib
 import re
 import subprocess
@@ -9,6 +10,70 @@ import subprocess
 
 HEADERS = {".h", ".hpp"}
 IMPLEMENTATIONS = {".cpp"}
+
+
+class SourceAnalysis:
+    """Own lexical positions and derived structure for one source text version."""
+
+    def __init__(self, source):
+        self.source = source
+        self.code, self.comments = lexical(source)
+
+    @cached_property
+    def raw_tokens(self):
+        return [
+            (match.group(0), match.start(), match.end())
+            for match in TOKENS.finditer(self.code)
+        ]
+
+    @cached_property
+    def tokens(self):
+        lines = self.source.splitlines(keepends=True)
+        logical_lines = [line.rstrip("\n") for line in lines]
+        directives = []
+        offset = 0
+        for index, line in enumerate(lines):
+            if directive(line):
+                end = logical_end(logical_lines, index)
+                length = sum(map(len, lines[index:end + 1]))
+                directives.append((offset, offset + length))
+            offset += len(line)
+        tokens = []
+        index = 0
+        for token in self.raw_tokens:
+            while index < len(directives) and token[1] >= directives[index][1]:
+                index += 1
+            if index == len(directives) or token[1] < directives[index][0]:
+                tokens.append(token)
+        return tokens
+
+    @cached_property
+    def delimiters(self):
+        stacks = {opening: [] for opening in "({["}
+        matched = {opening: {} for opening in stacks}
+        closing = {")": "(", "}": "{", "]": "["}
+        for index, (token, _, _) in enumerate(self.tokens):
+            if token in stacks:
+                stacks[token].append(index)
+            elif token in closing and stacks[closing[token]]:
+                opening = closing[token]
+                start = stacks[opening].pop()
+                matched[opening][start] = index
+                matched[opening][index] = start
+        return matched
+
+    @cached_property
+    def preprocessor(self):
+        return preprocessor_violations(self.source)
+
+    @cached_property
+    def paragraphs(self):
+        return paragraph_violations(self)
+
+    @cached_property
+    def multiline_braces(self):
+        return multiline_brace_violations(self)
+
 
 USING_NAMESPACE = re.compile(r"\busing\s+namespace\s+([^;]+);")
 SELECTIVE_USING = re.compile(
@@ -809,14 +874,15 @@ def executable_signature(tokens, brace, parentheses):
     )
 
 
-def trailing_return_errors(path, source, code, tokens=None):
+def trailing_return_errors(path, analysis):
     """Require explicit C++ function returns after the parameter list."""
     if path.suffix not in {".cpp", ".hpp"}:
         return []
-    tokens = code_tokens(source, code) if tokens is None else tokens
-    parentheses = pairs(tokens, "(", ")")
-    brackets = pairs(tokens, "[", "]")
-    braces = pairs(tokens, "{", "}")
+    source, code = analysis.source, analysis.code
+    tokens = analysis.tokens
+    parentheses = analysis.delimiters["("]
+    brackets = analysis.delimiters["["]
+    braces = analysis.delimiters["{"]
     # Prefix depth makes executable scope membership constant time for every
     # candidate parameter list. Searching every brace range from every opening
     # parenthesis made this repository-wide rule quadratic on large functions.
@@ -1062,12 +1128,9 @@ def trailing_return_errors(path, source, code, tokens=None):
 
 
 def raw_allocation_offsets(
-    source, code, allow_placement_new=False, allowed_calls=()
+    analysis, allow_placement_new=False, allowed_calls=()
 ):
-    tokens = [
-        (match.group(0), match.start(), match.end())
-        for match in TOKENS.finditer(code)
-    ]
+    tokens = analysis.raw_tokens
     offsets = []
     for index, (token, start, _) in enumerate(tokens):
         previous = tokens[index - 1][0] if index else ""
@@ -1103,7 +1166,8 @@ def approved_file(path, root, project, approved):
     return (project, relative) in approved
 
 
-def raw_allocation_errors(path, root, project, source, code):
+def raw_allocation_errors(path, root, project, analysis):
+    source = analysis.source
     if approved_file(path, root, project, APPROVED_RAW_ALLOCATION_FILES):
         return []
     allow_placement_new = approved_file(
@@ -1116,59 +1180,55 @@ def raw_allocation_errors(path, root, project, source, code):
         f"{path}:{line_at(source, offset)}: raw allocation is restricted to "
         "exact project paths approved in Toolchain's source policy"
         for offset in raw_allocation_offsets(
-            source, code,
+            analysis,
             allow_placement_new=allow_placement_new,
             allowed_calls=allowed_calls,
         )
     ]
 
 
-def flexible_type_offsets(source, code):
+def flexible_type_offsets(analysis):
     """Locate noncanonical numeric vocabulary."""
-    tokens = [
-        (match.group(0), match.start(), match.end())
-        for match in TOKENS.finditer(code)
-    ]
     offsets = []
-    for index, (token, start, _) in enumerate(tokens):
+    for token, start, _ in analysis.raw_tokens:
         if token not in FLEXIBLE_TYPES:
             continue
         offsets.append((token, start))
     return offsets
 
 
-def canonicalize_types(source, code):
+def canonicalize_types(analysis):
     """Replace exact width compiler aliases with the project vocabulary."""
-    tokens = list(TOKENS.finditer(code))
+    source = analysis.source
+    tokens = analysis.raw_tokens
     replacements = []
-    for index, match in enumerate(tokens):
-        token = match.group(0)
+    for index, (token, start, end) in enumerate(tokens):
         replacement = CANONICAL_TYPE_SUBSTITUTIONS.get(token)
         if (
             token == "int"
             and index + 2 < len(tokens)
-            and tokens[index + 1].group(0) == "main"
-            and tokens[index + 2].group(0) == "("
+            and tokens[index + 1][0] == "main"
+            and tokens[index + 2][0] == "("
         ):
             replacement = "S32"
         if replacement is None:
             continue
-        start = match.start()
         if (
             index >= 2
-            and tokens[index - 2].group(0) == "std"
-            and tokens[index - 1].group(0) == "::"
+            and tokens[index - 2][0] == "std"
+            and tokens[index - 1][0] == "::"
         ):
-            start = tokens[index - 2].start()
+            start = tokens[index - 2][1]
         replacements.append(
-            (start, match.end(), replacement)
+            (start, end, replacement)
         )
     for start, end, replacement in reversed(replacements):
         source = source[:start] + replacement + source[end:]
     return source
 
 
-def flexible_type_errors(path, root, project, source, code):
+def flexible_type_errors(path, root, project, analysis):
+    source = analysis.source
     if approved_file(path, root, project, APPROVED_FLEXIBLE_TYPE_FILES):
         return []
     contract = (
@@ -1177,7 +1237,7 @@ def flexible_type_errors(path, root, project, source, code):
     )
     return [
         f"{path}:{line_at(source, offset)}: noncanonical numeric type '{token}' {contract}"
-        for token, offset in flexible_type_offsets(source, code)
+        for token, offset in flexible_type_offsets(analysis)
     ]
 
 
@@ -1294,44 +1354,12 @@ def preprocessor_violations(source):
     return violations
 
 
-def preprocessor_errors(path, source):
+def preprocessor_errors(path, analysis):
     """Keep definitions and conditional code in explicit source regions."""
     return [
         f"{path}:{line + 1}: {message}"
-        for line, _, message in preprocessor_violations(source)
+        for line, _, message in analysis.preprocessor
     ]
-
-
-def code_tokens(source, code):
-    lines = source.splitlines(keepends=True)
-    logical_lines = [value.rstrip("\n") for value in lines]
-    masked = list(code)
-    offset = 0
-    for index, line in enumerate(lines):
-        if directive(line):
-            end = logical_end(logical_lines, index)
-            length = sum(len(value) for value in lines[index:end + 1])
-            for position in range(offset, offset + length):
-                if masked[position] != "\n":
-                    masked[position] = " "
-        offset += len(line)
-    return [
-        (match.group(0), match.start(), match.end())
-        for match in TOKENS.finditer("".join(masked))
-    ]
-
-
-def pairs(tokens, opening, closing):
-    stack = []
-    result = {}
-    for index, (token, _, _) in enumerate(tokens):
-        if token == opening:
-            stack.append(index)
-        elif token == closing and stack:
-            start = stack.pop()
-            result[start] = index
-            result[index] = start
-    return result
 
 
 def first_word(tokens):
@@ -1392,15 +1420,16 @@ def executable_scope(tokens, brace, parentheses):
     return executable_signature(tokens, brace, parentheses)
 
 
-def paragraph_violations(source, code, tokens=None):
+def paragraph_violations(analysis):
     """Locate paragraphs that need a new lexical boundary.
 
     An empty line begins the next paragraph in the same lexical scope.
     """
-    tokens = code_tokens(source, code) if tokens is None else tokens
-    braces = pairs(tokens, "{", "}")
-    parentheses = pairs(tokens, "(", ")")
-    brackets = pairs(tokens, "[", "]")
+    source, code = analysis.source, analysis.code
+    tokens = analysis.tokens
+    braces = analysis.delimiters["{"]
+    parentheses = analysis.delimiters["("]
+    brackets = analysis.delimiters["["]
     violations = []
     for opening in sorted(index for index in braces if index < braces[index]):
         closing = braces[opening]
@@ -1498,19 +1527,20 @@ def paragraph_violations(source, code, tokens=None):
     return violations
 
 
-def paragraph_errors(path, source, code, tokens=None):
+def paragraph_errors(path, analysis):
     """Advance each paragraph from declarations to statements to one block."""
     return [
-        f"{path}:{line_at(source, offset)}: lexical paragraphs progress through declarations, statements and one control block"
-        for offset in paragraph_violations(source, code, tokens)
+        f"{path}:{line_at(analysis.source, offset)}: lexical paragraphs progress through declarations, statements and one control block"
+        for offset in analysis.paragraphs
     ]
 
 
-def multiline_brace_violations(source, code, tokens=None):
+def multiline_brace_violations(analysis):
     """Separate a multiline braced entity from the source entity after it."""
-    tokens = code_tokens(source, code) if tokens is None else tokens
-    braces = pairs(tokens, "{", "}")
-    parentheses = pairs(tokens, "(", ")")
+    source, code = analysis.source, analysis.code
+    tokens = analysis.tokens
+    braces = analysis.delimiters["{"]
+    parentheses = analysis.delimiters["("]
     violations = []
     for opening in sorted(index for index in braces if index < braces[index]):
         closing = braces[opening]
@@ -1554,11 +1584,11 @@ def multiline_brace_violations(source, code, tokens=None):
     return violations
 
 
-def multiline_brace_errors(path, source, code, tokens=None):
+def multiline_brace_errors(path, analysis):
     """Keep each multiline braced entity in its own source paragraph."""
     return [
-        f"{path}:{line_at(source, offset)}: multiline braced entities end with an empty line before the next source entity"
-        for offset in multiline_brace_violations(source, code, tokens)
+        f"{path}:{line_at(analysis.source, offset)}: multiline braced entities end with an empty line before the next source entity"
+        for offset in analysis.multiline_braces
     ]
 
 
@@ -1572,36 +1602,41 @@ def line_starts(source):
 def canonicalize_source(path, root, project):
     """Apply mechanical vocabulary and include substitutions before Clang."""
     source = path.read_text(encoding="utf-8")
-    code, _ = lexical(source)
-    canonical = canonicalize_types(source, code)
+    analysis = SourceAnalysis(source)
+    canonical = canonicalize_types(analysis)
+    if canonical != analysis.source:
+        analysis = SourceAnalysis(canonical)
     if not approved_file(path, root, project, APPROVED_STANDARD_INTEGER_FILES):
-        canonical_code = code if canonical == source else lexical(canonical)[0]
-        canonical = remove_standard_integer_headers(canonical, canonical_code)
+        canonical = remove_standard_integer_headers(canonical, analysis.code)
+    if canonical != analysis.source:
+        analysis = SourceAnalysis(canonical)
     if canonical != source:
         path.write_text(canonical, encoding="utf-8", newline="\n")
+    return analysis
 
 
-def format_source(path):
+def format_source(path, analysis):
     """Insert lexical paragraph boundaries and return the repaired source scan."""
     source = path.read_text(encoding="utf-8")
-    code, comments = lexical(source)
+    if source != analysis.source:
+        analysis = SourceAnalysis(source)
     starts = line_starts(source)
     insertions = {
         starts[line]
-        for _, line, _ in preprocessor_violations(source)
+        for _, line, _ in analysis.preprocessor
         if line < len(starts)
     }
     insertions.update(
         source.rfind("\n", 0, offset) + 1
-        for offset in paragraph_violations(source, code)
+        for offset in analysis.paragraphs
     )
-    insertions.update(multiline_brace_violations(source, code))
+    insertions.update(analysis.multiline_braces)
     for offset in sorted(insertions, reverse=True):
         source = source[:offset] + "\n" + source[offset:]
     if insertions:
         path.write_text(source, encoding="utf-8", newline="\n")
-        code, comments = lexical(source)
-    return source, code, comments
+        analysis = SourceAnalysis(source)
+    return analysis
 
 
 def source_errors(
@@ -1609,10 +1644,9 @@ def source_errors(
     root,
     project,
     namespace_roots,
-    source,
-    code,
+    analysis,
 ):
-    tokens = code_tokens(source, code)
+    source, code = analysis.source, analysis.code
     return (
         private_header_errors(path, source, code)
         + c_header_api_errors(path, source, code)
@@ -1625,11 +1659,11 @@ def source_errors(
             (project, path.relative_to(root).as_posix()), (),
         ))
         + declaration_errors(path, root, project, source, code)
-        + trailing_return_errors(path, source, code, tokens)
-        + raw_allocation_errors(path, root, project, source, code)
-        + flexible_type_errors(path, root, project, source, code)
+        + trailing_return_errors(path, analysis)
+        + raw_allocation_errors(path, root, project, analysis)
+        + flexible_type_errors(path, root, project, analysis)
         + standard_integer_errors(path, root, project, source, code)
-        + preprocessor_errors(path, source)
-        + paragraph_errors(path, source, code, tokens)
-        + multiline_brace_errors(path, source, code, tokens)
+        + preprocessor_errors(path, analysis)
+        + paragraph_errors(path, analysis)
+        + multiline_brace_errors(path, analysis)
     )
