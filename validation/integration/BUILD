@@ -178,7 +178,7 @@ filegroup(
 # platform matrix is explicit, including through the integration suite.
 SDK = [
     check(
-        name = "sdk_" + case,
+        name = "sdk" if case == "all" else "sdk_" + case,
         tags = ["manual"],
         main = "sdk.py",
         srcs = ["sdk.py"],
@@ -200,13 +200,8 @@ SDK = [
             "//validation/integration/linkage:fixture",
         ],
     )
-    for case in ["matching", "mixed"]
+    for case in ["all", "matching", "mixed"]
 ]
-
-runner(
-    name = "sdk",
-    checks = SDK,
-)
 
 # Independent output roots force fresh release and SDK actions. Debug builds
 # retain their source records without imposing byte equality on those records.
@@ -239,7 +234,7 @@ WEB = check(
 # Toolchain checkout. Its leaves stay individually runnable during diagnosis.
 runner(
     name = "integration",
-    checks = [COMMENT_QUALITY, COMPILE_ALLOCATION, FORMAT, HARNESS, REPRODUCIBILITY, SNAPSHOT, WEB] + SDK,
+    checks = [COMMENT_QUALITY, COMPILE_ALLOCATION, FORMAT, HARNESS, REPRODUCIBILITY, SNAPSHOT, WEB, SDK[0]],
     binaries = [":components", ":shared", ":static", ":symbols"],
     data = [":validation_data"],
 )

@@ -4,7 +4,7 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
-load("@rules_python//python:py_binary.bzl", "py_binary")
+load(":rules/python.bzl", "python_command")
 load(":toolchains/platforms.bzl", "PLATFORMS")
 
 _TARGETS = {name: str(target.platform) for name, target in PLATFORMS.items()}
@@ -359,10 +359,11 @@ def _package(ctx):
     checksum = ctx.actions.declare_file(stem + "-sha256.txt")
     manifest = ctx.actions.declare_file(ctx.label.name + ".json")
     ctx.actions.write(manifest, json.encode({output.path: archives[output.basename] for output in outputs}))
+    python = ctx.attr._python[platform_common.ToolchainInfo].py3_runtime
     ctx.actions.run(
-        executable = ctx.attr._writer[DefaultInfo].files_to_run,
-        arguments = [manifest.path, checksum.path],
-        inputs = depset(inputs + [manifest]),
+        executable = python.interpreter,
+        arguments = ["-I", "-B", ctx.file._writer.path, manifest.path, checksum.path],
+        inputs = depset(inputs + [manifest, ctx.file._writer], transitive = [python.files]),
         outputs = outputs + [checksum],
         mnemonic = "PackageRelease",
     )
@@ -392,9 +393,11 @@ _package_release = rule(implementation = _package, attrs = {
         ],
         allow_files = True,
     ),
-    "_writer": attr.label(default = Label("//source/bazel:release_writer"), executable = True, cfg = "exec"),
+    "_writer": attr.label(default = Label("//source/bazel:release/package.py"), allow_single_file = True),
+    "_python": attr.label(default = Label("@rules_python//python:current_py_toolchain"), cfg = "exec"),
     "_allowlist_function_transition": attr.label(default = "@bazel_tools//tools/allowlists/function_transition_allowlist"),
 })
+
 
 def package(name = "sdk", module = None, components = {}, static = None, shared = None, linkage = None, visibility = ["//visibility:public"], tags = ["manual"], **kwargs):
     """Publish a module's library, component interfaces and SDK release command.
@@ -478,12 +481,11 @@ def package(name = "sdk", module = None, components = {}, static = None, shared 
         tags = tags,
         **kwargs
     )
-    py_binary(
+    python_command(
         name = name,
-        srcs = [Label("//source/bazel:release/sdk.py")],
-        main = Label("//source/bazel:release/sdk.py"),
-        args = [native.module_name(), native.module_version(), "//" + native.package_name() + ":" + archives],
-        python_version = "3.11.14",
+        script = Label("//source/bazel:release/sdk.py"),
+        arguments = [native.module_name(), native.module_version(), "$(execpath //:format)", "//" + native.package_name() + ":" + archives],
+        data = ["//:format"],
         visibility = visibility,
         tags = tags,
     )

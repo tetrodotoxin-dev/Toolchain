@@ -54,19 +54,21 @@ def snapshot(root, project, version):
 def main():
     workspace = os.environ.get("BUILD_WORKSPACE_DIRECTORY")
     execroot = os.environ.get("BUILD_EXECROOT")
-    if not workspace or not execroot or len(sys.argv) not in (3, 4):
+    if not workspace or not execroot or len(sys.argv) not in (4, 5):
         print("SDK releases run through `bazel run :sdk`", file=sys.stderr)
         return 1
     bazel = os.environ.get("BAZEL_REAL") or "bazel"
     command = [bazel, "--output_base=" + str(Path(execroot).parent.parent)]
     environment = {name: value for name, value in os.environ.items() if not name.startswith("RUNFILES_")}
+    result = subprocess.run([str(Path(execroot) / sys.argv[3])], cwd=workspace, env=environment)
+    if result.returncode:
+        return result.returncode
     options = ["-c", "opt", "--strip=always", "--platforms=@bazel_tools//tools:host_platform"]
     stages = [
-        ["run", "//:format"],
         ["run", "//:tests"],
     ]
-    if len(sys.argv) == 4:
-        stages.append(["build", sys.argv[3]])
+    if len(sys.argv) == 5:
+        stages.append(["build", sys.argv[4]])
     for arguments in stages:
         result = subprocess.run([*command, *arguments, *options], cwd=workspace, env=environment)
         if result.returncode:

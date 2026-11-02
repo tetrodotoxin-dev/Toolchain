@@ -2,12 +2,10 @@
 
 """Consume Toolchain's built SDK fixtures through the real repository importer.
 
-The SDK check reads candidate source and fixture archives from the build
-directory. Bazel's distdir serves those exact files under their release URLs,
-testing packaging before publication while the
-consumer retains fixed dependency pins. The validator builds Linux, Windows
-and WebAssembly consumers. Windows acquisition uses the pinned packages by
-default and honors an explicitly selected installed SDK.
+One immutable consumer workspace declares static, shared and deliberately
+invalid SDKs together. Platform flags choose the compiler environment; targets
+choose their SDK dependencies. The suite builds the consumer matrix and then
+runs one source release through formatting, host tests, packaging and snapshot.
 """
 
 from contextlib import ExitStack
@@ -50,7 +48,7 @@ def verify_runtime(directory, archive_path, host):
     # giving relocation an independent loader state after the build checks.
     environment = {key: value for key, value in os.environ.items()
                    if not key.startswith(("LD_", "RUNFILES_"))}
-    command = [sys.executable, str(Path(__file__).resolve()), "--load",
+    command = [sys.executable, "-I", "-B", str(Path(__file__).resolve()), "--load",
                str(directory / metadata["library"])]
     missing_host = subprocess.run(command, cwd=directory, env=environment,
                                   capture_output=True, text=True)
@@ -81,7 +79,7 @@ def verify_conflict(root, writer, first, second):
         [str(first), "lib/library.so"], [str(second), "lib/library.so"],
     ]}))
     result = subprocess.run(
-        [sys.executable, str(writer), str(manifest), str(root / "conflict.sha256")],
+        [sys.executable, "-I", "-B", str(writer), str(manifest), str(root / "conflict.sha256")],
         capture_output=True, text=True,
     )
     assert result.returncode != 0 and "Conflicting archive entry: lib/library.so" in result.stderr, result.stderr
@@ -101,7 +99,7 @@ def verify_private_header_boundary(root, writer):
         [str(private), "include/project/detail.h"],
     ]}))
     result = subprocess.run(
-        [sys.executable, str(writer), str(manifest), str(boundary / "sha256.txt")],
+        [sys.executable, "-I", "-B", str(writer), str(manifest), str(boundary / "sha256.txt")],
         capture_output=True,
         text=True,
     )
@@ -113,49 +111,24 @@ def verify_private_header_boundary(root, writer):
     print("Public dependency on a private header was rejected.", flush=True)
 
 
-def verify_dependency_conflict(root, workspace, toolchain, directory, dependency_directory, sources, values, pins, component=False):
-    altered = root / ("conflicting-component" if component else "conflicting")
-    altered.mkdir()
-    platform = "windows-x86_64-msvc" if component else "linux-x86_64-v3"
-    variant = platform + "-" + values["dependency_linkage"]
-    name = "tetro_toolchain-" + values["version"] + "-" + variant + ".zip"
-    with zipfile.ZipFile(dependency_directory / name) as original:
+def conflicting_archives(directory, pins, version, variant, output, component=False):
+    name = "tetro_toolchain-" + version + "-" + variant + ".zip"
+    with zipfile.ZipFile(directory / name) as original:
         contents = {entry: original.read(entry) for entry in original.namelist()}
     metadata = json.loads(contents["sdk.json"])
-    kind = "archives" if values["dependency_linkage"] == "static" else "runtime"
+    kind = "archives" if variant.endswith("-static") else "runtime"
     path = "lib/plugin.dll" if component else metadata[kind][0]["library"]
     contents[path] += b"different runtime fixture"
-    metadata["sha256"][path] = hashlib.sha256(contents[path]).hexdigest()
+    metadata["sha256"][path] = checksum_bytes(contents[path])
     contents["sdk.json"] = json.dumps(metadata).encode()
-    with zipfile.ZipFile(altered / name, "w") as archive:
+    with zipfile.ZipFile(output / name, "w") as archive:
         for path, content in contents.items():
             archive.writestr(path, content)
-    conflict = dict(values)
-    conflict["dependency_archives"] = repr(dict(pins, **{
-        variant: checksum(altered / name),
-    }))
-    conflict["dependency_pin"] = substitute((sources / "dependency.tpl").read_text(), conflict)
-    (workspace / "MODULE.bazel").write_text(substitute((sources / "module.tpl").read_text(), conflict))
-    result = subprocess.run([
-        "bazel", "--output_base=" + str(root / "bazel"),
-        "build", "//:component" if component else "//:consumer", "--distdir=" + str(altered),
-        "--platforms=@tetro_toolchain//:" + ("windows_x64" if component else "linux_x86_64"),
-        "--distdir=" + str(toolchain.parent), "--distdir=" + str(directory),
-        "--distdir=" + str(dependency_directory),
-    ], cwd=workspace, capture_output=True, text=True)
-    diagnostic = ("Bundled archive" if kind == "archives" else "Bundled runtime") + " disagrees with a declared SDK dependency"
-    if component:
-        diagnostic = "Conflicting SDK runtime contents or link requirements for plugin.dll"
-    assert result.returncode != 0 and diagnostic in result.stderr, result.stderr
-    print("Incompatible SDK dependency was rejected during import.", flush=True)
+    return dict(pins, **{variant: checksum(output / name)})
 
 
-def verify_vscode(root, workspace, toolchain, directory):
-    subprocess.run([
-        "bazel", "--output_base=" + str(root / "bazel"),
-        "run", "//:vscode", "--distdir=" + str(toolchain.parent),
-        "--distdir=" + str(directory),
-    ], cwd=workspace, check=True)
+def verify_vscode(command, workspace):
+    subprocess.run(command + ["run", "//:vscode"], cwd=workspace, check=True)
     generated = workspace / ".vscode"
     assert {path.name for path in generated.iterdir()} == {
         ".clang-format",
@@ -180,9 +153,7 @@ def verify_vscode(root, workspace, toolchain, directory):
     assert formatter.is_file()
     tasks = json.loads((generated / "tasks.json").read_text())["tasks"]
     build = next(task for task in tasks if task["label"] == "[Debug] Build All")
-    subprocess.run([
-        "bazel", "--output_base=" + str(root / "bazel"), *build["args"],
-    ], cwd=workspace, check=True)
+    subprocess.run(command + build["args"], cwd=workspace, check=True)
     for launch in json.loads((generated / "launch.json").read_text())["configurations"]:
         program = launch.get("windows", {}).get("program", launch["program"]) if WINDOWS else launch["program"]
         assert Path(program.replace("${workspaceFolder}", str(workspace))).is_file(), program
@@ -201,39 +172,9 @@ def verify_vscode(root, workspace, toolchain, directory):
     print("VS Code uses the candidate Clang binary and generated style.", flush=True)
 
 
-def verify_missing_variant(root, workspace, toolchain, directory, sources, values, pins):
-    missing = dict(values, library_archives=repr({
-        key: digest for key, digest in pins.items()
-        if key == "headers" or key.endswith("-static")
-    }))
-    (workspace / "MODULE.bazel").write_text(substitute((sources / "module.tpl").read_text(), missing))
-    result = subprocess.run([
-        "bazel", "--output_base=" + str(root / "bazel"),
-        "build", "//:consumer", "--distdir=" + str(toolchain.parent),
-        "--distdir=" + str(directory),
-    ], cwd=workspace, capture_output=True, text=True)
-    assert result.returncode != 0 and "No platform archives supply the requested shared linkage" in result.stderr, result.stderr
-    print("Missing linkage failed without selecting another variant.", flush=True)
-
-
-def verify(toolchain, checksum_manifest, dependency_manifest, host, objdump, mixed=False):
-    toolchain = Path(toolchain).resolve()
-    directory = Path(checksum_manifest).resolve().parent
-    dependency_directory = Path(dependency_manifest).resolve().parent
-    version = toolchain.name.removeprefix("tetro_toolchain-").removesuffix("-source.tar.gz")
-    repository = Path(__file__).resolve().parents[2]
-    sources = repository / "validation/data/sdk"
-    with tarfile.open(toolchain, "r:gz") as archive:
-        packaged_sources = set(archive.getnames())
-        project_files = {
-            name: archive.extractfile(name).read()
-            for name in [".bazelrc", ".bazelversion", "LICENSE"]
-        }
-    assert "source/bazel/rules/.clang-format" in packaged_sources
-    assert "source/toolchain/validation/move_only.hpp" in packaged_sources
-    assert "source/toolchain/validation/tracked_value.hpp" in packaged_sources
-    assert ".clang-format" not in packaged_sources
-
+def verify_archives(checksum_manifest, dependency_manifest, version, mixed=False):
+    directory = checksum_manifest.parent
+    dependency_directory = dependency_manifest.parent
     pins = {}
     for project in ["tetro_toolchain", "toolchain_test"]:
         prefix = project + "-" + version + "-"
@@ -322,212 +263,195 @@ def verify(toolchain, checksum_manifest, dependency_manifest, host, objdump, mix
                 if key == "windows-x86_64-msvc-static":
                     assert metadata["library"].endswith("_static.lib")
 
-    # The temporary workspace owns consumer configuration and one test source.
-    # Candidate archives supply every SDK header, library and Bazel rule.
+    return pins
+
+
+def verify_repack(directory, output, version, linkage):
+    for platform in ["linux-x86_64-v3", "windows-x86_64-msvc", "wasm32-emscripten"]:
+        name = "toolchain_test-" + version + "-" + platform + "-" + linkage + ".zip"
+        with zipfile.ZipFile(directory / name) as before, zipfile.ZipFile(output / name) as after:
+            original = json.loads(before.read("sdk.json"))
+            repacked = json.loads(after.read("sdk.json"))
+            assert original["library"] == repacked["library"]
+            assert before.read(original["library"]) == after.read(repacked["library"])
+            for field in ["components", "runtime"]:
+                assert original[field] == repacked[field], (field, original[field], repacked[field])
+            assert [item["interface"] for item in original["system"]] == [item["interface"] for item in repacked["system"]]
+            for first, second in zip(original["system"], repacked["system"]):
+                remaining = iter(second["linkopts"])
+                assert all(flag in remaining for flag in first["linkopts"])
+            assert len(after.namelist()) == len(set(after.namelist()))
+            for library in repacked["runtime"]:
+                assert before.read(library["library"]) == after.read(library["library"])
+            assert sorted(checksum_bytes(before.read(item["library"])) for item in original["archives"]) == sorted(checksum_bytes(after.read(item["library"])) for item in repacked["archives"])
+
+
+def verify_release(command, workspace, version):
+    subprocess.run(command + ["run", "//:sdk"], cwd=workspace, check=True)
+    snapshot = workspace / (".bin/release/consumer-" + version + "-source.tar.gz")
+    assert snapshot.exists()
+    commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=workspace, text=True)
+    assert snapshot.with_name(snapshot.name + ".commit").read_text() == commit
+    assert snapshot.with_name(snapshot.name + ".sha256").read_text() == checksum(snapshot) + "  " + snapshot.name + "\n"
+    with tarfile.open(snapshot, "r:gz") as archive:
+        assert archive.extractfile("MODULE.bazel").read() == (workspace / "MODULE.bazel").read_bytes()
+    assert not (workspace / ".clang-format").exists()
+    print("Source release passed formatting, host tests, packaging and its source snapshot.", flush=True)
+
+
+def verify(toolchain, matching, mixed, host, objdump, case):
+    version = toolchain.name.removeprefix("tetro_toolchain-").removesuffix("-source.tar.gz")
+    repository = Path.cwd()
+    sources = repository / "validation/data/sdk"
+    with tarfile.open(toolchain, "r:gz") as archive:
+        packaged_sources = set(archive.getnames())
+        project_files = {name: archive.extractfile(name).read() for name in [".bazelrc", ".bazelversion", "LICENSE"]}
+    for path in ["source/bazel/rules/.clang-format", "source/toolchain/validation/move_only.hpp", "source/toolchain/validation/tracked_value.hpp"]:
+        assert path in packaged_sources, path
+    assert ".clang-format" not in packaged_sources
+    pins = verify_archives(matching, matching, version)
+    mixed_pins = verify_archives(mixed, matching, version, mixed=True)
+    families = ["matching", "mixed"] if case == "all" else [case]
+    directories = {"matching": matching.parent, "mixed": mixed.parent}
+    cases = [family + "_" + linkage for family in families for linkage in ["static", "shared"]]
+
     with tempfile.TemporaryDirectory(prefix="toolchain-sdk-test-") as temporary, ExitStack() as cleanup:
         root = Path(temporary)
-        # Only the system-provided runtime belongs on the host search path.
-        # Other producer outputs must not mask missing packaged dependencies.
-        host_directory = root / "host-runtime"
-        host_directory.mkdir()
-        shutil.copyfile(host, host_directory / host.name)
-        host = host_directory / host.name
+        conflicts = root / "conflicts"
+        conflicts.mkdir()
+        values = {
+            "version": version,
+            "toolchain_sha256": checksum(toolchain),
+            "dependency_archives": repr(pins["tetro_toolchain"]),
+            "matching_archives": repr(pins["toolchain_test"]),
+            "mixed_archives": repr(mixed_pins["toolchain_test"]),
+            "bad_static_archives": repr(conflicting_archives(matching.parent, pins["tetro_toolchain"], version, "linux-x86_64-v3-static", conflicts)),
+            "bad_shared_archives": repr(conflicting_archives(matching.parent, pins["tetro_toolchain"], version, "linux-x86_64-v3-shared", conflicts)),
+            "bad_component_archives": repr(conflicting_archives(matching.parent, pins["tetro_toolchain"], version, "windows-x86_64-msvc-static", conflicts, component=True)),
+            "missing_archives": repr({key: digest for key, digest in pins["toolchain_test"].items() if key == "headers" or key.endswith("-static")}),
+        }
         workspace = root / "consumer"
         workspace.mkdir()
-        cleanup.callback(
-            subprocess.run,
-            ["bazel", "--output_base=" + str(root / "bazel"), "shutdown"],
-            cwd=workspace,
-            check=True,
-        )
+        command = ["bazel", "--output_base=" + str(root / "bazel")]
+        cleanup.callback(subprocess.run, command + ["shutdown"], cwd=workspace, check=True)
         for name, content in project_files.items():
             if name == ".bazelrc":
                 content = b"\n".join(line for line in content.splitlines() if not line.startswith(b"build")) + b"\n"
                 content += b"build -c opt --strip=always --platforms=@bazel_tools//tools:host_platform\nbuild --spawn_strategy=local\n"
+                for directory in [conflicts, matching.parent, mixed.parent, toolchain.parent]:
+                    content += ("\ncommon --distdir=" + json.dumps(directory.as_posix()) + "\n").encode()
             (workspace / name).write_bytes(content)
-        # Both fixture families share the separately packaged dependency SDK.
-        # These are pinned local test artifacts served by Bazel's distdir.
-        with (workspace / ".bazelrc").open("a") as options:
-            for archive_directory in [dependency_directory, toolchain.parent, directory]:
-                options.write("\ncommon --distdir=" + json.dumps(archive_directory.as_posix()) + "\n")
-            runtime_variable = "PATH" if WINDOWS else "LD_LIBRARY_PATH"
-            os.environ[runtime_variable] = str(host.parent) + os.pathsep + os.environ.get(runtime_variable, "")
-        (workspace / "source").mkdir()
-        shutil.copyfile(sources / "source.tpl", workspace / "source/BUILD.bazel")
-        shutil.copyfile(sources / "style.cpp", workspace / "source/style.cpp")
-        (workspace / "multiple").mkdir()
-        shutil.copyfile(sources / "multiple.tpl", workspace / "multiple/BUILD")
-        (workspace / "validation/tests").mkdir(parents=True)
-        (workspace / "validation/benchmarks").mkdir(parents=True)
-        shutil.copyfile(sources / "web_test.cpp", workspace / "validation/tests/web.cpp")
-        shutil.copyfile(sources / "web_benchmark.cpp", workspace / "validation/benchmarks/web.cpp")
-        shutil.copyfile(repository / "validation/integration/sdk.c", workspace / "consumer.c")
-        shutil.copyfile(sources / "dependency.c", workspace / "dependency.c")
-        shutil.copyfile(sources / "consumer.c", workspace / "library.c")
-        for linkage in ["static", "shared"]:
-            dependency_linkage = ("shared" if linkage == "static" else "static") if mixed else linkage
-            values = {
-                "version": version,
-                "platform": PLATFORM,
-                "toolchain_sha256": checksum(toolchain),
-                "linkage": linkage,
-                "dependency_linkage": dependency_linkage,
-                "alternate_linkage": "shared" if dependency_linkage == "static" else "static",
-                "alternate_static": "0" if dependency_linkage == "static" else "1",
-                "static": "1" if linkage == "static" else "0",
-                "dependency_archives": repr(pins["tetro_toolchain"]),
-                "library_archives": repr(pins["toolchain_test"]),
-                "dependency_pin": (sources / "dependency.tpl").read_text(),
-                "dependencies": repr([] if linkage == "shared" and dependency_linkage == "static" else ["@dependency//:tetro_toolchain"]),
-            }
-            values["dependency_pin"] = substitute(values["dependency_pin"], values)
-            for output, template in [("MODULE.bazel", "module.tpl"), ("BUILD", "build.tpl")]:
-                (workspace / output).write_text(substitute((sources / template).read_text(), values))
-            (workspace / "multiple/BUILD").write_text(substitute((sources / "multiple.tpl").read_text(), values))
-            if linkage == "static" and not mixed:
-                selected = subprocess.check_output([
-                    "bazel", "--output_base=" + str(root / "bazel"),
-                    "query", "labels(actual, //multiple:_validation_static)",
-                    "--distdir=" + str(toolchain.parent),
-                    "--distdir=" + str(directory),
-                ], cwd=workspace, text=True).strip()
-                assert selected == "//source:toolchain_test", selected
-                print("Multiple SDK packages preserve the primary validation runtime.", flush=True)
-                release = [
-                    "bazel", "--output_base=" + str(root / "bazel"),
-                    "run", "//:repack", "--distdir=" + str(toolchain.parent),
-                    "--distdir=" + str(directory),
-                ]
-                subprocess.run([
-                    "bazel", "--output_base=" + str(root / "bazel"),
-                    "run", "//:format",
-                ], cwd=workspace, check=True)
-                (workspace / ".gitignore").write_text(".bin/\n.bazelrc.local\nMODULE.bazel.lock\n.vscode/\n")
-                for command in [
-                    ["git", "init", "--quiet"],
-                    ["git", "add", "."],
-                    ["git", "-c", "user.name=Toolchain Validation", "-c", "user.email=validation@tetrodotoxin.dev",
-                     "commit", "--quiet", "-m", "SDK release fixture"],
-                ]:
-                    subprocess.run(command, cwd=workspace, check=True)
-                subprocess.run(release, cwd=workspace, check=True)
-                assert not (workspace / ".clang-format").exists()
-                snapshot = workspace / (".bin/release/consumer-" + version + "-source.tar.gz")
-                assert snapshot.exists()
-                commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=workspace, text=True)
-                assert snapshot.with_name(snapshot.name + ".commit").read_text() == commit
-                assert snapshot.with_name(snapshot.name + ".sha256").read_text() == checksum(snapshot) + "  " + snapshot.name + "\n"
-                with tarfile.open(snapshot, "r:gz") as archive:
-                    assert archive.extractfile("MODULE.bazel").read() == (workspace / "MODULE.bazel").read_bytes()
-                print("Candidate SDK release passed formatting, host tests, packaging and its source snapshot.", flush=True)
-            subprocess.run([
-                "bazel", "--output_base=" + str(root / "bazel"),
-                "build", "//:consumer", "//:component", "//:alternate/consumer", "//:consumer_library_shared", "//:_repack_archives",
-                "--distdir=" + str(toolchain.parent), "--distdir=" + str(directory),
-            ], cwd=workspace, check=True)
-            output_directory = workspace / ".bin/bin"
-            if not output_directory.exists():
-                output_directory = workspace / "bazel-bin"
+        module = substitute((sources / "module.tpl").read_text(), values)
+        (workspace / "MODULE.bazel").write_text(module, encoding="utf-8", newline="\n")
+        for output, source in {
+            "BUILD": sources / "consumer.build",
+            "source/BUILD": sources / "consumer.source.build",
+            "source/consumer/application/value.c": sources / "release.c",
+            "source/consumer/application/value.h": sources / "release.h",
+            "validation/tests/web.cpp": sources / "web_test.cpp",
+            "validation/benchmarks/web.cpp": sources / "web_benchmark.cpp",
+            "consumer.c": repository / "validation/integration/sdk.c",
+            "dependency.c": sources / "dependency.c",
+            "library.c": sources / "consumer.c",
+        }.items():
+            path = workspace / output
+            path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, path)
+        (workspace / ".gitignore").write_text(".bin/\n.bazelrc.local\nMODULE.bazel.lock\n.vscode/\n")
+        for arguments in [
+            ["init", "--quiet"],
+            ["add", "."],
+            ["-c", "user.name=Toolchain Validation", "-c", "user.email=validation@tetrodotoxin.dev", "commit", "--quiet", "-m", "SDK release fixture"],
+        ]:
+            subprocess.run(["git", *arguments], cwd=workspace, check=True)
+
+        host_directory = root / "host-runtime"
+        host_directory.mkdir()
+        shutil.copyfile(host, host_directory / host.name)
+        host = host_directory / host.name
+        variable = "PATH" if WINDOWS else "LD_LIBRARY_PATH"
+        runtime_environment = dict(os.environ)
+        runtime_environment[variable] = str(host.parent) + os.pathsep + runtime_environment.get(variable, "")
+
+        targets = ["//:" + name + "/" + target for name in cases for target in ["consumer", "component", "alternate/consumer", "consumer_library_shared"]]
+        standalone = ["//:" + family + "/standalone" for family in families]
+        subprocess.run(command + ["build", *targets, *standalone], cwd=workspace, check=True)
+        output = workspace / ".bin/bin"
+        for name in cases:
             for executable in [EXECUTABLE, "component.exe" if WINDOWS else "component", "alternate/" + EXECUTABLE]:
-                subprocess.run([str(output_directory / executable)], cwd=workspace, check=True)
+                subprocess.run([str(output / name / executable)], cwd=workspace, env=runtime_environment, check=True)
+            subprocess.run([sys.executable, "-I", "-B", str(Path(__file__).resolve()), "--load-consumer", str(output / name / CONSUMER_LIBRARY), str(host)],
+                           env=runtime_environment, check=True)
             if WINDOWS:
-                for directory_name in ["", "alternate"]:
-                    assert (output_directory / directory_name / "plugin.dll").is_file()
-            print(linkage + " SDK consumer passed", flush=True)
-            subprocess.run([sys.executable, str(Path(__file__).resolve()), "--load-consumer",
-                            str(output_directory / CONSUMER_LIBRARY), str(host)], check=True)
-            if linkage == "static":
-                dynamic = subprocess.run([str(objdump), "-p", str(output_directory / EXECUTABLE)], capture_output=True, text=True, check=True).stdout
+                for directory in [output / name, output / name / "alternate"]:
+                    assert (directory / "plugin.dll").is_file()
+            if name.endswith("_static"):
+                dynamic = subprocess.run([str(objdump), "-p", str(output / name / EXECUTABLE)], capture_output=True, text=True, check=True).stdout
                 dependency_name = "dependency_shared.dll" if WINDOWS else "libdependency_shared.so"
-                assert (dependency_name in dynamic) == (dependency_linkage == "shared"), dynamic
-                if dependency_linkage == "static":
+                assert (dependency_name in dynamic) == name.startswith("mixed"), dynamic
+                if name.startswith("matching"):
                     assert ("runtime.dll" if WINDOWS else "libruntime.so") not in dynamic, dynamic
-            assert not list(output_directory.glob("*-source.zip"))
-            original = directory / ("toolchain_test-" + version + "-" + PLATFORM + "-" + linkage + ".zip")
-            repacked = output_directory / original.name
-            with zipfile.ZipFile(original) as before, zipfile.ZipFile(repacked) as after:
-                before_components = json.loads(before.read("sdk.json"))["components"]
-                after_components = json.loads(after.read("sdk.json"))["components"]
-                assert before_components == after_components, (before_components, after_components)
-                before_runtime = json.loads(before.read("sdk.json"))["runtime"]
-                after_runtime = json.loads(after.read("sdk.json"))["runtime"]
-                assert before_runtime == after_runtime
-                before_system = json.loads(before.read("sdk.json"))["system"]
-                after_system = json.loads(after.read("sdk.json"))["system"]
-                assert [item["interface"] for item in before_system] == [item["interface"] for item in after_system]
-                for original_interface, repacked_interface in zip(before_system, after_system):
-                    # Explicit SDK dependencies can contribute further options.
-                    # The original option sequence must survive repackaging.
-                    remaining = iter(repacked_interface["linkopts"])
-                    assert all(flag in remaining for flag in original_interface["linkopts"])
-                assert len(after.namelist()) == len(set(after.namelist()))
-                for library in after_runtime:
-                    assert before.read(library["library"]) == after.read(library["library"])
-                # Declared SDKs may give an identical archive its public name.
-                # Compare contents rather than relying on the producer's target
-                # basename surviving the independent import and repackage.
-                before_archives = json.loads(before.read("sdk.json"))["archives"]
-                after_archives = json.loads(after.read("sdk.json"))["archives"]
-                assert sorted(checksum_bytes(before.read(item["library"])) for item in before_archives) == sorted(checksum_bytes(after.read(item["library"])) for item in after_archives)
+        for family in families:
+            subprocess.run([str(output / family / ("standalone.exe" if WINDOWS else "standalone"))], cwd=workspace, env=runtime_environment, check=True)
+        print("Host SDK consumers and bundled static dependencies passed: " + ", ".join(cases), flush=True)
+
+        for name in cases:
+            subprocess.run(command + ["build", "//:_repack_archives", "--define=sdk_case=" + name], cwd=workspace, check=True)
+            family, linkage = name.split("_")
+            verify_repack(directories[family], output, version, linkage)
             if linkage == "shared":
-                verify_runtime(root / "repacked", repacked, host)
-            for platform in ["linux_x86_64", "windows_x64", "wasm32"]:
-                if platform == ("windows_x64" if WINDOWS else "linux_x86_64"):
-                    continue
-                subprocess.run([
-                    "bazel", "--output_base=" + str(root / "bazel"),
-                    "build", "//:consumer", "//:component", "//:alternate/consumer", "//:consumer_library_shared", "--platforms=@tetro_toolchain//:" + platform,
-                    "--distdir=" + str(toolchain.parent), "--distdir=" + str(directory),
-                ], cwd=workspace, check=True)
-                print(linkage + " SDK consumer built for " + platform, flush=True)
-                if platform == "windows_x64":
-                    for directory_name in ["", "alternate"]:
-                        assert (output_directory / directory_name / "plugin.dll").is_file()
-            if linkage == "static":
-                # The complete SDK can link using only its bundled dependencies.
-                # Component header imports remain separately declared.
-                standalone = dict(values, dependencies="[]")
-                (workspace / "MODULE.bazel").write_text(substitute((sources / "module.tpl").read_text(), standalone))
-                subprocess.run([
-                    "bazel", "--output_base=" + str(root / "bazel"),
-                    "build", "//:consumer",
-                    "--distdir=" + str(toolchain.parent), "--distdir=" + str(directory),
-                ], cwd=workspace, check=True)
-                subprocess.run([str(output_directory / EXECUTABLE)], cwd=workspace, check=True)
-                print("Static SDK linked using bundled dependencies.", flush=True)
-                verify_dependency_conflict(root, workspace, toolchain, directory, dependency_directory,
-                                           sources, values, pins["tetro_toolchain"])
-        if not mixed:
-            subprocess.run([
-                "bazel", "--output_base=" + str(root / "bazel"),
-                "run", "//:tests_web",
-                "--distdir=" + str(toolchain.parent),
-                "--distdir=" + str(directory),
-            ], cwd=workspace, check=True)
-            print("Candidate Web validation runner passed.", flush=True)
-            verify_vscode(root, workspace, toolchain, directory)
-        if mixed:
-            # The shared SDK embeds static code, while its public component
-            # introduces the dependency SDK separately. Conflicting runtimes
-            # must fail even though the aggregate declares no link dependency.
-            verify_dependency_conflict(root, workspace, toolchain, directory, dependency_directory,
-                                       sources, values, pins["tetro_toolchain"], component=True)
-        else:
-            verify_missing_variant(root, workspace, toolchain, directory, sources, values, pins["toolchain_test"])
-        metadata = verify_runtime(root / "relocated", directory / ("toolchain_test-" + version + "-" + PLATFORM + "-shared.zip"), host)
-        # The release manifest owns every relocated path, so fixture target
-        # names can evolve independently from this collision check.
-        if metadata["runtime"]:
-            verify_conflict(root, repository / "source/bazel/release/package.py",
-                            root / "relocated" / metadata["library"],
-                            root / "relocated" / metadata["runtime"][0]["library"])
+                repacked = output / ("toolchain_test-" + version + "-" + PLATFORM + "-shared.zip")
+                relocated = root / ("relocated-" + family)
+                metadata = verify_runtime(relocated, repacked, host)
+                if metadata["runtime"]:
+                    verify_conflict(root, repository / "source/bazel/release/package.py",
+                                    relocated / metadata["library"], relocated / metadata["runtime"][0]["library"])
+        print("SDK components, dependencies and runtime payloads survived repackaging.", flush=True)
+
+        for platform in ["linux_x86_64", "windows_x64", "wasm32"]:
+            if platform == ("windows_x64" if WINDOWS else "linux_x86_64"):
+                continue
+            subprocess.run(command + ["build", *targets, "--platforms=@tetro_toolchain//:" + platform], cwd=workspace, check=True)
+            if platform == "windows_x64":
+                for name in cases:
+                    for directory in [output / name, output / name / "alternate"]:
+                        assert (directory / "plugin.dll").is_file()
+            print("SDK consumers built for " + platform, flush=True)
+
+        negative_targets = []
+        diagnostics = []
+        if "matching" in families:
+            negative_targets.append("//:conflict_archive")
+            diagnostics.append("Bundled archive disagrees with a declared SDK dependency")
+        if "mixed" in families:
+            negative_targets.append("//:conflict_runtime")
+            diagnostics.append("Bundled runtime disagrees with a declared SDK dependency")
+        failures = [("linux_x86_64", negative_targets, diagnostics)]
+        if "mixed" in families:
+            failures.append(("windows_x64", ["//:conflict_component"], ["Conflicting SDK runtime contents or link requirements for plugin.dll"]))
+        if "matching" in families:
+            failures.append(("windows_x64" if WINDOWS else "linux_x86_64", ["//:missing_variant"], ["No platform archives supply the requested shared linkage"]))
+        for platform, invalid, diagnostics in failures:
+            result = subprocess.run(command + ["build", *invalid, "--keep_going", "--platforms=@tetro_toolchain//:" + platform],
+                                    cwd=workspace, capture_output=True, text=True)
+            assert result.returncode != 0, result.stdout
+            assert all(message in result.stderr for message in diagnostics), result.stderr
+        print("Conflicting SDK dependencies and missing variants were rejected.", flush=True)
+
+        if "matching" in families:
+            selected = subprocess.check_output(command + ["query", "labels(actual, //:_validation_static)"], cwd=workspace, text=True).strip()
+            assert selected == "//source:consumer", selected
+            subprocess.run(command + ["run", "//:tests_web"], cwd=workspace, check=True)
+            verify_release(command, workspace, version)
+            verify_vscode(command, workspace)
+        assert (workspace / "MODULE.bazel").read_text(encoding="utf-8") == module
+        assert not list(output.glob("*-source.zip"))
 
 
 if __name__ == "__main__":
     if sys.argv[1] in ["--load", "--load-consumer"]:
         import ctypes
         if WINDOWS:
-            # The fixture resolves its plugin by name through LoadLibraryW.
             os.environ["PATH"] = str(Path(sys.argv[2]).parent) + os.pathsep + os.environ.get("PATH", "")
         if len(sys.argv) > 3:
             ctypes.CDLL(sys.argv[3], mode=ctypes.RTLD_GLOBAL)
@@ -540,15 +464,10 @@ if __name__ == "__main__":
     else:
         toolchain, matching, mixed, host, objdump = [Path(argument).resolve() for argument in sys.argv[1:-1]]
         case = sys.argv[-1]
-        assert case in ["matching", "mixed"], case
-        repository = Path(__file__).resolve().parents[2]
+        assert case in ["all", "matching", "mixed"], case
+        repository = Path.cwd()
         with tempfile.TemporaryDirectory(prefix="toolchain-private-header-") as temporary:
-            verify_private_header_boundary(
-                Path(temporary),
-                repository / "source/bazel/release/package.py",
-            )
-        # Nested Bazel commands establish their own workspace for formatter
-        # and editor installation, including when this test uses `bazel run`.
+            verify_private_header_boundary(Path(temporary), repository / "source/bazel/release/package.py")
         os.environ.pop("BUILD_WORKSPACE_DIRECTORY", None)
         os.environ.pop("BUILD_WORKING_DIRECTORY", None)
         os.environ["HOME"] = str(Path.home())
@@ -556,4 +475,4 @@ if __name__ == "__main__":
         for key in list(os.environ):
             if key.startswith("RUNFILES_"):
                 del os.environ[key]
-        verify(toolchain, mixed if case == "mixed" else matching, matching, host, objdump, mixed=case == "mixed")
+        verify(toolchain, matching, mixed, host, objdump, case)

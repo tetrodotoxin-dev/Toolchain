@@ -1,7 +1,7 @@
 # Copyright (c) 2023-present Matt Kaes and contributors
 load("//source/bazel:toolchains/cc.bzl", "toolchains")
 load("//validation/integration:candidate.bzl", "candidate_snapshot")
-load("@rules_python//python:py_binary.bzl", "py_binary")
+load("//source/bazel:rules/python.bzl", "python_command")
 load(":defs.bzl", "format", "validation", "vscode")
 
 package(default_visibility = ["//visibility:public"])
@@ -14,12 +14,11 @@ toolchains()
 
 format()
 
-py_binary(
+python_command(
     name = "sdk",
-    srcs = ["//source/bazel:release/sdk.py"],
-    main = "//source/bazel:release/sdk.py",
-    args = [module_name(), module_version()],
-    python_version = "3.11.14",
+    script = "//source/bazel:release/sdk.py",
+    arguments = [module_name(), module_version(), "$(execpath :format)"],
+    data = [":format"],
     tags = ["manual"],
 )
 

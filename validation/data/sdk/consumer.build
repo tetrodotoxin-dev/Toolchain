@@ -1,0 +1,107 @@
+"""Build immutable SDK consumers and one source release project."""
+
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@tetro_toolchain//:defs.bzl", "WINDOWS", "format", "library", "package", "validation", "vscode")
+load("@tetro_toolchain//source/bazel:package.bzl", "package_release")
+
+# Auxiliary declarations exercise primary validation selection independently
+# of declaration order. Only the primary project is released by this fixture.
+package(name = "cpu_sdk", module = "auxiliary_cpu", static = "//source:application")
+package(module = "consumer", static = "//source:consumer", components = {"application": []})
+package(name = "accelerator_sdk", module = "auxiliary_accelerator", static = "//source:application")
+
+format()
+validation(deps = [], test_deps = [":consumer"])
+vscode()
+
+_CASES = {
+    "matching_static": ("dependency_shared", 1, 0),
+    "matching_shared": ("dependency_static", 0, 1),
+    "mixed_static": ("dependency_static", 1, 1),
+    "mixed_shared": ("dependency_shared", 0, 0),
+}
+
+[
+    cc_binary(
+        name = case + "/consumer", srcs = ["consumer.c"],
+        local_defines = ["EXPECT_STATIC=" + str(values[1])],
+        deps = ["@" + case + "//:toolchain_test"],
+        linkstatic = False, tags = ["manual"],
+    )
+    for case, values in _CASES.items()
+]
+[
+    cc_binary(
+        name = case + "/component", srcs = ["consumer.c"],
+        local_defines = ["EXPECT_STATIC=" + str(values[1]), "EXPECT_COMPONENT=1"],
+        deps = ["@" + case + "//:api"],
+        linkstatic = False, tags = ["manual"],
+    )
+    for case, values in _CASES.items()
+]
+[
+    cc_binary(
+        name = case + "/alternate/consumer", srcs = ["dependency.c"],
+        local_defines = ["EXPECT_STATIC=" + str(values[2])],
+        deps = ["@" + values[0] + "//:tetro_toolchain"],
+        linkstatic = False, tags = ["manual"],
+    )
+    for case, values in _CASES.items()
+]
+[
+    library(
+        name = case + "/consumer_library", srcs = ["library.c"],
+        implementation_deps = ["@" + case + "//:api"],
+        linkage = "shared", module = "toolchain_consumer",
+        shared_lib_name = select({
+            WINDOWS: case + "/consumer_library.dll",
+            "//conditions:default": case + "/libconsumer_library.so",
+        }),
+        tags = ["manual"],
+    )
+    for case in _CASES
+]
+[
+    cc_binary(
+        name = case + "/standalone", srcs = ["consumer.c"],
+        local_defines = ["EXPECT_STATIC=1"],
+        deps = ["@" + case + "_standalone//:toolchain_test"],
+        linkstatic = False, tags = ["manual"],
+    )
+    for case in ["matching", "mixed"]
+]
+
+[
+    config_setting(name = "_repack_" + case, define_values = {"sdk_case": case})
+    for case in _CASES
+]
+[
+    alias(
+        name = "_repack_" + component,
+        actual = select({
+            ":_repack_" + case: "@" + case + "//:" + component
+            for case in _CASES
+        } | {"//conditions:default": "@matching_static//:" + component}),
+        tags = ["manual"],
+    )
+    for component in ["api", "public"]
+]
+package_release(
+    name = "_repack_archives", project = "toolchain_test",
+    static = select({
+        ":_repack_" + case: "@" + case + "//:toolchain_test"
+        for case in _CASES if case.endswith("_static")
+    } | {"//conditions:default": None}),
+    shared = select({
+        ":_repack_" + case: "@" + case + "//:toolchain_test"
+        for case in _CASES if case.endswith("_shared")
+    } | {"//conditions:default": None}),
+    components = {":_repack_api": "api", ":_repack_public": "public"},
+    component_dependencies = {"api": ["public"], "public": []},
+    tags = ["manual"],
+)
+
+alias(name = "conflict_archive", actual = "@conflict_archive//:toolchain_test", tags = ["manual"])
+alias(name = "conflict_runtime", actual = "@conflict_runtime//:toolchain_test", tags = ["manual"])
+alias(name = "conflict_component", actual = "@conflict_component//:api", tags = ["manual"])
+alias(name = "missing_variant", actual = "@missing_variant//:toolchain_test", tags = ["manual"])

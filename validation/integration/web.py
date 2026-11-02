@@ -22,7 +22,8 @@ def run(program, *arguments, environment, directory, status=0):
 
 if __name__ == "__main__":
     tests, benchmarks = [str(Path(path).resolve()) for path in sys.argv[1:3]]
-    node = str((Path(".bin") / Path.cwd().name / sys.argv[3]).resolve())
+    output_base = (Path(".bin") / Path.cwd().name).resolve().parents[1]
+    node = str((output_base / sys.argv[3]).resolve())
     node_key = sys.argv[3].removeprefix("external/")
     environment = dict(os.environ, NO_COLOR="1")
     with tempfile.TemporaryDirectory(prefix="web tests with spaces ") as temporary:

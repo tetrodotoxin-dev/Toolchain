@@ -64,7 +64,7 @@ def _host(ctx):
     values["RESOURCE_INCLUDE"] = resource.stdout.strip().replace("\\", "/") + "/include"
     python = ctx.path(Label("@host_python//:BUILD.bazel")).dirname.get_child("python" + suffix)
     values["PYTHON"] = str(python).replace("\\", "/")
-    values["PATH"] = ctx.os.environ.get("PATH", "")
+    values["PATH"] = str(ctx.path("llvm/bin")).replace("\\", "/")
     values["TEMP"] = ctx.os.environ.get("TEMP", "/tmp")
     substitutions = {
         '"__' + name + '__"': json.encode(value)
@@ -85,5 +85,5 @@ host_tools = repository_rule(
         "_build": attr.label(default = Label("//source/bazel:toolchains/host/tools.build")),
         "_settings": attr.label(default = Label("//source/bazel:toolchains/host/settings.bzl.tpl")),
     },
-    environ = ["BAZEL_LLVM", "PATH", "TEMP"],
+    environ = ["BAZEL_LLVM", "TEMP"],
 )

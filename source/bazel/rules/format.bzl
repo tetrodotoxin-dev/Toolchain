@@ -3,6 +3,7 @@
 """Expose Toolchain's pinned source formatter at the repository root."""
 
 load("@host_tools//:settings.bzl", "CLANG_FORMAT", "HOST_SYSTEM", "PYTHON")
+load(":rules/python.bzl", "python_launcher")
 
 def _format_impl(ctx):
     """Generate one host launcher, driver and formatter configuration.
@@ -31,16 +32,7 @@ def _format_impl(ctx):
     ctx.actions.symlink(output = comment_quality, target_file = ctx.file._comment_quality)
     ctx.actions.symlink(output = configuration, target_file = ctx.file._configuration)
 
-    executable = ctx.actions.declare_file(ctx.label.name + (".cmd" if HOST_SYSTEM == "windows" else ".sh"))
-    ctx.actions.expand_template(
-        template = ctx.file._launcher,
-        output = executable,
-        substitutions = {
-            "__PYTHON__": PYTHON if HOST_SYSTEM == "windows" else PYTHON.replace("'", "'\\''"),
-            "__DRIVER__": driver.basename,
-        },
-        is_executable = True,
-    )
+    executable = python_launcher(ctx, driver)
     files = [executable, driver, policy, comment_quality, configuration]
     return [DefaultInfo(
         executable = executable,
@@ -65,7 +57,7 @@ _format = rule(
             allow_single_file = True,
         ),
         "_launcher": attr.label(
-            default = Label("//source/bazel:rules/format.cmd.tpl" if HOST_SYSTEM == "windows" else "//source/bazel:rules/format.sh.tpl"),
+            default = Label("//source/bazel:rules/python.cmd.tpl" if HOST_SYSTEM == "windows" else "//source/bazel:rules/python.sh.tpl"),
             allow_single_file = True,
         ),
         "_policy": attr.label(

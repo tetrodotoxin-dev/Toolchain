@@ -2,12 +2,14 @@
 
 """Build ordinary check programs and their portable invocation inventory."""
 
-load("@rules_python//python:py_binary.bzl", "py_binary")
+load("//source/bazel:rules/python.bzl", "python_command")
 
 def check(name, args = [], data = [], **kwargs):
     """Keep each program's arguments shared by Bazel run and direct execution."""
-    py_binary(name = name, args = args, data = data, testonly = True, **kwargs)
-    return struct(name = name, script = ":" + kwargs.get("main", kwargs["srcs"][0]), args = args, data = data)
+    source = kwargs.pop("srcs")[0]
+    main = kwargs.pop("main", source)
+    python_command(name = name, script = main, arguments = args, data = data, testonly = True, **kwargs)
+    return struct(name = name, script = ":" + main, args = args, data = data)
 
 def _commands_impl(ctx):
     output = ctx.actions.declare_file(ctx.label.name + ".json")
@@ -44,11 +46,10 @@ def runner(name, checks, binaries = [], data = []):
         testonly = True,
         tags = ["manual"],
     )
-    py_binary(
+    python_command(
         name = name,
-        srcs = ["runner.py"],
-        main = "runner.py",
-        args = [".bin/bin/" + native.package_name() + "/" + name + "_commands.json"],
+        script = "runner.py",
+        arguments = [".bin/bin/" + native.package_name() + "/" + name + "_commands.json"],
         data = [":" + name + "_commands"] + data,
         testonly = True,
         tags = ["manual"],

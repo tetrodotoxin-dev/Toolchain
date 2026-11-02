@@ -3,6 +3,8 @@
 
 #include "toolchain/validation/test.hpp"
 
+#include "consumer/application/value.h"
+
 using namespace Toolchain::Validation;
 
 static Harness WebValidation = {
@@ -10,5 +12,5 @@ static Harness WebValidation = {
 };
 
 VALIDATION_TEST(WebValidation, executes) {
-  EXPECT_EQ(U32(20) + U32(22), U32(42));
+  EXPECT_EQ(consumer_value(S32(41)), S32(42));
 }
