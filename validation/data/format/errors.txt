@@ -1,0 +1,14 @@
+Comment quality:
+  Scanned: 4
+  Approved: 1
+  Warning: 1
+  Rejected: 2
+  Mean comment score: 61.25/100
+<workspace>/source/example/module/broken.cpp:5: warning: comment quality Warn (45/100): thin explanation
+<workspace>/source/example/module/broken.cpp:3: implementation imports use 'using namespace SDK::Module;'
+<workspace>/source/example/module/broken.cpp:11: C++ function declarations use trailing return types
+<workspace>/source/example/module/broken.cpp:16: raw allocation is restricted to exact project paths approved in Toolchain's source policy
+<workspace>/source/example/module/broken.cpp:8: error: comment quality Reject (100/100): thin explanation, generic praise, generic benefit, unresolved reference
+<workspace>/source/example/module/broken.hpp:2: public header namespaces match 'Example::Module'
+<workspace>/source/example/module/broken.hpp:1: public header primary object is 'Broken'
+<workspace>/source/example/module/broken.hpp:3: error: comment quality Reject (100/100): missing primary type contract

@@ -5,7 +5,6 @@
 
 import argparse
 import ast
-import os
 from pathlib import Path
 import re
 import subprocess
@@ -18,7 +17,6 @@ from format_policy import (
     canonicalize_source,
     duplicate_implementation_type_errors,
     format_source,
-    lexical,
     source_errors,
 )
 
@@ -41,7 +39,7 @@ def keyword(call, name):
 def sdk_projects(root):
     """Read SDK dependency order and local identity from MODULE.bazel."""
     module = root / "MODULE.bazel"
-    tree = ast.parse(module.read_text(), filename=str(module))
+    tree = ast.parse(module.read_text(encoding="utf-8"), filename=str(module))
     extension_names = set()
     local = None
     for node in ast.walk(tree):
@@ -108,7 +106,7 @@ def namespace_name(project):
 
 def configuration(projects):
     """Generate clang-format include buckets from the repository module."""
-    source = CONFIGURATION.read_text()
+    source = CONFIGURATION.read_text(encoding="utf-8")
     begin = source.index(BUCKETS_BEGIN)
     end = source.index(BUCKETS_END, begin) + len(BUCKETS_END)
     categories = [
@@ -176,10 +174,7 @@ def main():
     parser.add_argument("files", nargs="*", help="exact source files to format")
     arguments = parser.parse_args()
 
-    workspace = os.environ.get("BUILD_WORKSPACE_DIRECTORY")
-    if not workspace:
-        parser.error("Bazel must supply BUILD_WORKSPACE_DIRECTORY")
-    root = Path(workspace).resolve()
+    root = Path.cwd().resolve()
     try:
         if (root / "toolchain.json").exists():
             raise ValueError(
@@ -201,7 +196,7 @@ def main():
         if not destination.is_relative_to(root):
             parser.error("Generated configuration path leaves the workspace")
         destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_text(expected_configuration, newline="\n")
+        destination.write_text(expected_configuration, encoding="utf-8", newline="\n")
         print(
             "Generated format configuration at "
             + destination.relative_to(root).as_posix()
@@ -230,7 +225,7 @@ def main():
 
     with tempfile.TemporaryDirectory(prefix="toolchain-format-") as temporary:
         generated = Path(temporary) / ".clang-format"
-        generated.write_text(expected_configuration, newline="\n")
+        generated.write_text(expected_configuration, encoding="utf-8", newline="\n")
         command = [
             CLANG_FORMAT,
             "--Werror",
@@ -243,11 +238,7 @@ def main():
         formatted = subprocess.run(command).returncode
 
     for path in files:
-        format_source(path)
-
-    for path in files:
-        source = path.read_text()
-        code, comments = lexical(source)
+        source, code, comments = format_source(path)
         parsed[path] = (source, code)
         errors.extend(
             source_errors(

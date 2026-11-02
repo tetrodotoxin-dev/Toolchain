@@ -10,9 +10,6 @@ import subprocess
 import sys
 import tempfile
 
-from python.runfiles import runfiles
-
-
 def run(program, *arguments, environment, directory, status=0):
     result = subprocess.run(
         [program, *arguments], cwd=directory, env=environment,
@@ -24,9 +21,10 @@ def run(program, *arguments, environment, directory, status=0):
 
 
 if __name__ == "__main__":
-    files = runfiles.Create()
-    tests, benchmarks, node = [files.Rlocation(name) for name in sys.argv[1:]]
-    environment = dict(os.environ, **files.EnvVars(), NO_COLOR="1")
+    tests, benchmarks = [str(Path(path).resolve()) for path in sys.argv[1:3]]
+    node = str((Path(".bin") / Path.cwd().name / sys.argv[3]).resolve())
+    node_key = sys.argv[3].removeprefix("external/")
+    environment = dict(os.environ, NO_COLOR="1")
     with tempfile.TemporaryDirectory(prefix="web tests with spaces ") as temporary:
         root = Path(temporary)
         output = run(tests, environment=environment, directory=root)
@@ -52,14 +50,14 @@ if __name__ == "__main__":
         if os.name == "nt":
             manifest = root / "custom manifest"
             manifest.write_text(
-                f"{sys.argv[3]} {node}\n_main/tests_web_binary {program}\n",
+                f"{node_key} {node}\n_main/tests_web_binary {program}\n",
                 encoding="utf-8", newline="\n",
             )
             environment["RUNFILES_MANIFEST_FILE"] = str(manifest)
             # The launcher must resolve its pinned runtime without Node on PATH.
             environment["PATH"] = ""
         else:
-            node_link = root / "runfiles" / sys.argv[3]
+            node_link = root / "runfiles" / node_key
             node_link.parent.mkdir(parents=True)
             node_link.symlink_to(node)
             program_link = root / "runfiles/_main/tests_web_binary"

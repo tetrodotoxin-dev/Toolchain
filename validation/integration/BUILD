@@ -29,45 +29,18 @@ validation_data(
 COMMENT_QUALITY = check(
     name = "comment_quality",
     srcs = ["comment_quality.py"],
-    args = [
-        "$(rlocationpath //source/bazel:rules/comment_quality.py)",
-        "$(rlocationpath //validation/data:comment_quality/corpus.jsonl)",
-    ],
-    data = [
-        "//source/bazel:rules/comment_quality.py",
-        "//validation/data:comment_quality/corpus.jsonl",
-    ],
-    deps = ["@rules_python//python/runfiles"],
 )
 
 COMPILE_ALLOCATION = check(
     name = "compile_allocation",
     srcs = ["compile_allocation.py"],
-    args = [
-        "$(rlocationpath @host_tools//:llvm/bin/" + CXX.split("/")[-1] + ")",
-        "$(rlocationpath //source:compile_allocation_header)",
-    ],
-    data = [
-        "//source:compile_allocation_dependencies",
-        "//source:compile_allocation_header",
-        "@host_tools//:llvm/bin/" + CXX.split("/")[-1],
-    ],
-    deps = ["@rules_python//python/runfiles"],
+    args = [CXX],
 )
 
 LIFETIME = check(
     name = "lifetime",
     srcs = ["lifetime.py"],
-    args = [
-        "$(rlocationpath @host_tools//:llvm/bin/" + CXX.split("/")[-1] + ")",
-        "$(rlocationpath //source:compile_allocation_header)",
-    ],
-    data = [
-        "//source:compile_allocation_dependencies",
-        "//source:compile_allocation_header",
-        "@host_tools//:llvm/bin/" + CXX.split("/")[-1],
-    ],
-    deps = ["@rules_python//python/runfiles"],
+    args = [CXX],
 )
 
 # The reporting fixture exercises every result path through the public runner.
@@ -76,30 +49,25 @@ HARNESS = check(
     name = "harness",
     srcs = ["harness.py"],
     args = [
-        "$(rlocationpath //:tests)",
-        "$(rlocationpath //validation/data:reporting)",
-        "$(rlocationpath //:benchmarks)",
-        "$(rlocationpath //validation/data:skipped)",
-        "$(rlocationpath //validation/data:empty)",
-        "$(rlocationpath //validation/data:harness/reporting.cpp)",
+        ".bin/bin/$(rootpath //:tests)",
+        ".bin/bin/$(rootpath //validation/data:reporting)",
+        ".bin/bin/$(rootpath //:benchmarks)",
+        ".bin/bin/$(rootpath //validation/data:skipped)",
+        ".bin/bin/$(rootpath //validation/data:empty)",
     ],
     data = [
         "//:benchmarks",
         "//:tests",
         "//validation/data:empty",
-        "//validation/data:harness/reporting.cpp",
         "//validation/data:reporting",
         "//validation/data:skipped",
     ],
-    deps = ["@rules_python//python/runfiles"],
 )
 
 FORMAT = check(
     name = "format",
     srcs = ["format.py"],
-    args = ["$(rlocationpath //:format)"],
     data = ["//:format"],
-    deps = ["@rules_python//python/runfiles"],
 )
 
 # These native leaves prove the component graph and both library linkages in the
@@ -162,12 +130,6 @@ cc_binary(
 SNAPSHOT = check(
     name = "snapshot",
     srcs = ["snapshot.py"],
-    args = [
-        "$(rlocationpath //source/bazel:release/sdk.py)",
-        module_version(),
-    ],
-    data = ["//source/bazel:release/sdk.py"],
-    deps = ["@rules_python//python/runfiles"],
 )
 
 # The primary fixture publishes the component surface and the runtime graph
@@ -221,36 +183,22 @@ SDK = [
         main = "sdk.py",
         srcs = ["sdk.py"],
         args = [
-            "$(rlocationpath //:_candidate_snapshot)",
-            "$(rlocationpath :checksum)",
-            "$(rlocationpath //validation/integration/linkage:checksum)",
-            "$(rlocationpath //validation/data:system_host_binary)",
-            "$(rlocationpath @host_tools//:llvm/bin/" + OBJDUMP.split("/")[-1] + ")",
+            ".bin/bin/$(rootpath //:_candidate_snapshot)",
+            ".bin/bin/$(rootpath :checksum)",
+            ".bin/bin/$(rootpath //validation/integration/linkage:checksum)",
+            ".bin/bin/$(rootpath //validation/data:system_host_binary)",
+            OBJDUMP,
             case,
         ],
         data = [
-            "sdk.c",
             ":checksum",
             ":dependency",
             ":fixture",
             "//:_candidate_snapshot",
-            "//source/bazel:release/package.py",
-            "//validation/data:sdk/build.tpl",
-            "//validation/data:sdk/module.tpl",
-            "//validation/data:sdk/multiple.tpl",
-            "//validation/data:sdk/consumer.c",
-            "//validation/data:sdk/dependency.c",
-            "//validation/data:sdk/dependency.tpl",
-            "//validation/data:sdk/source.tpl",
-            "//validation/data:sdk/style.cpp",
-            "//validation/data:sdk/web_benchmark.cpp",
-            "//validation/data:sdk/web_test.cpp",
             "//validation/data:system_host_binary",
             "//validation/integration/linkage:checksum",
             "//validation/integration/linkage:fixture",
-            "@host_tools//:llvm/bin/" + OBJDUMP.split("/")[-1],
         ],
-        deps = ["@rules_python//python/runfiles"],
     )
     for case in ["matching", "mixed"]
 ]
@@ -265,9 +213,8 @@ runner(
 REPRODUCIBILITY = check(
     name = "reproducibility",
     srcs = ["reproducibility.py"],
-    args = ["$(rlocationpath //:_candidate_snapshot)"],
+    args = [".bin/bin/$(rootpath //:_candidate_snapshot)"],
     data = ["//:_candidate_snapshot"],
-    deps = ["@rules_python//python/runfiles"],
     tags = ["manual"],
 )
 
@@ -276,16 +223,15 @@ WEB = check(
     name = "web",
     srcs = ["web.py"],
     args = [
-        "$(rlocationpath //:tests_web)",
-        "$(rlocationpath //:benchmarks_web)",
-        "$(rlocationpath @emscripten_node//:node)",
+        ".bin/bin/$(rootpath //:tests_web)",
+        ".bin/bin/$(rootpath //:benchmarks_web)",
+        "$(execpath @emscripten_node//:node)",
     ],
     data = [
         "//:tests_web",
         "//:benchmarks_web",
         "@emscripten_node//:node",
     ],
-    deps = ["@rules_python//python/runfiles"],
     tags = ["manual"],
 )
 

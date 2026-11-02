@@ -10,14 +10,8 @@ package(default_visibility = [
 ])
 
 exports_files([
-    "comment_quality/corpus.jsonl",
-    "harness/reporting.cpp",
-    "sdk/consumer.c",
-    "sdk/dependency.c",
-    "sdk/style.cpp",
-    "sdk/web_benchmark.cpp",
-    "sdk/web_test.cpp",
-] + glob(["sdk/*.tpl"]))
+    "sdk/toolchain.build.tpl",
+])
 
 cc_binary(
     name = "reporting",

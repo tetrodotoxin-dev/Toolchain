@@ -1008,7 +1008,7 @@ def attached_extent(lines, attached, code_lines=None):
 def source_slice(path, line):
     """Extract one comment and the source paragraph to which it is attached."""
     source_path = Path(path)
-    lines = source_path.read_text().splitlines()
+    lines = source_path.read_text(encoding="utf-8").splitlines()
     if line < 1 or line > len(lines):
         raise ValueError(f"{source_path}:{line}: line is outside the source file")
     index = line - 1
@@ -1792,7 +1792,7 @@ def policy_extension_signals(context, code):
 
 
 def classify_file(path, line):
-    source = Path(path).read_text()
+    source = Path(path).read_text(encoding="utf-8")
     context = source_slice(path, line)
     base = classify(context.comment)
     return source_verdict(

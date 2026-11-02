@@ -7,41 +7,40 @@ load("@rules_python//python:py_binary.bzl", "py_binary")
 def check(name, args = [], data = [], **kwargs):
     """Keep each program's arguments shared by Bazel run and direct execution."""
     py_binary(name = name, args = args, data = data, testonly = True, **kwargs)
-    return struct(label = ":" + name, args = args, data = data)
-
-def _runfile(ctx, file):
-    path = file.short_path
-    return path[3:] if path.startswith("../") else ctx.workspace_name + "/" + path
+    return struct(name = name, script = ":" + kwargs.get("main", kwargs["srcs"][0]), args = args, data = data)
 
 def _commands_impl(ctx):
     output = ctx.actions.declare_file(ctx.label.name + ".json")
     commands = {}
-    files = [output]
-    runtime = []
-    for program, arguments in ctx.attr.commands.items():
-        executable = program[DefaultInfo].files_to_run.executable
-        commands[program.label.name] = [_runfile(ctx, executable)] + [ctx.expand_location(argument, targets = ctx.attr.data) for argument in json.decode(arguments)]
-        files.append(executable)
-        runtime.append(program[DefaultInfo].default_runfiles)
+    for name, arguments in ctx.attr.commands.items():
+        commands[name] = [ctx.expand_location(argument, targets = ctx.attr.data) for argument in json.decode(arguments)]
     ctx.actions.write(output, json.encode(commands))
-    return [DefaultInfo(files = depset([output]), runfiles = ctx.runfiles(files = files).merge_all(runtime))]
+    files = [output] + ctx.files.data
+    for target in ctx.attr.data:
+        manifest = target[DefaultInfo].files_to_run.runfiles_manifest
+        if manifest:
+            files.append(manifest)
+    return [DefaultInfo(
+        files = depset([output]),
+        runfiles = ctx.runfiles(files = files).merge_all([target[DefaultInfo].default_runfiles for target in ctx.attr.data]),
+    )]
 
 _commands = rule(
     implementation = _commands_impl,
     attrs = {
-        "commands": attr.label_keyed_string_dict(mandatory = True),
+        "commands": attr.string_dict(mandatory = True),
         "data": attr.label_list(allow_files = True),
     },
 )
 
 def runner(name, checks, binaries = [], data = []):
     """Declare a process runner with its programs, inputs and argument inventory."""
-    commands = {check.label: json.encode(check.args) for check in checks}
-    commands.update({binary: "[]" for binary in binaries})
+    commands = {check.name: json.encode([native.package_name() + "/" + check.script[1:]] + check.args) for check in checks}
+    commands.update({binary.split(":")[-1]: json.encode([".bin/bin/$(rootpath " + binary + ")"]) for binary in binaries})
     _commands(
         name = name + "_commands",
         commands = commands,
-        data = list({label: True for check in checks for label in check.data}),
+        data = list({label: True for check in checks for label in [check.script] + check.data}) + binaries,
         testonly = True,
         tags = ["manual"],
     )
@@ -49,9 +48,8 @@ def runner(name, checks, binaries = [], data = []):
         name = name,
         srcs = ["runner.py"],
         main = "runner.py",
-        args = ["$(rlocationpath :" + name + "_commands)"],
+        args = [".bin/bin/" + native.package_name() + "/" + name + "_commands.json"],
         data = [":" + name + "_commands"] + data,
-        deps = ["@rules_python//python/runfiles"],
         testonly = True,
         tags = ["manual"],
     )

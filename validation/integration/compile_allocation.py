@@ -7,9 +7,6 @@ import subprocess
 import sys
 import tempfile
 
-from python.runfiles import runfiles
-
-
 def compile_source(compiler, include, source):
     with tempfile.TemporaryDirectory(prefix="compile-allocation-") as temporary:
         path = Path(temporary) / "probe.cpp"
@@ -29,10 +26,8 @@ def compile_source(compiler, include, source):
 
 
 if __name__ == "__main__":
-    resolver = runfiles.Create()
-    compiler = resolver.Rlocation(sys.argv[1])
-    header = Path(resolver.Rlocation(sys.argv[2]))
-    include = header.parents[2]
+    compiler = sys.argv[1]
+    include = Path("source").resolve()
 
     valid = compile_source(
         compiler,

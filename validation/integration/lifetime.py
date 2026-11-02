@@ -7,9 +7,6 @@ import subprocess
 import sys
 import tempfile
 
-from python.runfiles import runfiles
-
-
 PROBE = r'''
 struct Value {
   int value;
@@ -40,9 +37,8 @@ int main(int argc, char** argv) { return construct(argc) ? 0 : 1; }
 
 
 if __name__ == "__main__":
-    resolver = runfiles.Create()
-    compiler = resolver.Rlocation(sys.argv[1])
-    include = Path(resolver.Rlocation(sys.argv[2])).parents[2]
+    compiler = sys.argv[1]
+    include = Path("source").resolve()
     with tempfile.TemporaryDirectory(prefix="placement-lifetime-") as temporary:
         root = Path(temporary)
         foreign = root / "foreign.hpp"

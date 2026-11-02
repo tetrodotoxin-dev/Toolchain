@@ -9,12 +9,8 @@ import os
 from pathlib import Path
 import runpy
 import subprocess
-import sys
 import tarfile
 import tempfile
-
-from python.runfiles import runfiles
-
 
 def run(snapshot, root, version, status=0):
     output = io.StringIO()
@@ -25,9 +21,8 @@ def run(snapshot, root, version, status=0):
 
 
 if __name__ == "__main__":
-    resolver = runfiles.Create()
-    snapshot = runpy.run_path(resolver.Rlocation(sys.argv[1]))["snapshot"]
-    version = sys.argv[2]
+    snapshot = runpy.run_path("source/bazel/release/sdk.py")["snapshot"]
+    version = "1.0.0"
     with tempfile.TemporaryDirectory(prefix="toolchain-snapshot-test-") as temporary:
         root = Path(temporary)
         subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)

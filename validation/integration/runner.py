@@ -9,23 +9,21 @@ import subprocess
 import sys
 import time
 
-from python.runfiles import runfiles
-
-
 def run(command):
     started = time.monotonic()
+    if Path(command[0]).suffix == ".py":
+        command = [sys.executable, *command]
     result = subprocess.run(command, capture_output=True, text=True)
     return result, time.monotonic() - started
 
 
 if __name__ == "__main__":
-    files = runfiles.Create()
-    inventory = sys.argv[1] if len(sys.argv) > 1 else "tetro_toolchain/validation/integration/integration_commands.json"
-    commands = json.loads(Path(files.Rlocation(inventory)).read_text())
+    inventory = sys.argv[1] if len(sys.argv) > 1 else ".bin/bin/validation/integration/integration_commands.json"
+    commands = json.loads(Path(inventory).read_text())
     failed = []
     with ThreadPoolExecutor() as processes:
         pending = {
-            processes.submit(run, [files.Rlocation(command[0]), *command[1:]]): name
+            processes.submit(run, command): name
             for name, command in commands.items()
         }
         for future in as_completed(pending):

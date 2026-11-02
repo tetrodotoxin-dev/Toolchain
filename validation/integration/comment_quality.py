@@ -9,13 +9,9 @@ from pathlib import Path
 import sys
 import tempfile
 
-from python.runfiles import runfiles
-
-
 if __name__ == "__main__":
-    resolver = runfiles.Create()
-    classifier_path = Path(resolver.Rlocation(sys.argv[1]))
-    corpus_path = Path(resolver.Rlocation(sys.argv[2]))
+    classifier_path = Path("source/bazel/rules/comment_quality.py")
+    corpus_path = Path("validation/data/comment_quality/corpus.jsonl")
     specification = importlib.util.spec_from_file_location(
         "comment_quality", classifier_path
     )
@@ -107,7 +103,7 @@ if __name__ == "__main__":
 
     corpus = [
         json.loads(line)
-        for line in corpus_path.read_text().splitlines()
+        for line in corpus_path.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
 

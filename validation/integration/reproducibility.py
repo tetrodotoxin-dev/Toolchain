@@ -15,9 +15,6 @@ import sys
 import tempfile
 import zipfile
 
-from python.runfiles import runfiles
-
-
 HEADER = '''#pragma once
 #include "toolchain/export.h"
 C_LINKAGE EXPORTED(REPRO) const char* repro_file(void);
@@ -132,7 +129,7 @@ archive_override(module_name = "tetro_toolchain", urls = [{json.dumps(archive.as
         "MODULE.bazel": module,
         "BUILD": ROOT_BUILD,
         "LICENSE": "Reproducibility fixture\n",
-        ".bazelrc": "build --compilation_mode=dbg\n",
+        ".bazelrc": "build --compilation_mode=dbg\nbuild --spawn_strategy=local\n",
         "source/BUILD": SOURCE_BUILD,
         "source/repro/api/library.h": HEADER,
         "source/library.c": C_SOURCE,
@@ -152,8 +149,7 @@ archive_override(module_name = "tetro_toolchain", urls = [{json.dumps(archive.as
     command = [bazel, "--nosystem_rc", "--nohome_rc", "--output_base=" + str(base)]
     try:
         for targets in [
-            ["//:_sdk_archives"],
-            ["//source:static", "//source:shared_shared", "--platforms=@tetro_toolchain//:windows_x64"],
+            ["//:_sdk_archives", "//source:static", "//source:shared_shared", "--platforms=@tetro_toolchain//:windows_x64"],
             ["//source:static", "//source:shared_shared", "--platforms=@tetro_toolchain//:linux_x86_64"],
         ]:
             subprocess.run(command + ["build", *targets], cwd=workspace, env=environment, check=True)
@@ -167,8 +163,7 @@ archive_override(module_name = "tetro_toolchain", urls = [{json.dumps(archive.as
 
 
 if __name__ == "__main__":
-    resolver = runfiles.Create()
-    archive = Path(resolver.Rlocation(sys.argv[1])).resolve()
+    archive = Path(sys.argv[1]).resolve()
     bazel = shutil.which("bazel")
     assert bazel, "The reproducibility integration check requires Bazel on PATH"
     with tempfile.TemporaryDirectory(prefix="repro-") as temporary:

@@ -30,13 +30,13 @@ def _install(ctx):
 
     if HOST_SYSTEM == "windows":
         executable = ctx.actions.declare_file(ctx.label.name + ".cmd")
-        command = '@echo off\r\nif not exist "%BUILD_WORKSPACE_DIRECTORY%\\.vscode" mkdir "%BUILD_WORKSPACE_DIRECTORY%\\.vscode"\r\n'
+        command = '@echo off\r\nif not exist ".vscode" mkdir ".vscode"\r\n'
         for source in outputs:
-            command += 'copy /Y "%%~dp0%s\\%s" "%%BUILD_WORKSPACE_DIRECTORY%%\\.vscode\\%s" >nul\r\nif errorlevel 1 exit /b 1\r\n' % (directory.replace("%", "%%"), source.basename, source.basename)
-        command += 'call "%%~dp0%s" --export-configuration "%%BUILD_WORKSPACE_DIRECTORY%%\\.vscode\\.clang-format"\r\nif errorlevel 1 exit /b 1\r\n' % ctx.executable.formatter.basename
+            command += 'copy /Y "%%~dp0%s\\%s" ".vscode\\%s" >nul\r\nif errorlevel 1 exit /b 1\r\n' % (directory.replace("%", "%%"), source.basename, source.basename)
+        command += 'call "%%~dp0%s" --export-configuration ".vscode\\.clang-format"\r\nif errorlevel 1 exit /b 1\r\n' % ctx.executable.formatter.basename
     else:
         executable = ctx.actions.declare_file(ctx.label.name + ".sh")
-        command = '#!/bin/sh\nset -eu\ndestination="$BUILD_WORKSPACE_DIRECTORY/.vscode"\nmkdir -p "$destination"\n'
+        command = '#!/bin/sh\nset -eu\ndestination=".vscode"\nmkdir -p "$destination"\n'
         command += 'source_directory="$(dirname "$0")"/\'%s\'\n' % directory.replace("'", "'\\''")
 
         # Bazel outputs are read only, including copies from an earlier install.

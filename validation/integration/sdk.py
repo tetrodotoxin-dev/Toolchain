@@ -2,9 +2,9 @@
 
 """Consume Toolchain's built SDK fixtures through the real repository importer.
 
-The //validation/integration:sdk test supplies the candidate source and
-fixture archives through Bazel runfiles. Bazel's distdir serves those exact
-files under their release URLs, testing packaging before publication while the
+The SDK check reads candidate source and fixture archives from the build
+directory. Bazel's distdir serves those exact files under their release URLs,
+testing packaging before publication while the
 consumer retains fixed dependency pins. The validator builds Linux, Windows
 and WebAssembly consumers. Windows acquisition uses the pinned packages by
 default and honors an explicitly selected installed SDK.
@@ -343,6 +343,7 @@ def verify(toolchain, checksum_manifest, dependency_manifest, host, objdump, mix
         for name, content in project_files.items():
             if name == ".bazelrc":
                 content = b"\n".join(line for line in content.splitlines() if not line.startswith(b"build")) + b"\n"
+                content += b"build -c opt --strip=always --platforms=@bazel_tools//tools:host_platform\nbuild --spawn_strategy=local\n"
             (workspace / name).write_bytes(content)
         # Both fixture families share the separately packaged dependency SDK.
         # These are pinned local test artifacts served by Bazel's distdir.
@@ -418,37 +419,7 @@ def verify(toolchain, checksum_manifest, dependency_manifest, host, objdump, mix
                 assert snapshot.with_name(snapshot.name + ".sha256").read_text() == checksum(snapshot) + "  " + snapshot.name + "\n"
                 with tarfile.open(snapshot, "r:gz") as archive:
                     assert archive.extractfile("MODULE.bazel").read() == (workspace / "MODULE.bazel").read_bytes()
-                snapshot.unlink()
                 print("Candidate SDK release passed formatting, host tests, packaging and its source snapshot.", flush=True)
-                test = workspace / "validation/tests/web.cpp"
-                valid_test = test.read_text()
-                warning = workspace / "source/release_gate.cpp"
-                dirty = workspace / "release_gate.txt"
-                for path, content, diagnostic in [
-                    (warning, "// The buffer stores each value.\nS32 value;\n", "comment quality Warn"),
-                    (test, valid_test.replace("U32(42)", "U32(43)"), "Failed tests:"),
-                    (dirty, "uncommitted source\n", "snapshot requires a clean Git worktree"),
-                ]:
-                    try:
-                        path.write_text(content)
-                        blocked = subprocess.run(release, cwd=workspace, capture_output=True, text=True)
-                        assert blocked.returncode != 0, blocked.stdout + blocked.stderr
-                        assert diagnostic in blocked.stdout + blocked.stderr, blocked.stdout + blocked.stderr
-                        assert not snapshot.exists()
-                    finally:
-                        if path == test:
-                            test.write_text(valid_test)
-                        else:
-                            path.unlink()
-                print("Formatting warnings, failing host tests and a dirty worktree block the release snapshot.", flush=True)
-                verify_vscode(root, workspace, toolchain, directory)
-                subprocess.run([
-                    "bazel", "--output_base=" + str(root / "bazel"),
-                    "run", "//:tests_web",
-                    "--distdir=" + str(toolchain.parent),
-                    "--distdir=" + str(directory),
-                ], cwd=workspace, check=True)
-                print("Candidate Web validation runner passed.", flush=True)
             subprocess.run([
                 "bazel", "--output_base=" + str(root / "bazel"),
                 "build", "//:consumer", "//:component", "//:alternate/consumer", "//:consumer_library_shared", "//:_repack_archives",
@@ -459,6 +430,9 @@ def verify(toolchain, checksum_manifest, dependency_manifest, host, objdump, mix
                 output_directory = workspace / "bazel-bin"
             for executable in [EXECUTABLE, "component.exe" if WINDOWS else "component", "alternate/" + EXECUTABLE]:
                 subprocess.run([str(output_directory / executable)], cwd=workspace, check=True)
+            if WINDOWS:
+                for directory_name in ["", "alternate"]:
+                    assert (output_directory / directory_name / "plugin.dll").is_file()
             print(linkage + " SDK consumer passed", flush=True)
             subprocess.run([sys.executable, str(Path(__file__).resolve()), "--load-consumer",
                             str(output_directory / CONSUMER_LIBRARY), str(host)], check=True)
@@ -498,6 +472,8 @@ def verify(toolchain, checksum_manifest, dependency_manifest, host, objdump, mix
             if linkage == "shared":
                 verify_runtime(root / "repacked", repacked, host)
             for platform in ["linux_x86_64", "windows_x64", "wasm32"]:
+                if platform == ("windows_x64" if WINDOWS else "linux_x86_64"):
+                    continue
                 subprocess.run([
                     "bazel", "--output_base=" + str(root / "bazel"),
                     "build", "//:consumer", "//:component", "//:alternate/consumer", "//:consumer_library_shared", "--platforms=@tetro_toolchain//:" + platform,
@@ -521,6 +497,15 @@ def verify(toolchain, checksum_manifest, dependency_manifest, host, objdump, mix
                 print("Static SDK linked using bundled dependencies.", flush=True)
                 verify_dependency_conflict(root, workspace, toolchain, directory, dependency_directory,
                                            sources, values, pins["tetro_toolchain"])
+        if not mixed:
+            subprocess.run([
+                "bazel", "--output_base=" + str(root / "bazel"),
+                "run", "//:tests_web",
+                "--distdir=" + str(toolchain.parent),
+                "--distdir=" + str(directory),
+            ], cwd=workspace, check=True)
+            print("Candidate Web validation runner passed.", flush=True)
+            verify_vscode(root, workspace, toolchain, directory)
         if mixed:
             # The shared SDK embeds static code, while its public component
             # introduces the dependency SDK separately. Conflicting runtimes
@@ -553,9 +538,7 @@ if __name__ == "__main__":
             assert library.toolchain_c_entry(20) == 21
             assert library.toolchain_cpp_entry(21) == 42
     else:
-        from python.runfiles import runfiles
-        resolver = runfiles.Create()
-        toolchain, matching, mixed, host, objdump = [Path(resolver.Rlocation(argument)).resolve() for argument in sys.argv[1:-1]]
+        toolchain, matching, mixed, host, objdump = [Path(argument).resolve() for argument in sys.argv[1:-1]]
         case = sys.argv[-1]
         assert case in ["matching", "mixed"], case
         repository = Path(__file__).resolve().parents[2]

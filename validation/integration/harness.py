@@ -8,9 +8,6 @@ import re
 import subprocess
 import sys
 
-from python.runfiles import runfiles
-
-
 def run(program, *arguments, status=0, color=False):
     environment = os.environ.copy()
     if color:
@@ -106,10 +103,8 @@ def verify_benchmarks(program):
 
 
 if __name__ == "__main__":
-    files = runfiles.Create()
-    tests, reporting, benchmark, skipped, empty, source = [
-        files.Rlocation(path) for path in sys.argv[1:]
-    ]
+    tests, reporting, benchmark, skipped, empty = [str(Path(path).resolve()) for path in sys.argv[1:]]
+    source = "validation/data/harness/reporting.cpp"
     verify_tests(tests, reporting, skipped, empty, source)
     verify_benchmarks(benchmark)
     print("Validation executable checks passed.")

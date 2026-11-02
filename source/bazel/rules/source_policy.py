@@ -283,7 +283,7 @@ def implementation_type_definitions(path, parsed=None):
     if parsed is not None and path in parsed:
         source, code = parsed[path]
     else:
-        source = path.read_text()
+        source = path.read_text(encoding="utf-8")
         code, _ = lexical(source)
     definitions = []
     for match in IMPLEMENTATION_TYPE_DEFINITION.finditer(code):
@@ -1564,20 +1564,20 @@ def line_starts(source):
 
 def canonicalize_source(path, root, project):
     """Apply mechanical vocabulary and include substitutions before Clang."""
-    source = path.read_text()
+    source = path.read_text(encoding="utf-8")
     code, _ = lexical(source)
     canonical = canonicalize_types(source, code)
     if not approved_file(path, root, project, APPROVED_STANDARD_INTEGER_FILES):
-        canonical_code, _ = lexical(canonical)
+        canonical_code = code if canonical == source else lexical(canonical)[0]
         canonical = remove_standard_integer_headers(canonical, canonical_code)
     if canonical != source:
-        path.write_text(canonical, newline="\n")
+        path.write_text(canonical, encoding="utf-8", newline="\n")
 
 
 def format_source(path):
-    """Insert source-policy boundaries whose repair is purely lexical."""
-    source = path.read_text()
-    code, _ = lexical(source)
+    """Insert lexical paragraph boundaries and return the repaired source scan."""
+    source = path.read_text(encoding="utf-8")
+    code, comments = lexical(source)
     starts = line_starts(source)
     insertions = {
         starts[line]
@@ -1592,7 +1592,9 @@ def format_source(path):
     for offset in sorted(insertions, reverse=True):
         source = source[:offset] + "\n" + source[offset:]
     if insertions:
-        path.write_text(source, newline="\n")
+        path.write_text(source, encoding="utf-8", newline="\n")
+        code, comments = lexical(source)
+    return source, code, comments
 
 
 def source_errors(
