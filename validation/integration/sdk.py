@@ -294,7 +294,9 @@ def verify_repack(directory, output, version, linkage):
 
 
 def verify_release(command, workspace, version):
+    server = subprocess.check_output(command + ["info", "server_pid"], cwd=workspace)
     subprocess.run(command + ["run", "//:sdk"], cwd=workspace, check=True)
+    assert subprocess.check_output(command + ["info", "server_pid"], cwd=workspace) == server, "SDK release restarted its Bazel server"
     snapshot = workspace / (".bin/release/consumer-" + version + "-source.tar.gz")
     assert snapshot.exists()
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=workspace, text=True)
@@ -339,12 +341,13 @@ def verify(toolchain, matching, mixed, host, objdump, case):
         }
         workspace = root / "consumer"
         workspace.mkdir()
-        command = ["bazel", "--output_base=" + str(root / "bazel")]
+        command = ["bazel"]
         cleanup.callback(subprocess.run, command + ["shutdown"], cwd=workspace, check=True)
         for name, content in project_files.items():
             if name == ".bazelrc":
                 content = b"\n".join(line for line in content.splitlines() if not line.startswith(b"build")) + b"\n"
                 content += b"build -c opt --strip=always --platforms=@bazel_tools//tools:host_platform\nbuild --spawn_strategy=local\n"
+                content += ("startup --output_base=" + json.dumps((root / "bazel").as_posix(), ensure_ascii=False) + "\n").encode("utf-8")
                 for directory in [conflicts, matching.parent, mixed.parent, toolchain.parent]:
                     content += ("\ncommon --distdir=" + json.dumps(directory.as_posix()) + "\n").encode()
             (workspace / name).write_bytes(content)

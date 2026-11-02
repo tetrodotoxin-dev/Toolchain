@@ -1,6 +1,10 @@
 # Copyright (c) 2023-present Matt Kaes and contributors
 
-"""Format, test and package a release, then archive its clean Git commit."""
+"""Format, test and package a release, then archive its clean Git commit.
+
+Release stages use repository Bazel startup settings. Configure shared output
+directories in .bazelrc so nested commands select the same server.
+"""
 
 import hashlib
 import os
@@ -57,8 +61,7 @@ def main():
     if not workspace or not execroot or len(sys.argv) not in (4, 5):
         print("SDK releases run through `bazel run :sdk`", file=sys.stderr)
         return 1
-    bazel = os.environ.get("BAZEL_REAL") or "bazel"
-    command = [bazel, "--output_base=" + str(Path(execroot).parent.parent.resolve())]
+    command = [os.environ.get("BAZEL_REAL") or "bazel"]
     environment = {name: value for name, value in os.environ.items() if not name.startswith("RUNFILES_")}
     result = subprocess.run([str(Path(execroot) / sys.argv[3])], cwd=workspace, env=environment)
     if result.returncode:
