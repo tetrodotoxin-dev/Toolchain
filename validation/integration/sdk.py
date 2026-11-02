@@ -91,15 +91,22 @@ def verify_private_header_boundary(root, writer):
     boundary.mkdir()
     public = boundary / "public.h"
     private = boundary / "detail.h"
-    public.write_text('#include "detail.h"\n')
+    content = '// UTF-8 \u201cheader\u201d.\n'
+    public.write_text(content, encoding="utf-8", newline="\n")
     private.write_text("#define TOOLCHAIN_PRIVATE_HEADER 1\n")
     manifest = boundary / "manifest.json"
     manifest.write_text(json.dumps({str(boundary / "headers.zip"): [
         [str(public), "include/project/public.h"],
         [str(private), "include/project/detail.h"],
     ]}))
+    command = [sys.executable, "-I", "-B", str(writer), str(manifest), str(boundary / "sha256.txt")]
+    subprocess.run(command, capture_output=True, text=True, check=True)
+    with zipfile.ZipFile(boundary / "headers.zip") as archive:
+        assert archive.read("include/project/public.h") == content.encode("utf-8")
+        assert "include/project/detail.h" not in archive.namelist()
+    public.write_text(content + '#include "detail.h"\n', encoding="utf-8", newline="\n")
     result = subprocess.run(
-        [sys.executable, "-I", "-B", str(writer), str(manifest), str(boundary / "sha256.txt")],
+        command,
         capture_output=True,
         text=True,
     )
@@ -108,7 +115,7 @@ def verify_private_header_boundary(root, writer):
         "Public header project/public.h includes private header project/detail.h"
         in result.stderr
     ), result.stderr
-    print("Public dependency on a private header was rejected.", flush=True)
+    print("UTF-8 header bytes preserved; public dependency on a private header rejected.", flush=True)
 
 
 def conflicting_archives(directory, pins, version, variant, output, component=False):

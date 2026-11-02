@@ -23,7 +23,7 @@ def run(snapshot, root, version, status=0):
 if __name__ == "__main__":
     snapshot = runpy.run_path("source/bazel/release/sdk.py")["snapshot"]
     version = "1.0.0"
-    with tempfile.TemporaryDirectory(prefix="toolchain-snapshot-test-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="toolchain-snapshot-test-\u00e9-") as temporary:
         root = Path(temporary)
         subprocess.run(["git", "init", "--quiet"], cwd=root, check=True)
         subprocess.run(
@@ -71,12 +71,12 @@ if __name__ == "__main__":
         archive = root / f".bin/release/tetro_toolchain-{version}-source.tar.gz"
         assert archive.exists(), first
         digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-        assert archive.with_name(archive.name + ".sha256").read_text() == (
+        assert archive.with_name(archive.name + ".sha256").read_bytes() == (
             digest + "  " + archive.name + "\n"
-        )
-        assert archive.with_name(archive.name + ".commit").read_text() == (
+        ).encode("utf-8")
+        assert archive.with_name(archive.name + ".commit").read_bytes() == (
             commit + "\n"
-        )
+        ).encode("utf-8")
         with tarfile.open(archive, "r:gz") as contents:
             names = contents.getnames()
             assert names == [

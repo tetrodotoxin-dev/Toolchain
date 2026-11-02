@@ -32,7 +32,7 @@ def private_header_inventory(outputs):
             path = header_path(name)
             if path is None:
                 continue
-            private = bool(PRIVATE_HEADER.search(Path(source).read_text()))
+            private = bool(PRIVATE_HEADER.search(Path(source).read_text(encoding="utf-8")))
             if path in headers and headers[path][0][1] != private:
                 raise ValueError(f"Conflicting private header classification: {path}")
             headers.setdefault(path, []).append((source, private))
@@ -45,7 +45,7 @@ def validate_private_headers(headers):
         if path in private:
             continue
         for source, _ in entries:
-            for include in HEADER_INCLUDE.findall(Path(source).read_text()):
+            for include in HEADER_INCLUDE.findall(Path(source).read_text(encoding="utf-8")):
                 relative = posixpath.normpath(
                     posixpath.join(posixpath.dirname(path), include)
                 )
@@ -58,7 +58,7 @@ def validate_private_headers(headers):
 
 
 def package(manifest, checksums):
-    outputs = json.loads(Path(manifest).read_text())
+    outputs = json.loads(Path(manifest).read_text(encoding="utf-8"))
     private_headers = validate_private_headers(private_header_inventory(outputs))
     digests = []
     for destination, files in sorted(outputs.items()):

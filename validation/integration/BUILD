@@ -37,11 +37,18 @@ COMPILE_ALLOCATION = check(
     args = [CXX],
 )
 
-LIFETIME = check(
-    name = "lifetime",
-    srcs = ["lifetime.py"],
-    args = [CXX],
-)
+LIFETIME = ["lifetime", "lifetime_standard_first", "lifetime_standard_after"]
+
+[
+    cc_binary(
+        name = name,
+        testonly = True,
+        srcs = ["lifetime.cpp"],
+        local_defines = defines,
+        deps = ["//source:headers"],
+    )
+    for name, defines in zip(LIFETIME, [[], ["LIFETIME_STANDARD_FIRST"], ["LIFETIME_STANDARD_AFTER"]])
+]
 
 # The reporting fixture exercises every result path through the public runner.
 # Its process status and output preserve the contract seen by repository tests.
@@ -235,6 +242,6 @@ WEB = check(
 runner(
     name = "integration",
     checks = [COMMENT_QUALITY, COMPILE_ALLOCATION, FORMAT, HARNESS, REPRODUCIBILITY, SNAPSHOT, WEB, SDK[0]],
-    binaries = [":components", ":shared", ":static", ":symbols"],
+    binaries = [":components", ":shared", ":static", ":symbols"] + [":" + name for name in LIFETIME],
     data = [":validation_data"],
 )

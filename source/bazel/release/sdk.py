@@ -11,7 +11,7 @@ import sys
 
 def git(root, *arguments):
     return subprocess.run(
-        ["git", *arguments], cwd=root, capture_output=True, text=True, check=True,
+        ["git", *arguments], cwd=root, capture_output=True, text=True, encoding="utf-8", check=True,
     ).stdout.strip()
 
 
@@ -43,8 +43,8 @@ def snapshot(root, project, version):
     finally:
         temporary.unlink(missing_ok=True)
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-    archive.with_name(archive.name + ".sha256").write_text(digest + "  " + archive.name + "\n")
-    archive.with_name(archive.name + ".commit").write_text(commit + "\n")
+    archive.with_name(archive.name + ".sha256").write_text(digest + "  " + archive.name + "\n", encoding="utf-8", newline="\n")
+    archive.with_name(archive.name + ".commit").write_text(commit + "\n", encoding="utf-8", newline="\n")
     print("Snapshot: " + str(archive))
     print("Commit: " + commit)
     print("SHA-256: " + digest)

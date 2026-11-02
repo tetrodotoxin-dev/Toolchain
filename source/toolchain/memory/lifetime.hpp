@@ -5,24 +5,35 @@
 
 #include "toolchain/toolchain.h"
 
-// A host that uses the standard C++ library includes its memory headers first.
-// Those headers supply their own placement declarations. Standalone consumers
-// use the declarations below without acquiring the standard library headers.
-#if !defined(_NEW) && !defined(_NEW_) && !defined(_LIBCPP_NEW) && \
-    !defined(_LIBCPP___NEW_PLACEMENT_NEW_DELETE_H)
+// C++26 placement new expressions still require explicit declarations. Native
+// declarations match the pinned libraries so either include order is valid.
+// Including <new> here would add its C++ dependencies to every translation
+// unit using a core container which bloats compile times by over a minute.
+#ifdef TOOLCHAIN_WASM
 
-// C++26 recognizes these standard placement operations during constant
-// evaluation but they require an explicit declaration. Since the Tetrodotoxin
-// family of projects avoid using C++ headers in favor of a more compact C
-// header surface this is the only way to get access to placement new without
-// including `<new>` which is an interesting standards choice.
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wundefined-inline"
+// Pinned Web libc++ groups all four placement operations under this guard.
+// Supply the complete group so later standard headers retain their remaining
+// declarations without adding incompatible ABI attributes to these functions.
+#ifndef _LIBCPP___NEW_PLACEMENT_NEW_DELETE_H
+#define _LIBCPP___NEW_PLACEMENT_NEW_DELETE_H
 
-constexpr auto operator new(CppSize, void*) noexcept -> void*;
-constexpr auto operator delete(void*, void*) noexcept -> void;
+constexpr auto operator new(CppSize, void* address) noexcept -> void* {
+  return address;
+}
 
-#pragma clang diagnostic pop
+constexpr auto operator new[](CppSize, void* address) noexcept -> void* {
+  return address;
+}
+
+inline auto operator delete(void*, void*) noexcept -> void {}
+inline auto operator delete[](void*, void*) noexcept -> void {}
+
+#endif
+
+#else
+
+auto operator new(CppSize, void*) noexcept -> void*;
+auto operator delete(void*, void*) noexcept -> void;
 
 #endif
 
@@ -36,24 +47,15 @@ class Lifetime {
   template <typename Type, typename Factory>
   __attribute__((always_inline)) static constexpr auto construct(
       void* address,
-      Factory create) -> Type&;
+      Factory create) -> Type& {
+    return *new (address) Type(create());
+  }
 
   template <typename Type>
   __attribute__((always_inline)) static constexpr auto construct(void* address)
-      -> Type&;
+      -> Type& {
+    return *new (address) Type();
+  }
 };
 
 }  // namespace Toolchain::Memory
-
-template <typename Type, typename Factory>
-__attribute__((always_inline)) constexpr auto
-    Toolchain::Memory::Lifetime::construct(void* address, Factory create)
-        -> Type& {
-  return *new (address) Type(create());
-}
-
-template <typename Type>
-__attribute__((always_inline)) constexpr auto
-    Toolchain::Memory::Lifetime::construct(void* address) -> Type& {
-  return *new (address) Type();
-}
