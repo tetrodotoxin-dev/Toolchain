@@ -58,7 +58,7 @@ def main():
         print("SDK releases run through `bazel run :sdk`", file=sys.stderr)
         return 1
     bazel = os.environ.get("BAZEL_REAL") or "bazel"
-    command = [bazel, "--output_base=" + str(Path(execroot).parent.parent)]
+    command = [bazel, "--output_base=" + str(Path(execroot).parent.parent.resolve())]
     environment = {name: value for name, value in os.environ.items() if not name.startswith("RUNFILES_")}
     result = subprocess.run([str(Path(execroot) / sys.argv[3])], cwd=workspace, env=environment)
     if result.returncode:

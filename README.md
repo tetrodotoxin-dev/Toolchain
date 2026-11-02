@@ -114,20 +114,24 @@ Harder to catch cases like common problematic comment patterns use a classifier.
 
 The recursive build command `bazel build ...` can be used to build all artifacts for the current host's target platform.
 This makes it easy to run local tests and iterate without the overhead of release packaging.
-For a full release Toolchain provides `bazel build :sdk`.
 
-Running the command in release will build and package release artifacts for every target:
+For a full release Toolchain provides `bazel run :sdk`:
 
 ```sh
-bazel build :sdk --config=release
+bazel run :sdk
 ```
 
-The SDK contains public headers, libraries, runtime dependencies, metadata and
-the license. Everything is packaged in one shot to make distribution setup easy.
+
+The command formats sources, runs optimized host tests, builds all configured
+SDK archives and creates the source snapshot last. Each failure stops the
+release. Release settings are selected automatically.
+
+The final snapshot requires a clean Git worktree. Review and commit any
+formatting changes before rerunning the command.
 
 > [!WARNING]
-> Cross platform builds are supported, but executing Windows tests still requires a dedicated
-> requires a dedicated Windows host environment.
+> Cross platform builds are supported, but executing Windows tests still requires
+> a dedicated Windows host environment.
 
 The snapshot contains the complete committed repository and should be provided
 with the SDK for any published builds. Binaries built from the Source should generate
@@ -142,10 +146,12 @@ Toolchain only ships a snapshot since Bazel consumes its Starlark and compiler d
 as source. Toolchain provides extra integration tests for validating the toolchain itself by
 preforming a mock SDK release.
 
-It can be run with a single command as well in place of `:sdk`:
+It can be run with a single command as well. Toolchain still requires `:sdk`
+for formatting and producing it's source snapshot:
 
 ```sh
 bazel run //validation/integration:integration
+bazel run :sdk
 ```
 
 ## Human workflows

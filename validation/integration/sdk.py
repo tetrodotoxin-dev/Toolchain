@@ -312,7 +312,7 @@ def verify(toolchain, matching, mixed, host, objdump, case):
     sources = repository / "validation/data/sdk"
     with tarfile.open(toolchain, "r:gz") as archive:
         packaged_sources = set(archive.getnames())
-        project_files = {name: archive.extractfile(name).read() for name in [".bazelrc", ".bazelversion", "LICENSE"]}
+        project_files = {name: archive.extractfile(name).read() for name in [".bazelrc", "LICENSE"]}
     for path in ["source/bazel/rules/.clang-format", "source/toolchain/validation/move_only.hpp", "source/toolchain/validation/tracked_value.hpp"]:
         assert path in packaged_sources, path
     assert ".clang-format" not in packaged_sources
@@ -355,7 +355,7 @@ def verify(toolchain, matching, mixed, host, objdump, case):
             "source/BUILD": sources / "consumer.source.build",
             "source/consumer/application/value.c": sources / "release.c",
             "source/consumer/application/value.h": sources / "release.h",
-            "validation/tests/web.cpp": sources / "web_test.cpp",
+            "validation/tests/web.cpp": sources / "web_test.cpp.tpl",
             "validation/benchmarks/web.cpp": sources / "web_benchmark.cpp",
             "consumer.c": repository / "validation/integration/sdk.c",
             "dependency.c": sources / "dependency.c",

@@ -11,7 +11,6 @@ def candidate_snapshot():
         name = "_candidate_snapshot",
         srcs = [
             ".bazelrc",
-            ".bazelversion",
             "LICENSE",
             "MODULE.bazel",
             "defs.bzl",
