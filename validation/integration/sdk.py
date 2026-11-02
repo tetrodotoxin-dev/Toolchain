@@ -229,7 +229,7 @@ def verify(toolchain, checksum_manifest, dependency_manifest, host, objdump, mix
             name: archive.extractfile(name).read()
             for name in [".bazelrc", ".bazelversion", "LICENSE"]
         }
-    assert "source/bazel/rules/.clang-format.tpl" in packaged_sources
+    assert "source/bazel/rules/.clang-format" in packaged_sources
     assert "source/toolchain/validation/move_only.hpp" in packaged_sources
     assert "source/toolchain/validation/tracked_value.hpp" in packaged_sources
     assert ".clang-format" not in packaged_sources

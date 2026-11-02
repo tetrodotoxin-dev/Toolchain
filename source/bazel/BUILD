@@ -12,21 +12,25 @@ py_binary(
 )
 
 exports_files(glob([
+    "**/*.build",
     "**/*.bzl",
+    "**/*.cmd",
     "**/*.py",
     "**/*.sh",
     "**/*.tpl",
-]) + ["rules/.clang-format.tpl"])
+]) + ["rules/.clang-format"])
 
 filegroup(
     name = "sources",
     srcs = glob([
+        "**/*.build",
         "**/*.bzl",
+        "**/*.cmd",
         "**/*.py",
         "**/*.sh",
         "**/*.tpl",
     ]) + [
         "BUILD",
-        "rules/.clang-format.tpl",
+        "rules/.clang-format",
     ],
 )

@@ -39,15 +39,11 @@ def _sdk(ctx):
         for package in packages.values()
     })
     normalize_sdk(ctx, "linux")
-    ctx.template(
-        "BUILD.bazel",
-        ctx.attr._build,
-        substitutions = {"__GCC_DIRECTORY__": GCC_DIRECTORY},
-    )
+    ctx.template("BUILD.bazel", ctx.attr._build)
     return ctx.repo_metadata(reproducible = True)
 
 linux_sdk = repository_rule(implementation = _sdk, attrs = {
-    "_build": attr.label(default = Label("//source/bazel:toolchains/linux/sdk.build.tpl")),
+    "_build": attr.label(default = Label("//source/bazel:toolchains/linux/sdk.build")),
     "_packages": attr.label(default = Label("//source:sdk/linux.json")),
 })
 

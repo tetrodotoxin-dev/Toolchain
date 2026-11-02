@@ -82,7 +82,7 @@ host_tools = repository_rule(
     implementation = _host,
     attrs = {
         "_distribution": attr.label(default = Label("@llvm_distribution//:BUILD.bazel")),
-        "_build": attr.label(default = Label("//source/bazel:toolchains/host/build.tpl")),
+        "_build": attr.label(default = Label("//source/bazel:toolchains/host/tools.build")),
         "_settings": attr.label(default = Label("//source/bazel:toolchains/host/settings.bzl.tpl")),
     },
     environ = ["BAZEL_LLVM", "PATH", "TEMP"],

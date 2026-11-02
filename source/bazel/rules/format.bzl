@@ -8,7 +8,7 @@ def _format_impl(ctx):
     """Generate one host launcher, driver and formatter configuration.
 
     Args:
-        ctx: Rule context containing Toolchain's driver and style template.
+        ctx: Rule context containing Toolchain's driver and style configuration.
 
     Returns:
         DefaultInfo for the runnable formatter and its adjacent inputs.
@@ -27,29 +27,20 @@ def _format_impl(ctx):
         },
         is_executable = True,
     )
-    ctx.actions.expand_template(
-        template = ctx.file._policy,
-        output = policy,
-        substitutions = {},
-    )
-    ctx.actions.expand_template(
-        template = ctx.file._comment_quality,
-        output = comment_quality,
-        substitutions = {},
-    )
-    ctx.actions.expand_template(
-        template = ctx.file._configuration,
-        output = configuration,
-        substitutions = {},
-    )
+    ctx.actions.symlink(output = policy, target_file = ctx.file._policy)
+    ctx.actions.symlink(output = comment_quality, target_file = ctx.file._comment_quality)
+    ctx.actions.symlink(output = configuration, target_file = ctx.file._configuration)
 
-    if HOST_SYSTEM == "windows":
-        executable = ctx.actions.declare_file(ctx.label.name + ".cmd")
-        command = '@echo off\r\n"%s" "%%~dp0%s" %%*\r\n' % (PYTHON, driver.basename)
-    else:
-        executable = ctx.actions.declare_file(ctx.label.name + ".sh")
-        command = "#!/bin/sh\nset -eu\ndirectory=${0%%/*}\nexec '%s' \"$directory/%s\" \"$@\"\n" % (PYTHON.replace("'", "'\\''"), driver.basename)
-    ctx.actions.write(executable, command, is_executable = True)
+    executable = ctx.actions.declare_file(ctx.label.name + (".cmd" if HOST_SYSTEM == "windows" else ".sh"))
+    ctx.actions.expand_template(
+        template = ctx.file._launcher,
+        output = executable,
+        substitutions = {
+            "__PYTHON__": PYTHON if HOST_SYSTEM == "windows" else PYTHON.replace("'", "'\\''"),
+            "__DRIVER__": driver.basename,
+        },
+        is_executable = True,
+    )
     files = [executable, driver, policy, comment_quality, configuration]
     return [DefaultInfo(
         executable = executable,
@@ -62,7 +53,7 @@ _format = rule(
     executable = True,
     attrs = {
         "_configuration": attr.label(
-            default = Label("//source/bazel:rules/.clang-format.tpl"),
+            default = Label("//source/bazel:rules/.clang-format"),
             allow_single_file = True,
         ),
         "_comment_quality": attr.label(
@@ -71,6 +62,10 @@ _format = rule(
         ),
         "_driver": attr.label(
             default = Label("//source/bazel:rules/format.py.tpl"),
+            allow_single_file = True,
+        ),
+        "_launcher": attr.label(
+            default = Label("//source/bazel:rules/format.cmd.tpl" if HOST_SYSTEM == "windows" else "//source/bazel:rules/format.sh.tpl"),
             allow_single_file = True,
         ),
         "_policy": attr.label(

@@ -4,10 +4,6 @@
 
 load("@host_tools//:settings.bzl", "CLANG_FORMAT", "HOST_SYSTEM")
 
-def _json(value):
-    """Escape one host path for a generated JSON string."""
-    return value.replace("\\", "\\\\").replace("\"", "\\\"")
-
 def _install(ctx):
     """Prepare the shared JSON files and a host command that copies them.
 
@@ -21,28 +17,23 @@ def _install(ctx):
     outputs = []
     for source in ctx.files._configuration:
         output = ctx.actions.declare_file(directory + "/" + source.basename)
-        ctx.actions.expand_template(
-            template = source,
-            output = output,
-            substitutions = {"__CLANG_FORMAT__": _json(CLANG_FORMAT)},
-        )
+        if source.basename == "settings.json":
+            ctx.actions.expand_template(
+                template = source,
+                output = output,
+                substitutions = {"__CLANG_FORMAT__": json.encode(CLANG_FORMAT)[1:-1]},
+            )
+        else:
+            ctx.actions.symlink(output = output, target_file = source)
         outputs.append(output)
 
-    if HOST_SYSTEM == "windows":
-        executable = ctx.actions.declare_file(ctx.label.name + ".cmd")
-        command = '@echo off\r\nif not exist ".vscode" mkdir ".vscode"\r\n'
-        for source in outputs:
-            command += 'copy /Y "%%~dp0%s\\%s" ".vscode\\%s" >nul\r\nif errorlevel 1 exit /b 1\r\n' % (directory.replace("%", "%%"), source.basename, source.basename)
-        command += 'call "%%~dp0%s" --export-configuration ".vscode\\.clang-format"\r\nif errorlevel 1 exit /b 1\r\n' % ctx.executable.formatter.basename
-    else:
-        executable = ctx.actions.declare_file(ctx.label.name + ".sh")
-        command = '#!/bin/sh\nset -eu\ndestination=".vscode"\nmkdir -p "$destination"\n'
-        command += 'source_directory="$(dirname "$0")"/\'%s\'\n' % directory.replace("'", "'\\''")
-
-        # Bazel outputs are read only, including copies from an earlier install.
-        command += 'cp -f "$source_directory/"*.json "$destination/"\n'
-        command += '"$(dirname "$0")/%s" --export-configuration "$destination/.clang-format"\n' % ctx.executable.formatter.basename
-    ctx.actions.write(executable, command, is_executable = True)
+    executable = ctx.actions.declare_file(ctx.label.name + (".cmd" if HOST_SYSTEM == "windows" else ".sh"))
+    ctx.actions.expand_template(
+        template = ctx.file._launcher,
+        output = executable,
+        substitutions = {},
+        is_executable = True,
+    )
     outputs.append(executable)
     runfiles = ctx.runfiles(files = outputs)
     runfiles = runfiles.merge(ctx.attr.formatter[DefaultInfo].default_runfiles)
@@ -52,6 +43,10 @@ _vscode = rule(
     implementation = _install,
     executable = True,
     attrs = {
+        "_launcher": attr.label(
+            default = Label("//source/bazel:rules/vscode.cmd" if HOST_SYSTEM == "windows" else "//source/bazel:rules/vscode.sh"),
+            allow_single_file = True,
+        ),
         "_configuration": attr.label_list(default = [
             Label("//source/vscode:c_cpp_properties.json"),
             Label("//source/vscode:settings.json"),

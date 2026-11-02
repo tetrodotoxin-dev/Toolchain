@@ -19,7 +19,8 @@ def copy_tool(ctx, source, destination):
 
 def normalize_sdk(ctx, target, arguments = []):
     """Keep normalized SDK contents independent of host LLVM settings."""
-    ctx.file("normalize.py", ctx.read(Label("//source:sdk/normalize.py")))
-    result = ctx.execute([_python(ctx), "-I", "-B", ctx.path("normalize.py"), target] + arguments)
+    script = ctx.path(Label("//source:sdk/normalize.py"))
+    ctx.watch(script)
+    result = ctx.execute([_python(ctx), "-I", "-B", script, target] + arguments)
     if result.return_code:
         fail(result.stderr)

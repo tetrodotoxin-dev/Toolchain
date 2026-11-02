@@ -2,6 +2,8 @@
 
 """Combine SDK link dependencies using their published payload identities."""
 
+load("@rules_cc//cc:cc_import.bzl", "cc_import")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 
@@ -12,6 +14,124 @@ _SdkLibrariesInfo = provider(
         "runtime": "Selected shared libraries indexed by their runtime filename.",
     },
 )
+
+def sdk_import(library, dependencies, implementation_dependencies, static_libraries, shared_libraries, interface_libraries, defines, linkopts, alwayslink, runtime, archives, digests, system, binaries, components):
+    """Declare a release's platform imports and scoped component interfaces."""
+    # Each platform may have a different dependency set. Only the imports selected
+    # by that platform enter the consuming target's link and runtime dependencies.
+    for index in range(max([len(libraries) for libraries in system.values()])):
+        cc_import(
+            name = "system_" + str(index),
+            interface_library = select({
+                platform: libraries[index]["interface"] if index < len(libraries) else None
+                for platform, libraries in system.items()
+            }),
+            linkopts = select({
+                platform: libraries[index]["linkopts"] if index < len(libraries) else []
+                for platform, libraries in system.items()
+            }),
+            system_provided = True,
+            visibility = ["//visibility:private"],
+        )
+
+    for index in range(max([len(libraries) for libraries in archives.values()])):
+        cc_import(
+            name = "archive_" + str(index),
+            linkopts = select({
+                platform: libraries[index]["linkopts"] if index < len(libraries) else []
+                for platform, libraries in archives.items()
+            }),
+            static_library = select({
+                platform: libraries[index]["library"] if index < len(libraries) else None
+                for platform, libraries in archives.items()
+            }),
+            visibility = ["//visibility:private"],
+            alwayslink = select({
+                platform: libraries[index]["alwayslink"] if index < len(libraries) else False
+                for platform, libraries in archives.items()
+            }),
+        )
+
+    for index in range(max([len(libraries) for libraries in runtime.values()])):
+        cc_import(
+            name = "runtime_" + str(index),
+            interface_library = select({
+                platform: libraries[index]["interface"] if index < len(libraries) else None
+                for platform, libraries in runtime.items()
+            }),
+            shared_library = select({
+                platform: libraries[index]["library"] if index < len(libraries) else None
+                for platform, libraries in runtime.items()
+            }),
+            visibility = ["//visibility:private"],
+        )
+
+    cc_library(
+        name = "headers",
+        hdrs = native.glob(
+            [
+                "headers/include/**/*.h",
+                "headers/include/**/*.hpp",
+            ],
+            allow_empty = True,
+        ),
+        defines = select(defines),
+        implementation_deps = implementation_dependencies,
+        strip_include_prefix = "headers/include",
+        deps = dependencies,
+    )
+
+    cc_import(
+        name = "_sdk_library",
+        interface_library = select(interface_libraries),
+        linkopts = select(linkopts),
+        shared_library = select(shared_libraries),
+        static_library = select(static_libraries),
+        deps = [":headers"] + select({
+            platform: [":runtime_" + str(index) for index in range(len(libraries))]
+            for platform, libraries in runtime.items()
+        }) + select({
+            platform: [":archive_" + str(index) for index in range(len(libraries))]
+            for platform, libraries in archives.items()
+        }) + select({
+            platform: [":system_" + str(index) for index in range(len(libraries))]
+            for platform, libraries in system.items()
+        }),
+        alwayslink = select(alwayslink),
+        visibility = ["//visibility:private"],
+    )
+
+    sdk_library(
+        name = library,
+        actual = ":_sdk_library",
+        digests = select(digests),
+        deps = dependencies + implementation_dependencies,
+    )
+
+    native.filegroup(
+        name = "build",
+        srcs = select(binaries),
+    )
+
+    # Components share the selected binary while keeping the aggregate header
+    # interface private. Scoped archives retain sibling edges and receive external
+    # labels from the consuming module's component declarations.
+    for name, component in components.items():
+        cc_library(
+            name = "_sdk_component_" + name,
+            hdrs = select(component["headers"]),
+            defines = select(component["defines"]),
+            implementation_deps = [library],
+            strip_include_prefix = "headers/include",
+            deps = component["dependencies"],
+            visibility = ["//visibility:private"],
+        )
+
+        sdk_library(
+            name = name,
+            actual = ":_sdk_component_" + name,
+            deps = [library] + component["dependencies"],
+        )
 
 def _binary(library):
     """Return the original runtime file before Bazel's shared library symlink."""

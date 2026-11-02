@@ -12,8 +12,8 @@ _EMSCRIPTEN = {
     "windows": struct(platform = "win", archive = "zip", sha256 = "388e9fab2bc9f94e85b1541e6ae0f1d9a5b9dfa9d756d89a0a3fc7acc052fbd5"),
 }
 _NODE = {
-    "linux": struct(platform = "linux-x64", archive = "tar.xz", node = "bin/node", sha256 = "f4cb75bb036f0d0eddf6b79d9596df1aaab9ddccd6a20bf489be5abe9467e84e"),
-    "windows": struct(platform = "win-x64", archive = "zip", node = "node.exe", sha256 = "21c2d9735c80b8f86dab19305aa6a9f6f59bbc808f68de3eef09d5832e3bfbbd"),
+    "linux": struct(platform = "linux-x64", archive = "tar.xz", sha256 = "f4cb75bb036f0d0eddf6b79d9596df1aaab9ddccd6a20bf489be5abe9467e84e"),
+    "windows": struct(platform = "win-x64", archive = "zip", sha256 = "21c2d9735c80b8f86dab19305aa6a9f6f59bbc808f68de3eef09d5832e3bfbbd"),
 }
 
 def _host(ctx):
@@ -49,7 +49,7 @@ def _sysroot(ctx):
 emscripten_sysroot = repository_rule(
     implementation = _sysroot,
     attrs = {
-        "_build": attr.label(default = Label("//source/bazel:toolchains/wasm/sysroot.build.tpl")),
+        "_build": attr.label(default = Label("//source/bazel:toolchains/wasm/sysroot.build")),
     },
 )
 
@@ -74,37 +74,17 @@ def _sdk(ctx):
     if windows:
         # Keep Python imports from modifying the downloaded repository. The
         # toolchain supplies the selected interpreter through EMSDK_PYTHON.
-        ctx.file("em++.bat", '@"%EMSDK_PYTHON%" -B "%~dp0emscripten\\em++.py" %*\r\n@exit /b %errorlevel%\r\n')
-    ctx.file(
-        "emscripten/.emscripten",
-        """import os
-
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BINARYEN_ROOT = ROOT_DIR
-LLVM_ROOT = os.path.join(ROOT_DIR, "bin")
-NODE_JS = "node"
-FROZEN_CACHE = True
-""",
-    )
-    tools = {name: "bin/" + executable + suffix for name, executable in {
-        "ld": "wasm-ld",
-        "ar": "llvm-ar",
-        "cpp": "clang-cpp",
-        "gcov": "llvm-cov",
-        "nm": "llvm-nm",
-        "objdump": "llvm-objdump",
-        "strip": "llvm-strip",
-    }.items()}
-    tools["gcc"] = "em++.bat" if windows else "emscripten/em++"
-    ctx.template("BUILD.bazel", ctx.attr._build, substitutions = {
-        "__TOOLS__": json.encode({path: name for name, path in tools.items()}),
-    })
+        ctx.template("em++.bat", ctx.attr._driver)
+    ctx.template("emscripten/.emscripten", ctx.attr._configuration)
+    ctx.template("BUILD.bazel", ctx.attr._build)
     return ctx.repo_metadata(reproducible = True)
 
 emscripten_sdk = repository_rule(
     implementation = _sdk,
     attrs = {
-        "_build": attr.label(default = Label("//source/bazel:toolchains/wasm/sdk.build.tpl")),
+        "_build": attr.label(default = Label("//source/bazel:toolchains/wasm/sdk.build")),
+        "_driver": attr.label(default = Label("//source/bazel:toolchains/wasm/emscripten.cmd")),
+        "_configuration": attr.label(default = Label("//source/bazel:toolchains/wasm/emscripten.py")),
     },
 )
 
@@ -121,14 +101,12 @@ def _node(ctx):
         sha256 = pin.sha256,
         strip_prefix = distribution,
     )
-    ctx.template("BUILD.bazel", ctx.attr._build, substitutions = {
-        "__NODE__": pin.node,
-    })
+    ctx.template("BUILD.bazel", ctx.attr._build)
     return ctx.repo_metadata(reproducible = True)
 
 emscripten_node = repository_rule(
     implementation = _node,
     attrs = {
-        "_build": attr.label(default = Label("//source/bazel:toolchains/wasm/node.build.tpl")),
+        "_build": attr.label(default = Label("//source/bazel:toolchains/wasm/node.build")),
     },
 )

@@ -29,10 +29,11 @@ def _llvm(ctx):
         suffix = ".exe" if system == "windows" else ""
         if not ctx.path("llvm/bin/llvm-lib" + suffix).exists:
             copy_tool(ctx, "llvm/bin/llvm-ar" + suffix, "llvm/bin/llvm-lib" + suffix)
-    ctx.file("BUILD.bazel", 'exports_files(["BUILD.bazel"], visibility = ["//visibility:public"])\n')
+    ctx.template("BUILD.bazel", ctx.attr._build)
     return ctx.repo_metadata(reproducible = not override)
 
 llvm_distribution = repository_rule(
     implementation = _llvm,
+    attrs = {"_build": attr.label(default = Label("//source/bazel:toolchains/host/distribution.build"))},
     environ = ["BAZEL_LLVM"],
 )

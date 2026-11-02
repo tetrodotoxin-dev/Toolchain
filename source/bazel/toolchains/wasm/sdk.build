@@ -2,8 +2,21 @@
 
 load("@tetro_toolchain//source/bazel:toolchains/cc.bzl", "wasm_runner_cc_toolchain_config")
 load("@rules_cc//cc/toolchains:cc_toolchain.bzl", "cc_toolchain")
+load("@host_tools//:settings.bzl", "HOST_SYSTEM")
 
 package(default_visibility = ["//visibility:public"])
+
+_SUFFIX = ".exe" if HOST_SYSTEM == "windows" else ""
+_TOOLS = {"bin/" + executable + _SUFFIX: name for name, executable in {
+    "ld": "wasm-ld",
+    "ar": "llvm-ar",
+    "cpp": "clang-cpp",
+    "gcov": "llvm-cov",
+    "nm": "llvm-nm",
+    "objdump": "llvm-objdump",
+    "strip": "llvm-strip",
+}.items()}
+_TOOLS["em++.bat" if HOST_SYSTEM == "windows" else "emscripten/em++"] = "gcc"
 
 exports_files([
     "emscripten/em++",
@@ -18,7 +31,7 @@ wasm_runner_cc_toolchain_config(
     name = "config",
     node = "@emscripten_node//:node",
     sdk = ":files",
-    tools = __TOOLS__,
+    tools = _TOOLS,
     tags = ["manual"],
 )
 
