@@ -5,6 +5,8 @@
 
 import argparse
 import ast
+from concurrent.futures import ProcessPoolExecutor
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -157,6 +159,29 @@ def select(root, names):
     return sorted(set(files))
 
 
+def format_batch(arguments):
+    """Format and check one independent batch, retaining source order."""
+    files, root, project, namespace_roots, configuration = arguments
+    for path in files:
+        canonicalize_source(path, root, project)
+    formatted = subprocess.run([
+        CLANG_FORMAT,
+        "--Werror",
+        "--fail-on-incomplete-format",
+        "--fallback-style=none",
+        "--style=file:" + str(configuration),
+        "-i",
+        *map(str, files),
+    ], capture_output=True, text=True, encoding="utf-8")
+    results = []
+    for path in files:
+        source, code, comments = format_source(path)
+        errors = source_errors(path, root, project, namespace_roots, source, code)
+        verdicts = classify_comments(path, source, comments, code)
+        results.append((path, source, code, errors, verdicts))
+    return formatted.returncode, formatted.stdout, formatted.stderr, results
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Format the complete source tree or selected exact files."
@@ -220,37 +245,31 @@ def main():
     comment_verdicts = []
     parsed = {}
 
-    for path in files:
-        canonicalize_source(path, root, local_project)
-
     with tempfile.TemporaryDirectory(prefix="toolchain-format-") as temporary:
         generated = Path(temporary) / ".clang-format"
         generated.write_text(expected_configuration, encoding="utf-8", newline="\n")
-        command = [
-            CLANG_FORMAT,
-            "--Werror",
-            "--fail-on-incomplete-format",
-            "--fallback-style=none",
-            "--style=file:" + str(generated),
+        # Batches amortize Python and Clang startup across at least 32 files
+        # per worker. Exact small selections execute the same function directly.
+        workers = min(4, os.cpu_count() or 1, max(1, len(files) // 32))
+        batches = [
+            (files[index::workers], root, local_project, namespace_roots, generated)
+            for index in range(workers)
         ]
-        command.append("-i")
-        command.extend(str(path) for path in files)
-        formatted = subprocess.run(command).returncode
-
-    for path in files:
-        source, code, comments = format_source(path)
+        if workers == 1:
+            batches = [format_batch(batches[0])]
+        else:
+            with ProcessPoolExecutor(max_workers=workers) as processes:
+                batches = list(processes.map(format_batch, batches))
+    formatted = False
+    results = []
+    for status, stdout, stderr, batch in batches:
+        formatted |= bool(status)
+        print(stdout, end="", file=sys.stdout)
+        print(stderr, end="", file=sys.stderr)
+        results.extend(batch)
+    for path, source, code, findings, verdicts in sorted(results):
         parsed[path] = (source, code)
-        errors.extend(
-            source_errors(
-                path,
-                root,
-                local_project,
-                namespace_roots,
-                source,
-                code,
-            )
-        )
-        verdicts = classify_comments(path, source, comments, code)
+        errors.extend(findings)
         comment_verdicts.extend(verdicts)
         for verdict in verdicts:
             if verdict.decision == "Reject":
