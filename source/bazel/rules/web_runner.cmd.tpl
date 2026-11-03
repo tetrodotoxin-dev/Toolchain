@@ -1,5 +1,7 @@
 @echo off
 setlocal DisableDelayedExpansion
+if defined BUILD_WORKSPACE_DIRECTORY cd /d "%BUILD_WORKSPACE_DIRECTORY%"
+if errorlevel 1 exit /b 1
 set "runfiles=%~f0.runfiles"
 if defined RUNFILES_DIR set "runfiles=%RUNFILES_DIR%"
 set "node=%runfiles%\__NODE__"

@@ -1,18 +1,18 @@
 """Build immutable SDK consumers and one source release project."""
 
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
-load("@tetro_toolchain//:defs.bzl", "WINDOWS", "format", "library", "package", "validation", "vscode")
+load("@tetro_toolchain//:defs.bzl", "WINDOWS", "binary", "component", "library", "package", "project")
 load("@tetro_toolchain//source/bazel:package.bzl", "package_release")
 
 # Auxiliary declarations exercise primary validation selection independently
 # of declaration order. Only the primary project is released by this fixture.
-package(name = "cpu_sdk", module = "auxiliary_cpu", static = "//source:application")
-package(module = "consumer", static = "//source:consumer", components = {"application": []})
-package(name = "accelerator_sdk", module = "auxiliary_accelerator", static = "//source:application")
+component(name = "base")
+component(name = "application", deps = [":base"])
+binary(name = "check", deps = [":application"])
 
-format()
-validation(deps = [], test_deps = [":consumer"])
-vscode()
+package(name = "cpu_sdk", module = "auxiliary_cpu", static = ":application")
+project(name = "consumer", components = [":application", ":base"])
+package(name = "accelerator_sdk", module = "auxiliary_accelerator", static = ":application")
 
 _CASES = {
     "matching_static": ("dependency_shared", 1, 0),

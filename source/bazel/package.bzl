@@ -68,6 +68,7 @@ _PublicHeadersInfo = provider(
     "Declared public header paths across ordinary dependencies.",
     fields = {
         "direct_defines": "Definitions declared directly by this target.",
+        "dependencies": "Direct dependency labels of this interface.",
         "direct": "Header files declared directly by this target.",
         "entries": "Declared header files and their public include paths.",
     },
@@ -111,15 +112,18 @@ def _public_headers_impl(target, ctx):
     actual = getattr(ctx.rule.attr, "actual", None)
     direct_dependencies = []
     direct_defines = getattr(ctx.rule.attr, "defines", [])
+    direct_dependencies_labels = [dependency.label for dependency in dependencies]
     if actual:
         dependencies = dependencies + [actual]
         if _PublicHeadersInfo in actual:
             direct_dependencies.append(actual[_PublicHeadersInfo].direct)
             direct_defines = actual[_PublicHeadersInfo].direct_defines
+            direct_dependencies_labels = actual[_PublicHeadersInfo].dependencies
     direct = depset(headers, transitive = direct_dependencies)
     return [_PublicHeadersInfo(
         direct = direct,
         direct_defines = direct_defines,
+        dependencies = direct_dependencies_labels,
         entries = depset(transitive = [direct] + [dep[_PublicHeadersInfo].entries for dep in dependencies if _PublicHeadersInfo in dep]),
     )]
 
@@ -321,8 +325,18 @@ def _package(ctx):
             # reconstruct the complete public interface in the imported SDK.
             component_names = ctx.attr.component_names
             component_dependencies = ctx.attr.component_dependencies
+            selected_components = ctx.split_attr.components.get(platform, [])
+            if not component_dependencies:
+                names = {component.label: name for component, name in zip(selected_components, component_names)}
+                component_dependencies = {}
+                for component, name in zip(selected_components, component_names):
+                    public_dependencies = component[_PublicHeadersInfo].dependencies
+                    unknown = [dependency for dependency in public_dependencies if dependency.workspace_root == component.label.workspace_root and dependency.package == component.label.package and dependency not in names]
+                    if unknown:
+                        fail("Component " + name + " depends on unpackaged siblings: " + str(unknown))
+                    component_dependencies[name] = [names[dependency] for dependency in public_dependencies if dependency in names]
             components = {}
-            for component, name in zip(ctx.split_attr.components.get(platform, []), component_names):
+            for component, name in zip(selected_components, component_names):
                 paths = {path: True for _, path in _direct_headers(component)}
                 for file in ctx.files._toolchain_headers:
                     paths[_toolchain_header_path(file)] = True
@@ -331,7 +345,7 @@ def _package(ctx):
                         fail("Component header is outside the released interface: " + path)
                 components[name] = {
                     "headers": sorted(paths),
-                    "defines": depset(component[_PublicHeadersInfo].direct_defines + ([project + "_STATIC=1"] if linkage == "static" else [])).to_list(),
+                    "defines": depset([define for define in component[_PublicHeadersInfo].direct_defines if define != project + "_STATIC=1"] + ([project + "_STATIC=1"] if linkage == "static" else [])).to_list(),
                     "dependencies": component_dependencies[name],
                 }
             metadata = ctx.actions.declare_file(archive + ".json")
@@ -402,11 +416,10 @@ _package_release = rule(implementation = _package, attrs = {
 def package(name = "sdk", module = None, components = {}, static = None, shared = None, linkage = None, visibility = ["//visibility:public"], tags = ["manual"], **kwargs):
     """Publish a module's library, component interfaces and SDK release command.
 
-    The //source package supplies //source:<module> and //source:<component>.
-    Root component targets expose those header interfaces and link the common
-    runtime. The SDK records the same interfaces for archive consumers.
-    These declarations own their visibility, so a root BUILD can load package
-    directly as its complete publication surface.
+    Declared component labels supply their own interfaces and dependency edges.
+    A dictionary retains the source-package form, mapping names to sibling
+    dependencies and exposing those interfaces beside the selected runtime.
+    Both forms publish the same component metadata for archive consumers.
 
     `bazel run :sdk` formats the workspace, runs optimized host tests and builds
     the selected archives. It then archives the clean Git commit as the release's
@@ -416,8 +429,8 @@ def package(name = "sdk", module = None, components = {}, static = None, shared 
     Args:
         name: SDK release command name, defaulting to sdk.
         module: Published library identity, defaulting to the Bazel module name.
-        components: Component names mapped to their sibling dependencies. Each
-            component header interface lives in //source.
+        components: Declared component labels, or component names mapped to
+            sibling dependencies for interfaces supplied by //source.
         static: Static runtime target. With neither variant supplied, the
             selected linkage uses //source:<module>.
         shared: Optional shared runtime target. Supply both variants to package
@@ -442,7 +455,8 @@ def package(name = "sdk", module = None, components = {}, static = None, shared 
     if not runtime:
         fail("package requires a target for its selected " + linkage + " linkage")
     common = {key: kwargs[key] for key in ["testonly", "target_compatible_with", "compatible_with"] if key in kwargs}
-    native.alias(name = module, actual = runtime, visibility = visibility, **common)
+    if runtime not in [":" + module, "//:" + module]:
+        native.alias(name = module, actual = runtime, visibility = visibility, **common)
     if static and module == native.module_name():
         # Web validation is a standalone Node program and folds the project's
         # static runtime even when ordinary source consumers select the shared
@@ -456,24 +470,26 @@ def package(name = "sdk", module = None, components = {}, static = None, shared 
             **common
         )
     definitions = [module.upper().replace("-", "_").replace(".", "_") + "_STATIC=1"] if linkage == "static" else []
-    if type(components) != "dict":
-        fail("package components must map each component to its sibling dependencies")
-    component_names = components.keys()
-    component_dependencies = components
-    for component in component_names:
-        cc_library(
-            name = component,
-            deps = ["//source:" + component],
-            implementation_deps = [runtime],
-            defines = definitions,
-            visibility = visibility,
-            **common
-        )
+    component_dependencies = None
+    if type(components) == "dict":
+        component_dependencies = components
+        component_targets = {"//source:" + component: component for component in components}
+        for component in components:
+            cc_library(
+                name = component,
+                deps = ["//source:" + component],
+                implementation_deps = [runtime],
+                defines = definitions,
+                visibility = visibility,
+                **common
+            )
+    else:
+        component_targets = {component: native.package_relative_label(component).name for component in components}
     archives = "_" + name + "_archives"
     package_release(
         name = archives,
         project = module,
-        components = {"//source:" + component: component for component in component_names},
+        components = component_targets,
         component_dependencies = component_dependencies,
         static = static,
         shared = shared,
@@ -490,7 +506,7 @@ def package(name = "sdk", module = None, components = {}, static = None, shared 
         tags = tags,
     )
 
-def package_release(name, static = None, shared = None, project = None, platforms = None, components = {}, component_dependencies = {}, **kwargs):
+def package_release(name, static = None, shared = None, project = None, platforms = None, components = {}, component_dependencies = None, **kwargs):
     """Package static and shared libraries with their public headers.
 
     Called from the repository root to build each supplied target for the
@@ -525,17 +541,16 @@ def package_release(name, static = None, shared = None, project = None, platform
             Each component links the release binary and exposes the selected
             target's public headers and definitions. These targets describe
             headers independently of the release's static or shared linkage.
-        component_dependencies: Public SDK component names mapped to sibling
-            components required by their headers. Supply every component name
-            when publishing the scoped dependency model.
+        component_dependencies: Optional public component names mapped to their
+            sibling requirements. Omit to follow the declared dependency graph.
         **kwargs: Common rule attributes such as visibility, tags and testonly.
     """
     if not static and not shared:
         fail("package_release requires a static or shared library")
     component_names = components.values()
-    if sorted(component_dependencies.keys()) != sorted(component_names):
+    if component_dependencies != None and sorted(component_dependencies.keys()) != sorted(component_names):
         fail("component_dependencies must describe every packaged component")
-    for component, dependencies in component_dependencies.items():
+    for component, dependencies in (component_dependencies or {}).items():
         unknown = [dependency for dependency in dependencies if dependency not in component_names]
         if unknown:
             fail("component " + component + " names unpackaged siblings: " + str(unknown))
@@ -550,7 +565,7 @@ def package_release(name, static = None, shared = None, project = None, platform
         shared = shared,
         components = components.keys(),
         component_names = components.values(),
-        component_dependencies = component_dependencies,
+        component_dependencies = component_dependencies or {},
         project = project or native.module_name(),
         platforms = selected,
         version = native.module_version(),

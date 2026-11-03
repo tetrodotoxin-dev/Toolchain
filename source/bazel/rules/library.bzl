@@ -132,7 +132,7 @@ _shared_runtime = rule(
     attrs = {"shared": attr.label(mandatory = True, providers = [CcSharedLibraryInfo])},
 )
 
-def shared_library(name, srcs = [], hdrs = [], deps = [], project = None, copts = [], defines = [], local_defines = [], includes = [], linkopts = [], shared_lib_name = None, user_link_flags = [], features = [], tags = [], implementation_deps = [], **kwargs):
+def shared_library(name, srcs = [], hdrs = [], deps = [], project = None, copts = [], defines = [], local_defines = [], includes = [], linkopts = [], shared_lib_name = None, user_link_flags = [], features = [], tags = [], implementation_deps = [], header_deps = None, **kwargs):
     """Compile a shared library and expose its headers and binary to consumers.
 
     PROJECT_EXPORT=1 belongs to this target's source compilation. Consumers
@@ -148,6 +148,9 @@ def shared_library(name, srcs = [], hdrs = [], deps = [], project = None, copts 
             Their headers and definitions stay private. Static code is absorbed
             by this shared library and shared dependencies remain available to
             consumers and release packaging.
+        header_deps: Optional public interface targets after implementation
+            libraries have been absorbed into the shared object. Defaults to
+            the complete declared header interface.
         project: EXPORTED identifier, defaulting to the uppercase module name.
         copts: Additional options for implementation compilation.
         defines: Additional definitions shared with consumers.
@@ -223,7 +226,7 @@ def shared_library(name, srcs = [], hdrs = [], deps = [], project = None, copts 
         name = name,
         shared_library = ":" + shared,
         interface_library = select({WINDOWS: ":" + interface, "//conditions:default": None}),
-        deps = [":" + headers, ":" + runtime],
+        deps = ([":" + headers] if header_deps == None else header_deps) + [":" + runtime],
         linkopts = linkopts,
         visibility = visibility,
         **common

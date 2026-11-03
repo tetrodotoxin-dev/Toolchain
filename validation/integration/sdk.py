@@ -134,11 +134,13 @@ def conflicting_archives(directory, pins, version, variant, output, component=Fa
     return dict(pins, **{variant: checksum(output / name)})
 
 
-def verify_vscode(command, workspace):
-    subprocess.run(command + ["run", "//:vscode"], cwd=workspace, check=True)
+def verify_setup(command, workspace):
+    files = [workspace / ".bazelrc", workspace / ".bazelrc.local", *sorted((workspace / ".vscode").glob("*.json"))]
+    before = {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in files}
+    subprocess.run(command + ["run", "//:setup"], cwd=workspace, check=True)
+    assert {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in files} == before
     generated = workspace / ".vscode"
     assert {path.name for path in generated.iterdir()} == {
-        ".clang-format",
         "c_cpp_properties.json",
         "extensions.json",
         "launch.json",
@@ -147,36 +149,21 @@ def verify_vscode(command, workspace):
     }
     settings = json.loads((generated / "settings.json").read_text())
     assert settings["files.eol"] == "\n"
-    assert settings["[c]"]["editor.defaultFormatter"] == "ms-vscode.cpptools"
-    assert settings["[c]"]["editor.formatOnSave"] is True
-    assert settings["[cpp]"]["editor.defaultFormatter"] == "ms-vscode.cpptools"
-    assert settings["[cpp]"]["editor.formatOnSave"] is True
-    assert settings["C_Cpp.formatting"] == "clangFormat"
-    assert settings["C_Cpp.clang_format_fallbackStyle"] == "none"
-    assert settings["C_Cpp.clang_format_style"] == (
-        "file:${workspaceFolder}/.vscode/.clang-format"
-    )
-    formatter = Path(settings["C_Cpp.clang_format_path"])
-    assert formatter.is_file()
+    assert settings["[c]"]["editor.formatOnSave"] is False
+    assert settings["[cpp]"]["editor.formatOnSave"] is False
+    assert settings["C_Cpp.formatting"] == "disabled"
     tasks = json.loads((generated / "tasks.json").read_text())["tasks"]
+    current_file = next(task for task in tasks if task["label"] == "[Format] Current File")
+    assert "--no_comment_checks" in current_file["args"]
+    assert json.loads((generated / "extensions.json").read_text())["recommendations"] == ["ms-vscode.cpptools", "vadimcn.vscode-lldb"]
     build = next(task for task in tasks if task["label"] == "[Debug] Build All")
     subprocess.run(command + build["args"], cwd=workspace, check=True)
     for launch in json.loads((generated / "launch.json").read_text())["configurations"]:
         program = launch.get("windows", {}).get("program", launch["program"]) if WINDOWS else launch["program"]
         assert Path(program.replace("${workspaceFolder}", str(workspace))).is_file(), program
-    result = subprocess.run(
-        [
-            str(formatter),
-            "--style=file:" + str(generated / ".clang-format"),
-            "--assume-filename=" + str(workspace / "source/style.cpp"),
-        ],
-        input="S32 main(){return 0;}\n",
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    assert result.stdout == "S32 main() {\n  return 0;\n}\n", result.stdout
-    print("VS Code uses the candidate Clang binary and generated style.", flush=True)
+    arguments = [argument.replace("${relativeFile}", "source/consumer/application/value.c") for argument in current_file["args"]]
+    subprocess.run(command + arguments, cwd=workspace, check=True)
+    print("Setup preserved configuration bytes, timestamps and local overrides; editor tasks use the full formatter.", flush=True)
 
 
 def verify_archives(checksum_manifest, dependency_manifest, version, mixed=False):
@@ -295,7 +282,11 @@ def verify_repack(directory, output, version, linkage):
 
 def verify_release(command, workspace, version):
     server = subprocess.check_output(command + ["info", "server_pid"], cwd=workspace)
-    subprocess.run(command + ["run", "//:sdk"], cwd=workspace, check=True)
+    release = subprocess.run(command + ["run", "//:sdk"], cwd=workspace, capture_output=True, text=True)
+    print(release.stdout, end="", flush=True)
+    assert release.returncode == 0, release.stderr
+    output = next(line.removeprefix("SDK bundles: ") for line in release.stdout.splitlines() if line.startswith("SDK bundles: "))
+    assert Path(output).samefile(workspace / ".bin/bin"), output
     assert subprocess.check_output(command + ["info", "server_pid"], cwd=workspace) == server, "SDK release restarted its Bazel server"
     snapshot = workspace / (".bin/release/consumer-" + version + "-source.tar.gz")
     assert snapshot.exists()
@@ -304,6 +295,21 @@ def verify_release(command, workspace, version):
     assert snapshot.with_name(snapshot.name + ".sha256").read_text() == checksum(snapshot) + "  " + snapshot.name + "\n"
     with tarfile.open(snapshot, "r:gz") as archive:
         assert archive.extractfile("MODULE.bazel").read() == (workspace / "MODULE.bazel").read_bytes()
+        assert ".bazelrc" not in archive.getnames()
+        assert not any(name.endswith(("/BUILD", "/BUILD.bazel")) for name in archive.getnames())
+    source_archives = list((workspace / ".bin/bin").glob("consumer-*-*.zip"))
+    assert len(source_archives) == 7, source_archives
+    for archive_path in source_archives:
+        if archive_path.name.endswith("-headers.zip"):
+            continue
+        with zipfile.ZipFile(archive_path) as archive:
+            metadata = json.loads(archive.read("sdk.json"))
+        assert metadata["components"]["application"]["dependencies"] == ["base"]
+        assert metadata["components"]["base"]["dependencies"] == []
+        assert not metadata["archives"], metadata["archives"]
+        assert not metadata["runtime"], metadata["runtime"]
+        for component in metadata["components"].values():
+            assert ("CONSUMER_STATIC=1" in component["defines"]) == (metadata["linkage"] == "static")
     assert not (workspace / ".clang-format").exists()
     print("Source release passed formatting, host tests, packaging and its source snapshot.", flush=True)
 
@@ -314,7 +320,8 @@ def verify(toolchain, matching, mixed, host, objdump, case):
     sources = repository / "validation/data/sdk"
     with tarfile.open(toolchain, "r:gz") as archive:
         packaged_sources = set(archive.getnames())
-        project_files = {name: archive.extractfile(name).read() for name in [".bazelrc", "LICENSE"]}
+        configuration = archive.extractfile(".bazelrc").read()
+        license = archive.extractfile("LICENSE").read()
     for path in ["source/bazel/rules/.clang-format", "source/toolchain/validation/move_only.hpp", "source/toolchain/validation/tracked_value.hpp"]:
         assert path in packaged_sources, path
     assert ".clang-format" not in packaged_sources
@@ -342,21 +349,23 @@ def verify(toolchain, matching, mixed, host, objdump, case):
         workspace = root / "consumer"
         workspace.mkdir()
         command = ["bazel"]
-        cleanup.callback(subprocess.run, command + ["shutdown"], cwd=workspace, check=True)
-        for name, content in project_files.items():
-            if name == ".bazelrc":
-                content = b"\n".join(line for line in content.splitlines() if not line.startswith(b"build")) + b"\n"
-                content += b"build -c opt --strip=always --platforms=@bazel_tools//tools:host_platform\nbuild --spawn_strategy=local\n"
-                content += ("startup --output_base=" + json.dumps((root / "bazel").as_posix(), ensure_ascii=False) + "\n").encode("utf-8")
-                for directory in [conflicts, matching.parent, mixed.parent, toolchain.parent]:
-                    content += ("\ncommon --distdir=" + json.dumps(directory.as_posix()) + "\n").encode()
-            (workspace / name).write_bytes(content)
+        local = workspace / ".bazelrc.local"
+        bootstrap = command + ["--noworkspace_rc", "--bazelrc=" + str(local)]
+        cleanup.callback(subprocess.run, bootstrap + ["shutdown"], cwd=workspace, check=True)
+        content = "build -c opt --strip=always --platforms=@bazel_tools//tools:host_platform\n"
+        content += "startup --output_base=" + json.dumps((root / "bazel").as_posix(), ensure_ascii=False) + "\n"
+        for directory in [conflicts, matching.parent, mixed.parent, toolchain.parent]:
+            content += "common --distdir=" + json.dumps(directory.as_posix()) + "\n"
+        local.write_text(content, encoding="utf-8", newline="\n")
+        (workspace / "LICENSE").write_bytes(license)
         module = substitute((sources / "module.tpl").read_text(), values)
         (workspace / "MODULE.bazel").write_text(module, encoding="utf-8", newline="\n")
         for output, source in {
             "BUILD": sources / "consumer.build",
-            "source/BUILD": sources / "consumer.source.build",
-            "source/consumer/application/value.c": sources / "release.c",
+            "source/consumer/base/value.c": sources / "release_base.c",
+            "source/consumer/base/value.h": sources / "release_base.h",
+            "source/consumer/check/main.c": sources / "release_check.c",
+            "source/consumer/application/value.c": sources / "release.c.tpl",
             "source/consumer/application/value.h": sources / "release.h",
             "validation/tests/web.cpp": sources / "web_test.cpp.tpl",
             "validation/benchmarks/web.cpp": sources / "web_benchmark.cpp",
@@ -367,7 +376,9 @@ def verify(toolchain, matching, mixed, host, objdump, case):
             path = workspace / output
             path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, path)
-        (workspace / ".gitignore").write_text(".bin/\n.bazelrc.local\nMODULE.bazel.lock\n.vscode/\n")
+        (workspace / ".gitignore").write_text(".bin/\n.bazelrc\n.bazelrc.local\nbazel-*\nMODULE.bazel.lock\n.vscode/\n", encoding="utf-8", newline="\n")
+        subprocess.run(bootstrap + ["run", "//:setup"], cwd=workspace, check=True)
+        assert (workspace / ".bazelrc").read_bytes() == configuration
         for arguments in [
             ["init", "--quiet"],
             ["add", "."],
@@ -385,8 +396,9 @@ def verify(toolchain, matching, mixed, host, objdump, case):
 
         targets = ["//:" + name + "/" + target for name in cases for target in ["consumer", "component", "alternate/consumer", "consumer_library_shared"]]
         standalone = ["//:" + family + "/standalone" for family in families]
-        subprocess.run(command + ["build", *targets, *standalone], cwd=workspace, check=True)
+        subprocess.run(command + ["build", "//:check", *targets, *standalone], cwd=workspace, check=True)
         output = workspace / ".bin/bin"
+        subprocess.run([str(output / ("check.exe" if WINDOWS else "check"))], cwd=workspace, check=True)
         for name in cases:
             for executable in [EXECUTABLE, "component.exe" if WINDOWS else "component", "alternate/" + EXECUTABLE]:
                 subprocess.run([str(output / name / executable)], cwd=workspace, env=runtime_environment, check=True)
@@ -450,10 +462,10 @@ def verify(toolchain, matching, mixed, host, objdump, case):
 
         if "matching" in families:
             selected = subprocess.check_output(command + ["query", "labels(actual, //:_validation_static)"], cwd=workspace, text=True).strip()
-            assert selected == "//source:consumer", selected
+            assert selected == "//:consumer", selected
             subprocess.run(command + ["run", "//:tests_web"], cwd=workspace, check=True)
             verify_release(command, workspace, version)
-            verify_vscode(command, workspace)
+            verify_setup(command, workspace)
         assert (workspace / "MODULE.bazel").read_text(encoding="utf-8") == module
         assert not list(output.glob("*-source.zip"))
 

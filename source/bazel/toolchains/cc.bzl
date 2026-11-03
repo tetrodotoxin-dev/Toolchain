@@ -80,8 +80,8 @@ def _clang_config(ctx):
             _flags("reproducible_compile", _COMPILE, _COMPILE_FLAGS),
             _flags("target_sdk", _COMPILE + _LINK, ["--target=x86_64-linux-gnu", "--sysroot=" + headers, "--gcc-install-dir=" + headers + "/" + _GCC_DIRECTORY]),
             feature(name = "pic", enabled = True, flag_sets = [flag_set(actions = _COMPILE, flag_groups = [flag_group(flags = ["-fPIC"], expand_if_available = "pic")])]),
-            _flags("common_compile", _COMPILE, ["-Wall", "-Werror", "-Wmissing-declarations", "-fvisibility=hidden", "-fno-exceptions", "-fno-rtti", "-march=x86-64-v3", "-mrdrnd", "-no-canonical-prefixes", "-resource-dir", RESOURCE_INCLUDE.removesuffix("/include")]),
-            _flags("default_linker_flags", _LINK, ["-lstdc++", "-fuse-ld=lld"]),
+            _flags("common_compile", _COMPILE, ["-Wall", "-Werror", "-Wmissing-declarations", "-fvisibility=hidden", "-fno-exceptions", "-fno-rtti", "-march=x86-64-v3", "-mrdrnd", "-pthread", "-no-canonical-prefixes", "-resource-dir", RESOURCE_INCLUDE.removesuffix("/include")]),
+            _flags("default_linker_flags", _LINK, ["-lstdc++", "-fuse-ld=lld", "-pthread"]),
         ]
     else:
         features = [

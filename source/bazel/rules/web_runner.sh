@@ -1,6 +1,9 @@
 #!/bin/sh
 
 set -eu
+if [ -n "${BUILD_WORKSPACE_DIRECTORY:-}" ]; then
+  cd "$BUILD_WORKSPACE_DIRECTORY"
+fi
 
 runfiles="$0.runfiles"
 if [ ! -d "$runfiles" ]; then

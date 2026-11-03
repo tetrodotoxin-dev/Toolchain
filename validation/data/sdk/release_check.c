@@ -3,6 +3,6 @@
 
 #include "consumer/application/value.h"
 
-S32 consumer_value(S32 value) {
-  return value + 1;
+S32 main(void) {
+  return consumer_value(41) == 42 ? 0 : 1;
 }

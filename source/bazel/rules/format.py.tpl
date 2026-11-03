@@ -14,7 +14,6 @@ import sys
 import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from comment_quality import classify_comments, diagnostic, summary
 from format_policy import (
     canonicalize_source,
     duplicate_implementation_type_errors,
@@ -161,7 +160,9 @@ def select(root, names):
 
 def format_batch(arguments):
     """Format and check one independent batch, retaining source order."""
-    files, root, project, namespace_roots, configuration = arguments
+    files, root, project, namespace_roots, configuration, comment_checks = arguments
+    if comment_checks:
+        from comment_quality import classify_comments
     analyses = {path: canonicalize_source(path, root, project) for path in files}
     formatted = subprocess.run([
         CLANG_FORMAT,
@@ -177,7 +178,7 @@ def format_batch(arguments):
         analysis = format_source(path, analyses[path])
         source, code = analysis.source, analysis.code
         errors = source_errors(path, root, project, namespace_roots, analysis)
-        verdicts = classify_comments(path, source, analysis.comments, code)
+        verdicts = classify_comments(path, source, analysis.comments, code) if comment_checks else []
         results.append((path, source, code, errors, verdicts))
     return formatted.returncode, formatted.stdout, formatted.stderr, results
 
@@ -196,10 +197,19 @@ def main():
         metavar="PATH",
         help="write the generated clang-format configuration inside the workspace",
     )
+    parser.add_argument(
+        "--no_comment_checks",
+        action="store_true",
+        help="format and enforce source policy without reviewing comments",
+    )
     parser.add_argument("files", nargs="*", help="exact source files to format")
     arguments = parser.parse_args()
+    comment_checks = not arguments.no_comment_checks
+    if comment_checks:
+        from comment_quality import diagnostic, summary
 
-    root = Path.cwd().resolve()
+    root = Path(os.environ.get("BUILD_WORKSPACE_DIRECTORY", Path.cwd())).resolve()
+    os.chdir(root)
     try:
         if (root / "toolchain.json").exists():
             raise ValueError(
@@ -252,7 +262,7 @@ def main():
         # per worker. Exact small selections execute the same function directly.
         workers = min(4, os.cpu_count() or 1, max(1, len(files) // 32))
         batches = [
-            (files[index::workers], root, local_project, namespace_roots, generated)
+            (files[index::workers], root, local_project, namespace_roots, generated, comment_checks)
             for index in range(workers)
         ]
         if workers == 1:
@@ -283,9 +293,10 @@ def main():
             parsed,
         )
     )
-    report = [summary(comment_verdicts)] + warnings + errors
+    report = ([summary(comment_verdicts)] if comment_checks else []) + warnings + errors
     stream = sys.stderr if warnings or errors else sys.stdout
-    print("\n".join(report), file=stream, flush=True)
+    if report:
+        print("\n".join(report), file=stream, flush=True)
 
     if formatted or warnings or errors:
         return 1

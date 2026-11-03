@@ -4,6 +4,7 @@ load("//source/bazel:toolchains/cc.bzl", "toolchains")
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
+    ".bazelrc",
     "defs.bzl",
 ])
 

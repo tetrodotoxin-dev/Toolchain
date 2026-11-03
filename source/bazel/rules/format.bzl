@@ -75,6 +75,8 @@ def format():
     while --all states the complete selection explicitly. Every run formats
     the selection and enforces the SDK::Module import shape. Source scans print
     aggregate comment quality status; warnings and rejections fail the command.
+    --no_comment_checks keeps the formatting and source checks while omitting
+    comment review for editor save commands. SDK releases retain full review.
     Each explicit constructor carries its own comment naming the conversion
     boundary it protects. Runs generate the repository's include buckets from
     MODULE.bazel. Source validation verifies that generated

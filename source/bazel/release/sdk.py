@@ -76,6 +76,13 @@ def main():
         result = subprocess.run([*command, *arguments, *options], cwd=workspace, env=environment)
         if result.returncode:
             return result.returncode
+    if len(sys.argv) == 5:
+        output = subprocess.check_output(
+            [*command, "info", "bazel-bin", *options], cwd=workspace,
+            env=environment, text=True, encoding="utf-8",
+        ).strip()
+        package = sys.argv[4].split(":", 1)[0].removeprefix("//")
+        print("SDK bundles: " + str(Path(output) / package), flush=True)
     return snapshot(Path(workspace).resolve(), sys.argv[1], sys.argv[2])
 
 

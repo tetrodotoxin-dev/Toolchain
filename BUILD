@@ -2,11 +2,12 @@
 load("//source/bazel:toolchains/cc.bzl", "toolchains")
 load("//validation/integration:candidate.bzl", "candidate_snapshot")
 load("//source/bazel:rules/python.bzl", "python_command")
-load(":defs.bzl", "format", "validation", "vscode")
+load(":defs.bzl", "format", "setup", "validation")
 
 package(default_visibility = ["//visibility:public"])
 
 exports_files([
+    ".bazelrc",
     "defs.bzl",
 ])
 
@@ -28,7 +29,7 @@ validation(
     test_data = ["//validation/integration:validation_test_data"],
 )
 
-vscode()
+setup()
 
 # The external-consumer test needs the live Starlark changes before they form a
 # clean Git snapshot. This private archive is test input and never a release.

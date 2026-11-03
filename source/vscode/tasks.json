@@ -9,7 +9,7 @@
       "args": [
         "build",
         "...",
-        "-c", "dbg", "--symlink_prefix=.bin/"
+        "-c", "dbg"
       ],
       "group": {"kind": "build", "isDefault": true},
       "problemMatcher": "$gcc"
@@ -21,7 +21,7 @@
       "args": [
         "build",
         "...",
-        "-c", "opt", "--strip=always", "--symlink_prefix=.bin/"
+        "-c", "opt", "--strip=always"
       ],
       "group": "build",
       "problemMatcher": "$gcc"
@@ -30,7 +30,7 @@
       "label": "[Format] Current File",
       "type": "process",
       "command": "bazel",
-      "args": ["run", "//:format", "--", "${relativeFile}"],
+      "args": ["run", "//:format", "--", "--no_comment_checks", "${relativeFile}"],
       "problemMatcher": "$gcc"
     },
     {
