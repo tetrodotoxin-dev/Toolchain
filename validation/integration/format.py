@@ -11,7 +11,7 @@ import tempfile
 def run(formatter, root, *arguments, status=0):
     result = subprocess.run(
         [str(formatter), *arguments], cwd=root,
-        capture_output=True, text=True,
+        capture_output=True, text=True, encoding="utf-8",
         env=dict(os.environ, BUILD_WORKSPACE_DIRECTORY=str(root)),
     )
     assert result.returncode == status, result.stdout + result.stderr
@@ -21,7 +21,7 @@ def run(formatter, root, *arguments, status=0):
 if __name__ == "__main__":
     formatter = Path(".bin/bin/format.cmd" if os.name == "nt" else ".bin/bin/format.sh").resolve()
     fixtures = Path("validation/data/format")
-    with tempfile.TemporaryDirectory(prefix="toolchain-format-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="toolchain-format-\u0101-") as temporary:
         root = Path(temporary)
         source = root / "source/example/module"
         source.mkdir(parents=True)

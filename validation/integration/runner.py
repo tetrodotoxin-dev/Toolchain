@@ -12,14 +12,14 @@ import time
 def run(command):
     started = time.monotonic()
     if Path(command[0]).suffix == ".py":
-        command = [sys.executable, *command]
-    result = subprocess.run(command, capture_output=True, text=True)
+        command = [sys.executable, "-I", "-B", "-X", "utf8", *command]
+    result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8")
     return result, time.monotonic() - started
 
 
 if __name__ == "__main__":
     inventory = sys.argv[1] if len(sys.argv) > 1 else ".bin/bin/validation/integration/integration_commands.json"
-    commands = json.loads(Path(inventory).read_text())
+    commands = json.loads(Path(inventory).read_text(encoding="utf-8"))
     failed = []
     with ThreadPoolExecutor() as processes:
         pending = {
