@@ -497,13 +497,21 @@ def package(name = "sdk", module = None, components = {}, static = None, shared 
         tags = tags,
         **kwargs
     )
+    sdk(name = name, archives = ["//" + native.package_name() + ":" + archives], visibility = visibility, tags = tags)
+
+def sdk(name = "sdk", archives = [], **kwargs):
+    """Release the selected archives through one format, host test and snapshot pass.
+
+    Archive targets retain their library identities and platform selections.
+    The command builds them together after the host tests pass, then snapshots
+    the repository's clean commit. An empty selection releases source alone.
+    """
     python_command(
         name = name,
         script = Label("//source/bazel:release/sdk.py"),
-        arguments = [native.module_name(), native.module_version(), "$(execpath //:format)", "//" + native.package_name() + ":" + archives],
+        arguments = [native.module_name(), native.module_version(), "$(execpath //:format)"] + archives,
         data = ["//:format"],
-        visibility = visibility,
-        tags = tags,
+        **kwargs
     )
 
 def package_release(name, static = None, shared = None, project = None, platforms = None, components = {}, component_dependencies = None, **kwargs):

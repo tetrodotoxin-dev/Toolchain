@@ -1,8 +1,7 @@
 """Build immutable SDK consumers and one source release project."""
 
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
-load("@tetro_toolchain//:defs.bzl", "WINDOWS", "binary", "component", "library", "package", "project")
-load("@tetro_toolchain//source/bazel:package.bzl", "package_release")
+load("@tetro_toolchain//:defs.bzl", "WINDOWS", "archive", "binary", "component", "library", "package", "project", "sdk")
 
 # Auxiliary declarations exercise primary validation selection independently
 # of declaration order. Only the primary project is released by this fixture.
@@ -10,9 +9,19 @@ component(name = "base")
 component(name = "application", deps = [":base"])
 binary(name = "check", deps = [":application"])
 
-package(name = "cpu_sdk", module = "auxiliary_cpu", static = ":application")
+[
+    library(
+        name = name + "_static", module = name,
+        srcs = ["source/" + name + "/base/value.c"],
+        hdrs = ["source/" + name + "/base/value.h"],
+        includes = ["source"],
+    )
+    for name in ["auxiliary_cpu", "auxiliary_accelerator"]
+]
+package(name = "cpu_sdk", module = "auxiliary_cpu", static = ":auxiliary_cpu_static")
 project(name = "consumer", components = [":application", ":base"])
-package(name = "accelerator_sdk", module = "auxiliary_accelerator", static = ":application")
+package(name = "accelerator_sdk", module = "auxiliary_accelerator", static = ":auxiliary_accelerator_static")
+sdk(name = "all_sdks", archives = [":_sdk_archives", ":_cpu_sdk_archives", ":_accelerator_sdk_archives"])
 
 _CASES = {
     "matching_static": ("dependency_shared", 1, 0),
@@ -86,7 +95,7 @@ _CASES = {
     )
     for component in ["api", "public"]
 ]
-package_release(
+archive(
     name = "_repack_archives", project = "toolchain_test",
     static = select({
         ":_repack_" + case: "@" + case + "//:toolchain_test"

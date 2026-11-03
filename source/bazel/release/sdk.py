@@ -58,7 +58,7 @@ def snapshot(root, project, version):
 def main():
     workspace = os.environ.get("BUILD_WORKSPACE_DIRECTORY")
     execroot = os.environ.get("BUILD_EXECROOT")
-    if not workspace or not execroot or len(sys.argv) not in (4, 5):
+    if not workspace or not execroot or len(sys.argv) < 4:
         print("SDK releases run through `bazel run :sdk`", file=sys.stderr)
         return 1
     command = [os.environ.get("BAZEL_REAL") or "bazel"]
@@ -70,19 +70,19 @@ def main():
     stages = [
         ["run", "//:tests"],
     ]
-    if len(sys.argv) == 5:
-        stages.append(["build", sys.argv[4]])
+    if len(sys.argv) > 4:
+        stages.append(["build", *sys.argv[4:]])
     for arguments in stages:
         result = subprocess.run([*command, *arguments, *options], cwd=workspace, env=environment)
         if result.returncode:
             return result.returncode
-    if len(sys.argv) == 5:
+    if len(sys.argv) > 4:
         output = subprocess.check_output(
             [*command, "info", "bazel-bin", *options], cwd=workspace,
             env=environment, text=True, encoding="utf-8",
         ).strip()
-        package = sys.argv[4].split(":", 1)[0].removeprefix("//")
-        print("SDK bundles: " + str(Path(output) / package), flush=True)
+        for package in dict.fromkeys(target.split(":", 1)[0].removeprefix("//") for target in sys.argv[4:]):
+            print("SDK bundles: " + str(Path(output) / package), flush=True)
     return snapshot(Path(workspace).resolve(), sys.argv[1], sys.argv[2])
 
 

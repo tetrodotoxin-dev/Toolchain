@@ -282,9 +282,11 @@ def verify_repack(directory, output, version, linkage):
 
 def verify_release(command, workspace, version):
     server = subprocess.check_output(command + ["info", "server_pid"], cwd=workspace)
-    release = subprocess.run(command + ["run", "//:sdk"], cwd=workspace, capture_output=True, text=True)
+    release = subprocess.run(command + ["run", "//:all_sdks"], cwd=workspace, capture_output=True, text=True)
     print(release.stdout, end="", flush=True)
     assert release.returncode == 0, release.stderr
+    assert release.stdout.count("Comment quality:") == 1, release.stdout
+    assert release.stdout.count("Testing Completed:") == 1, release.stdout
     output = next(line.removeprefix("SDK bundles: ") for line in release.stdout.splitlines() if line.startswith("SDK bundles: "))
     assert Path(output).samefile(workspace / ".bin/bin"), output
     assert subprocess.check_output(command + ["info", "server_pid"], cwd=workspace) == server, "SDK release restarted its Bazel server"
@@ -299,6 +301,8 @@ def verify_release(command, workspace, version):
         assert not any(name.endswith(("/BUILD", "/BUILD.bazel")) for name in archive.getnames())
     source_archives = list((workspace / ".bin/bin").glob("consumer-*-*.zip"))
     assert len(source_archives) == 7, source_archives
+    for project in ["auxiliary_cpu", "auxiliary_accelerator"]:
+        assert len(list((workspace / ".bin/bin").glob(project + "-*-*.zip"))) == 4, project
     for archive_path in source_archives:
         if archive_path.name.endswith("-headers.zip"):
             continue
@@ -376,6 +380,12 @@ def verify(toolchain, matching, mixed, host, objdump, case):
             path = workspace / output
             path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, path)
+        for project in ["auxiliary_cpu", "auxiliary_accelerator"]:
+            for extension in ["c", "h"]:
+                path = workspace / ("source/" + project + "/base/value." + extension)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                content = (sources / ("release_base." + extension)).read_text(encoding="utf-8")
+                path.write_text(content.replace("consumer", project).replace("CONSUMER", project.upper()), encoding="utf-8", newline="\n")
         (workspace / ".gitignore").write_text(".bin/\n.bazelrc\n.bazelrc.local\nbazel-*\nMODULE.bazel.lock\n.vscode/\n", encoding="utf-8", newline="\n")
         subprocess.run(bootstrap + ["run", "//:setup"], cwd=workspace, check=True)
         assert (workspace / ".bazelrc").read_bytes() == configuration

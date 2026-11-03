@@ -1,8 +1,7 @@
 # Copyright (c) 2023-present Matt Kaes and contributors
 load("//source/bazel:toolchains/cc.bzl", "toolchains")
 load("//validation/integration:candidate.bzl", "candidate_snapshot")
-load("//source/bazel:rules/python.bzl", "python_command")
-load(":defs.bzl", "format", "setup", "validation")
+load(":defs.bzl", "format", "sdk", "setup", "validation")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -15,13 +14,7 @@ toolchains()
 
 format()
 
-python_command(
-    name = "sdk",
-    script = "//source/bazel:release/sdk.py",
-    arguments = [module_name(), module_version(), "$(execpath :format)"],
-    data = [":format"],
-    tags = ["manual"],
-)
+sdk(tags = ["manual"])
 
 validation(
     deps = [],
