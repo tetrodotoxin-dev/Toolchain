@@ -2,45 +2,49 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(default_visibility = ["//visibility:public"])
 
+_HEADERS = [
+    "toolchain/export.h",
+    "toolchain/compile/allocation.hpp",
+    "toolchain/compile/source_location.hpp",
+    "toolchain/memory/lifetime.hpp",
+    "toolchain/toolchain.h",
+    "toolchain/toolchain.hpp",
+]
+
+filegroup(
+    name = "header_files",
+    srcs = _HEADERS,
+)
+
 cc_library(
     name = "headers",
-    hdrs = [
-        "toolchain/export.h",
-        "toolchain/compile/allocation.hpp",
-        "toolchain/compile/source_location.hpp",
-        "toolchain/memory/lifetime.hpp",
-        "toolchain/toolchain.h",
-        "toolchain/toolchain.hpp",
-    ],
+    hdrs = _HEADERS,
     includes = ["."],
 )
 
 filegroup(
     name = "compile_allocation_header",
-    srcs = ["toolchain/compile/allocation.hpp"],
     testonly = True,
+    srcs = ["toolchain/compile/allocation.hpp"],
 )
 
 filegroup(
     name = "compile_allocation_dependencies",
+    testonly = True,
     srcs = [
         "toolchain/export.h",
         "toolchain/memory/lifetime.hpp",
         "toolchain/toolchain.h",
     ],
-    testonly = True,
 )
 
 filegroup(
     name = "sources",
     srcs = glob(["sdk/**"]) + [
         "BUILD",
-        "toolchain/export.h",
         "toolchain/compile/allocation.hpp",
         "toolchain/compile/source_location.hpp",
-        "toolchain/memory/lifetime.hpp",
-        "toolchain/toolchain.h",
-        "toolchain/toolchain.hpp",
+        ":header_files",
         "//source/bazel:sources",
         "//source/toolchain/validation:sources",
         "//source/vscode:sources",

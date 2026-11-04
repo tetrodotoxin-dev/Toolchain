@@ -9,10 +9,15 @@ def _component_headers_impl(ctx):
     headers = component[CcInfo].compilation_context.headers.to_list()
     for header in ctx.files.required:
         if header not in headers:
-            fail("Component is missing a declared dependency header: " + header.short_path)
+            fail(
+                "Component is missing a declared dependency header: " +
+                header.short_path,
+            )
+
     for header in ctx.files.excluded:
         if header in headers:
             fail("Component exposes an unrelated sibling header: " + header.short_path)
+
     return [component[CcInfo], component[DefaultInfo]]
 
 component_headers = rule(

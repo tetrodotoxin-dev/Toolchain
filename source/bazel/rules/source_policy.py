@@ -7,7 +7,6 @@ import hashlib
 import re
 import subprocess
 
-
 HEADERS = {".h", ".hpp"}
 IMPLEMENTATIONS = {".cpp"}
 
@@ -17,6 +16,7 @@ class SourceAnalysis:
 
     def __init__(self, source):
         self.source = source
+
         self.code, self.comments = lexical(source)
 
     @cached_property
@@ -35,16 +35,20 @@ class SourceAnalysis:
         for index, line in enumerate(lines):
             if directive(line):
                 end = logical_end(logical_lines, index)
-                length = sum(map(len, lines[index:end + 1]))
+                length = sum(map(len, lines[index : end + 1]))
                 directives.append((offset, offset + length))
+
             offset += len(line)
+
         tokens = []
         index = 0
         for token in self.raw_tokens:
             while index < len(directives) and token[1] >= directives[index][1]:
                 index += 1
+
             if index == len(directives) or token[1] < directives[index][0]:
                 tokens.append(token)
+
         return tokens
 
     @cached_property
@@ -60,6 +64,7 @@ class SourceAnalysis:
                 start = stacks[opening].pop()
                 matched[opening][start] = index
                 matched[opening][index] = start
+
         return matched
 
     @cached_property
@@ -77,13 +82,9 @@ class SourceAnalysis:
 
 USING_NAMESPACE = re.compile(r"\busing\s+namespace\s+([^;]+);")
 SELECTIVE_USING = re.compile(
-    r"\busing\s+"
-    r"((?:[A-Za-z_][A-Za-z0-9_]*\s*::\s*)+"
-    r"[A-Za-z_][A-Za-z0-9_]*)\s*;"
+    r"\busing\s+" r"((?:[A-Za-z_][A-Za-z0-9_]*\s*::\s*)+" r"[A-Za-z_][A-Za-z0-9_]*)\s*;"
 )
-MODULE_NAMESPACE = re.compile(
-    r"[A-Za-z_][A-Za-z0-9_]*\s*::\s*[A-Za-z_][A-Za-z0-9_]*"
-)
+MODULE_NAMESPACE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\s*::\s*[A-Za-z_][A-Za-z0-9_]*")
 NAMESPACE_DECLARATION = re.compile(
     r"\b(?:inline\s+)?namespace"
     r"(?:\s+[A-Za-z_][A-Za-z0-9_]*(?:\s*::\s*[A-Za-z_][A-Za-z0-9_]*)*)?"
@@ -108,9 +109,7 @@ FORWARD_DECLARATION = re.compile(
 HEADER_NAMESPACE = re.compile(
     r"\bnamespace\s+([A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)*)\s*\{"
 )
-STANDALONE_CLASS = re.compile(
-    r"(?m)^[ \t]*class\s+[A-Za-z_][A-Za-z0-9_]*\b"
-)
+STANDALONE_CLASS = re.compile(r"(?m)^[ \t]*class\s+[A-Za-z_][A-Za-z0-9_]*\b")
 PLATFORM_CONDITION = re.compile(
     r"\b(?:PERI_(?:LINUX|WINDOWS|WASM|MACOS|FREEBSD)|"
     r"_WIN32|__linux__|__APPLE__|__EMSCRIPTEN__|__FreeBSD__)\b"
@@ -121,8 +120,7 @@ PLATFORM_INCLUDE = re.compile(
 )
 SYSTEM_INCLUDE = re.compile(r"^\s*#\s*include\s*<([^>]+)>")
 PRIVATE_HEADER_MARKER = re.compile(
-    r"(?m)^[ \t]*#[ \t]*define[ \t]+TOOLCHAIN_PRIVATE_HEADER"
-    r"[ \t]+1[ \t]*$"
+    r"(?m)^[ \t]*#[ \t]*define[ \t]+TOOLCHAIN_PRIVATE_HEADER" r"[ \t]+1[ \t]*$"
 )
 PRIVATE_HEADER_TOKEN = re.compile(r"\bTOOLCHAIN_PRIVATE_HEADER\b")
 NAMED_CAST = re.compile(
@@ -275,7 +273,9 @@ NONCANONICAL_INTEGER_TYPES = {
     "uintmax_t",
 }
 FLEXIBLE_TYPES = (
-    set(CANONICAL_TYPE_SUBSTITUTIONS) | NONCANONICAL_INTEGER_TYPES | {
+    set(CANONICAL_TYPE_SUBSTITUTIONS)
+    | NONCANONICAL_INTEGER_TYPES
+    | {
         "double",
         "float",
         "int",
@@ -298,12 +298,12 @@ def lexical(source):
         if source.startswith("//", index):
             end = source.find("\n", index + 2)
             end = len(source) if end < 0 else end
-            comments.append((index, end, source[index + 2:end]))
+            comments.append((index, end, source[index + 2 : end]))
         elif source.startswith("/*", index):
             end = source.find("*/", index + 2)
             end = len(source) if end < 0 else end + 2
-            content_end = end - 2 if source[end - 2:end] == "*/" else end
-            comments.append((index, end, source[index + 2:content_end]))
+            content_end = end - 2 if source[end - 2 : end] == "*/" else end
+            comments.append((index, end, source[index + 2 : content_end]))
         else:
             raw = RAW_STRING.match(source, index)
             if raw:
@@ -337,7 +337,9 @@ def lexical(source):
         for position in range(index, min(end, len(source))):
             if output[position] != "\n":
                 output[position] = " "
+
         index = end
+
     return "".join(output), comments
 
 
@@ -355,6 +357,7 @@ def implementation_type_definitions(path, parsed=None):
     else:
         source = path.read_text(encoding="utf-8")
         code, _ = lexical(source)
+
     definitions = []
     for match in IMPLEMENTATION_TYPE_DEFINITION.finditer(code):
         if code.count("{", 0, match.start()) != code.count("}", 0, match.start()):
@@ -368,6 +371,7 @@ def implementation_type_definitions(path, parsed=None):
         definitions.append(
             (match.group(1) or match.group(2), line_at(source, match.start()))
         )
+
     return definitions
 
 
@@ -385,9 +389,7 @@ def duplicate_implementation_type_errors(paths, selected, parsed=None):
         if len(owners) < 2:
             continue
 
-        rendered = ", ".join(
-            f"{path}:{line}" for path, line in sorted(locations)
-        )
+        rendered = ", ".join(f"{path}:{line}" for path, line in sorted(locations))
         for path, line in locations:
             if path in selected:
                 errors.append(
@@ -395,6 +397,7 @@ def duplicate_implementation_type_errors(paths, selected, parsed=None):
                     f"multiple .cpp files ({rendered}); move one shared definition "
                     "to a header or give distinct fixtures distinct names"
                 )
+
     return errors
 
 
@@ -405,7 +408,9 @@ def pascal_name(value):
         converted = re.sub(
             r"(?<=\d)[a-z]", lambda match: match.group(0).upper(), converted
         )
+
         words.append(converted)
+
     return "".join(words)
 
 
@@ -415,13 +420,11 @@ def public_header_identity(path):
         (index for index, part in enumerate(parts) if part == "source"),
         default=-1,
     )
+
     relative = parts[source + 1 :]
-    if (
-        source < 0
-        or path.suffix != ".hpp"
-        or len(relative) < 2
-    ):
+    if source < 0 or path.suffix != ".hpp" or len(relative) < 2:
         return None
+
     namespace = "::".join(pascal_name(part) for part in relative[:-1])
     return namespace, pascal_name(path.stem)
 
@@ -430,19 +433,20 @@ def direct_namespace_types(code, declaration):
     opening = code.find("{", declaration.start(), declaration.end())
     if opening < 0:
         return []
+
     depth = 1
     closing = opening + 1
     while closing < len(code) and depth:
         depth += code[closing] == "{"
         depth -= code[closing] == "}"
         closing += 1
+
     owned_types = []
-    for owned in OWNED_TYPE_DECLARATION.finditer(
-        code, opening + 1, closing - 1
-    ):
+    for owned in OWNED_TYPE_DECLARATION.finditer(code, opening + 1, closing - 1):
         prefix = code[opening + 1 : owned.start()]
         if prefix.count("{") == prefix.count("}"):
             owned_types.append(owned)
+
     return owned_types
 
 
@@ -461,10 +465,9 @@ def compiler_prelude(path, expected_object, source):
     identity = public_header_identity(path)
     if not identity:
         return False
+
     parts = path.parts
-    source_index = max(
-        index for index, part in enumerate(parts) if part == "source"
-    )
+    source_index = max(index for index, part in enumerate(parts) if part == "source")
     relative = parts[source_index + 1 :]
     c_header = path.with_suffix(".h")
     c_include = "/".join(relative[:-1] + (c_header.name,))
@@ -492,6 +495,7 @@ def private_header_errors(path, source, code):
             f"{path}:{line_at(source, uses[0].start())}: "
             "TOOLCHAIN_PRIVATE_HEADER classifies .h and .hpp files"
         ]
+
     if len(uses) != 1 or len(declarations) != 1:
         return [
             f"{path}:{line_at(source, uses[0].start())}: private headers "
@@ -504,6 +508,7 @@ def private_header_errors(path, source, code):
             f"{path}:{line_at(source, declarations[0].start())}: private "
             "header classification precedes includes"
         ]
+
     return []
 
 
@@ -511,14 +516,17 @@ def header_identity_errors(path, source, code):
     """Match each public C++ header to its namespace and primary object."""
     if private_header(path, code):
         return []
+
     identity = public_header_identity(path)
     if not identity:
         return []
+
     expected_namespace, expected_object = identity
     prelude = compiler_prelude(path, expected_object, source)
     errors = []
     if not re.search(r"^#pragma\s+once\s*$", source, re.MULTILINE):
         errors.append(f"{path}:1: public C++ headers begin with '#pragma once'")
+
     namespaces = list(HEADER_NAMESPACE.finditer(code))
     for declaration in namespaces:
         namespace = declaration.group(1)
@@ -528,10 +536,9 @@ def header_identity_errors(path, source, code):
             errors.append(
                 f"{path}:{line_at(source, declaration.start())}: public header namespaces match '{expected_namespace}'"
             )
+
     if not namespaces and not prelude:
-        errors.append(
-            f"{path}:1: public header namespace is '{expected_namespace}'"
-        )
+        errors.append(f"{path}:1: public header namespace is '{expected_namespace}'")
 
     owned_types = [
         owned
@@ -539,18 +546,19 @@ def header_identity_errors(path, source, code):
         if declaration.group(1) == expected_namespace
         for owned in direct_namespace_types(code, declaration)
     ]
+
     owned_names = [owned.group(1) or owned.group(2) for owned in owned_types]
     owns_object = expected_object in owned_names
     if not owns_object and not prelude:
-        errors.append(
-            f"{path}:1: public header primary object is '{expected_object}'"
-        )
+        errors.append(f"{path}:1: public header primary object is '{expected_object}'")
+
     for owned, name in zip(owned_types, owned_names):
         if not prelude and name != expected_object:
             errors.append(
                 f"{path}:{line_at(source, owned.start())}: public header "
                 f"top level types nest under '{expected_object}'"
             )
+
     return errors
 
 
@@ -558,13 +566,13 @@ def c_header_api_errors(path, source, code):
     """Keep standalone C++ facades out of C ABI headers."""
     if path.suffix != ".h":
         return []
+
     declarations = list(HEADER_NAMESPACE.finditer(code))
     declarations.extend(STANDALONE_CLASS.finditer(code))
     if not declarations:
         return []
-    line = min(
-        line_at(source, declaration.start()) for declaration in declarations
-    )
+
+    line = min(line_at(source, declaration.start()) for declaration in declarations)
     return [
         f"{path}:{line}: standalone C++ namespaces and classes live in a paired .hpp header; keep the .h surface rooted in ABI records"
     ]
@@ -581,15 +589,14 @@ def namespace_errors(path, source, code):
         elif path.suffix in IMPLEMENTATIONS and not MODULE_NAMESPACE.fullmatch(
             match.group(1).strip()
         ):
-            parts = re.findall(
-                r"[A-Za-z_][A-Za-z0-9_]*", match.group(1)
-            )
+            parts = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", match.group(1))
             correction = (
                 f"; replace this declaration with 'using namespace "
                 f"{parts[0]}::{parts[1]};'"
                 if len(parts) > 2
                 else ""
             )
+
             errors.append(
                 f"{path}:{line}: implementation imports use "
                 f"'using namespace SDK::Module;'{correction}"
@@ -609,6 +616,7 @@ def namespace_errors(path, source, code):
             errors.append(
                 f"{path}:{line_at(source, match.start())}: implementation namespace access uses 'using namespace SDK::Module;'"
             )
+
     return errors
 
 
@@ -616,20 +624,22 @@ def qualified_namespace_errors(path, source, code, namespace_roots):
     """Require implementation references to enter through module imports."""
     if path.suffix not in IMPLEMENTATIONS or not namespace_roots:
         return []
+
     imported = [match.span() for match in USING_NAMESPACE.finditer(code)]
     roots = "|".join(re.escape(root) for root in sorted(namespace_roots))
-    qualified = re.compile(
-        r"\b(" + roots + r")\s*::\s*([A-Za-z_][A-Za-z0-9_]*)\s*::"
-    )
+    qualified = re.compile(r"\b(" + roots + r")\s*::\s*([A-Za-z_][A-Za-z0-9_]*)\s*::")
     errors = []
     reported = set()
     for match in qualified.finditer(code):
         if any(start <= match.start() < end for start, end in imported):
             continue
+
         module = (match.group(1), match.group(2))
         if module in reported:
             continue
+
         reported.add(module)
+
         namespace = "::".join(module)
         errors.append(
             f"{path}:{line_at(source, match.start())}: import '{namespace}' with "
@@ -638,6 +648,7 @@ def qualified_namespace_errors(path, source, code, namespace_roots):
             "between module imports exposes an architectural concept collision; "
             "rename the concept or place the conflicting class in its owning module"
         )
+
     return errors
 
 
@@ -645,40 +656,43 @@ def implementation_header_errors(path, root, source):
     """Require an implementation's matching header as its first local include."""
     if path.suffix != ".cpp":
         return []
+
     header = path.with_suffix(".hpp")
     if not header.is_file():
         return []
+
     source_root = root / "source"
     if header.is_relative_to(source_root):
         expected = header.relative_to(source_root).as_posix()
     else:
         expected = header.relative_to(root).as_posix()
-    first = re.search(
-        r'^\s*#\s*include\s+([<"][^>"]+[>"])', source, re.MULTILINE
-    )
+
+    first = re.search(r'^\s*#\s*include\s+([<"][^>"]+[>"])', source, re.MULTILINE)
     if first and first.group(1) == f'"{expected}"':
         return []
-    return [
-        f'{path}:1: implementation begins with its matching header "{expected}"'
-    ]
+
+    return [f'{path}:1: implementation begins with its matching header "{expected}"']
 
 
 def platform_header_errors(path, source, code):
     """Keep target selection inside implementation sources."""
     if path.suffix != ".hpp" or private_header(path, code):
         return []
+
     errors = []
     for line, text in enumerate(source.splitlines(), 1):
         if PLATFORM_INCLUDE.search(text):
             errors.append(
                 f"{path}:{line}: public headers include target independent SDK contracts"
             )
+
         current = directive(text)
         if current in {"if", "ifdef", "ifndef", "elif", "elifdef", "elifndef"}:
             if PLATFORM_CONDITION.search(text):
                 errors.append(
                     f"{path}:{line}: public headers express one target independent contract"
                 )
+
     return errors
 
 
@@ -687,11 +701,16 @@ def system_include_errors(path, source, code, allowed=()):
     errors = []
     for line, text in enumerate(code.splitlines(), 1):
         include = SYSTEM_INCLUDE.match(text)
-        if include and not include.group(1).endswith(".h") and include.group(1) not in allowed:
+        if (
+            include
+            and not include.group(1).endswith(".h")
+            and include.group(1) not in allowed
+        ):
             errors.append(
                 f"{path}:{line}: system includes use C headers ending in '.h'; "
                 "C++ library headers expand the compilation surface"
             )
+
     return errors
 
 
@@ -713,6 +732,7 @@ def locally_changed(path, root):
         )
     except OSError:
         return False
+
     return status.returncode == 0 and bool(status.stdout)
 
 
@@ -730,6 +750,7 @@ def declaration_errors(path, root, project, source, code):
             errors.append(
                 f"{path}:1: locked source has staged or unstaged edits; explicit human review must precede its commit"
             )
+
         digest = hashlib.sha256(source.encode()).hexdigest()
         if digest != expected_digest:
             errors.append(
@@ -741,21 +762,23 @@ def declaration_errors(path, root, project, source, code):
             errors.append(
                 f"{path}:{line_at(source, match.start())}: named casts use the owning project's reviewed data conversion boundary"
             )
+
     for match in re.finditer(r"\bmutable\b", code):
         errors.append(
             f"{path}:{line_at(source, match.start())}: state changing operations use their owner contract"
         )
+
     for match in FORWARD_DECLARATION.finditer(code):
         errors.append(
             f"{path}:{line_at(source, match.start())}: declarations include their complete owner"
         )
+
     return errors
 
 
 def enclosing_executable(tokens, index, braces, parentheses):
     return any(
-        opening < index < closing
-        and executable_scope(tokens, opening, parentheses)
+        opening < index < closing and executable_scope(tokens, opening, parentheses)
         for opening, closing in braces.items()
         if opening < closing
     )
@@ -767,18 +790,22 @@ def enclosing_type(tokens, index, braces):
         for opening, closing in braces.items()
         if opening < closing and opening < index < closing
     ]
+
     if not containing:
         return ""
+
     opening = max(containing)
     start = opening - 1
     while start >= 0 and tokens[start][0] not in {";", "{", "}"}:
         start -= 1
+
     declaration = [token for token, _, _ in tokens[start + 1 : opening]]
     for keyword in ("class", "struct", "union"):
         if keyword in declaration:
             position = declaration.index(keyword) + 1
             if position < len(declaration):
                 return declaration[position]
+
     return ""
 
 
@@ -786,6 +813,7 @@ def parameter_declarations(tokens):
     """Recognize the declaration shape of one C++ parameter sequence."""
     if not tokens:
         return True
+
     parts = []
     start = 0
     angle_depth = 0
@@ -805,8 +833,11 @@ def parameter_declarations(tokens):
             and bracket_depth == 0
         ):
             parts.append(tokens[start:index])
+
             start = index + 1
+
     parts.append(tokens[start:])
+
     builtins = {
         "bool",
         "char",
@@ -820,16 +851,18 @@ def parameter_declarations(tokens):
         "void",
         "wchar_t",
     }
+
     for part in parts:
         if "=" in part:
             part = part[: part.index("=")]
+
         words = [
-            token
-            for token in part
-            if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", token)
+            token for token in part if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", token)
         ]
+
         if len(words) >= 2:
             continue
+
         if len(words) == 1 and (
             words[0] in builtins
             or words[0] in {"type", "value_type"}
@@ -840,7 +873,9 @@ def parameter_declarations(tokens):
             or "&&" in part
         ):
             continue
+
         return False
+
     return True
 
 
@@ -848,12 +883,15 @@ def executable_signature(tokens, brace, parentheses):
     """Identify a function body from the declaration before its opening brace."""
     if brace == 0:
         return False
+
     previous = tokens[brace - 1][0]
     if previous in {"else", "try", "do"} or previous == "]":
         return True
+
     start = brace - 1
     while start >= 0 and tokens[start][0] not in {";", "{", "}"}:
         start -= 1
+
     signature = [token for token, _, _ in tokens[start + 1 : brace]]
     if not signature or first_word(tokens[start + 1 : brace]) in {
         "class",
@@ -863,6 +901,7 @@ def executable_signature(tokens, brace, parentheses):
         "union",
     }:
         return False
+
     return any(
         opening > start
         and closing < brace
@@ -878,6 +917,7 @@ def trailing_return_errors(path, analysis):
     """Require explicit C++ function returns after the parameter list."""
     if path.suffix not in {".cpp", ".hpp"}:
         return []
+
     source, code = analysis.source, analysis.code
     tokens = analysis.tokens
     parentheses = analysis.delimiters["("]
@@ -895,6 +935,7 @@ def trailing_return_errors(path, analysis):
         ):
             executable_depth[opening + 1] += 1
             executable_depth[closing] -= 1
+
     depth = 0
     for index in range(len(tokens)):
         depth += executable_depth[index]
@@ -904,12 +945,11 @@ def trailing_return_errors(path, analysis):
     # Parenthesis ranges are properly nested. Keeping their closing positions
     # identifies nested calls and function types without another range search.
     active_parentheses = []
-    openings = sorted(
-        index for index in parentheses if index < parentheses[index]
-    )
+    openings = sorted(index for index in parentheses if index < parentheses[index])
     for opening in openings:
         while active_parentheses and active_parentheses[-1] < opening:
             active_parentheses.pop()
+
         nested_parameter = bool(active_parentheses)
         active_parentheses.append(parentheses[opening])
         if (
@@ -924,6 +964,7 @@ def trailing_return_errors(path, analysis):
             or (opening >= 2 and tokens[opening - 2][0] in {".", ",", ":"})
         ):
             continue
+
         closing = parentheses[opening]
         if (
             tokens[opening - 1][0] == "operator"
@@ -931,6 +972,7 @@ def trailing_return_errors(path, analysis):
             and tokens[closing + 1][0] == "("
         ):
             continue
+
         name_index = opening - 1
         name = tokens[name_index][0]
         if name == ")":
@@ -995,7 +1037,9 @@ def trailing_return_errors(path, analysis):
             and tokens[name_index - 1][0] == "operator"
         ):
             name_index -= 1
+
             name = "operator"
+
         if (
             name != "operator"
             and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name)
@@ -1014,6 +1058,7 @@ def trailing_return_errors(path, analysis):
             or name == "main"
         ):
             continue
+
         if (
             name == "operator"
             and name_index == opening - 1
@@ -1021,28 +1066,35 @@ def trailing_return_errors(path, analysis):
             and tokens[closing + 1][0] == "("
         ):
             continue
+
         end = closing + 1
         while end < len(tokens) and tokens[end][0] not in {";", "{", "}"}:
             end += 1
+
         if end == len(tokens):
             continue
+
         suffix = [token for token, _, _ in tokens[closing + 1 : end]]
         start = name_index - 1
         while start >= 0 and tokens[start][0] not in {";", "{", "}"}:
             start -= 1
+
         prefix = [token for token, _, _ in tokens[start + 1 : name_index]]
         angle_depth = 0
         for token in prefix:
             angle_depth += token == "<"
             angle_depth -= token == ">"
+
         if angle_depth > 0 or "." in prefix or "requires" in prefix:
             continue
+
         owner = enclosing_type(tokens, opening, braces)
         qualified_constructor = (
             opening >= 4
             and tokens[opening - 2][0] == "::"
             and tokens[opening - 3][0] == name
         )
+
         if (
             name == owner
             or qualified_constructor
@@ -1053,6 +1105,7 @@ def trailing_return_errors(path, analysis):
             )
         ):
             continue
+
         significant = [
             token
             for token in prefix
@@ -1072,16 +1125,16 @@ def trailing_return_errors(path, analysis):
                 "virtual",
             }
         ]
+
         if opening >= 2 and tokens[opening - 2][0] == "::":
             owner_prefix = list(prefix)
             while (
                 len(owner_prefix) >= 2
                 and owner_prefix[-1] == "::"
-                and re.fullmatch(
-                    r"[A-Za-z_][A-Za-z0-9_]*", owner_prefix[-2]
-                )
+                and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", owner_prefix[-2])
             ):
                 owner_prefix = owner_prefix[:-2]
+
             owner_significant = [
                 token
                 for token in owner_prefix
@@ -1096,13 +1149,16 @@ def trailing_return_errors(path, analysis):
                     "static",
                 }
             ]
+
             if not owner_significant:
                 continue
+
         parameter_words = [
             token
             for token, _, _ in tokens[opening + 1 : closing]
             if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", token)
         ]
+
         if (
             not significant
             or "=" in prefix
@@ -1112,24 +1168,21 @@ def trailing_return_errors(path, analysis):
             or not parameter_declarations(
                 [token for token, _, _ in tokens[opening + 1 : closing]]
             )
-            or (
-                "constexpr" in prefix
-                and "auto" not in prefix
-                and not parameter_words
-            )
+            or ("constexpr" in prefix and "auto" not in prefix and not parameter_words)
         ):
             continue
+
         if "auto" in prefix and "->" in suffix:
             continue
+
         errors.append(
             f"{path}:{line_at(source, tokens[start + 1][1])}: C++ function declarations use trailing return types"
         )
+
     return errors
 
 
-def raw_allocation_offsets(
-    analysis, allow_placement_new=False, allowed_calls=()
-):
+def raw_allocation_offsets(analysis, allow_placement_new=False, allowed_calls=()):
     tokens = analysis.raw_tokens
     offsets = []
     for index, (token, start, _) in enumerate(tokens):
@@ -1138,8 +1191,10 @@ def raw_allocation_offsets(
         if token == "new":
             if previous == "operator":
                 continue
+
             if previous == "<" and index >= 2 and tokens[index - 2][0] == "include":
                 continue
+
             if (
                 allow_placement_new
                 and following == "("
@@ -1148,15 +1203,15 @@ def raw_allocation_offsets(
                 and tokens[index + 3][0] == ")"
             ):
                 continue
+
             offsets.append(start)
         elif token == "delete" and previous not in {"=", "operator"}:
             offsets.append(start)
         elif (
-            token in RAW_ALLOCATORS
-            and following == "("
-            and token not in allowed_calls
+            token in RAW_ALLOCATORS and following == "(" and token not in allowed_calls
         ):
             offsets.append(start)
+
     return offsets
 
 
@@ -1170,12 +1225,15 @@ def raw_allocation_errors(path, root, project, analysis):
     source = analysis.source
     if approved_file(path, root, project, APPROVED_RAW_ALLOCATION_FILES):
         return []
+
     allow_placement_new = approved_file(
         path, root, project, APPROVED_PLACEMENT_NEW_FILES
     )
+
     allowed_calls = APPROVED_RAW_ALLOCATION_CALLS.get(
         (project, path.relative_to(root).as_posix()), ()
     )
+
     return [
         f"{path}:{line_at(source, offset)}: raw allocation is restricted to "
         "exact project paths approved in Toolchain's source policy"
@@ -1193,7 +1251,9 @@ def flexible_type_offsets(analysis):
     for token, start, _ in analysis.raw_tokens:
         if token not in FLEXIBLE_TYPES:
             continue
+
         offsets.append((token, start))
+
     return offsets
 
 
@@ -1211,19 +1271,22 @@ def canonicalize_types(analysis):
             and tokens[index + 2][0] == "("
         ):
             replacement = "S32"
+
         if replacement is None:
             continue
+
         if (
             index >= 2
             and tokens[index - 2][0] == "std"
             and tokens[index - 1][0] == "::"
         ):
             start = tokens[index - 2][1]
-        replacements.append(
-            (start, end, replacement)
-        )
+
+        replacements.append((start, end, replacement))
+
     for start, end, replacement in reversed(replacements):
         source = source[:start] + replacement + source[end:]
+
     return source
 
 
@@ -1231,10 +1294,12 @@ def flexible_type_errors(path, root, project, analysis):
     source = analysis.source
     if approved_file(path, root, project, APPROVED_FLEXIBLE_TYPE_FILES):
         return []
+
     contract = (
         "uses the fixed width project vocabulary; select U*, S*, R*, Count, "
         "or CppSize according to the value contract"
     )
+
     return [
         f"{path}:{line_at(source, offset)}: noncanonical numeric type '{token}' {contract}"
         for token, offset in flexible_type_offsets(analysis)
@@ -1249,6 +1314,7 @@ def standard_integer_includes(source, code):
         end = len(source) if end < 0 else end
         if directive(code[start:end]) == "include":
             matches.append(match)
+
     return matches
 
 
@@ -1256,21 +1322,25 @@ def standard_integer_errors(path, root, project, source, code):
     """Keep standard integer headers and macros outside canonical sources."""
     if approved_file(path, root, project, APPROVED_STANDARD_INTEGER_FILES):
         return []
+
     errors = [
         f"{path}:{line_at(source, match.start())}: Toolchain supplies the canonical integer vocabulary; remove this standard integer header"
         for match in standard_integer_includes(source, code)
     ]
+
     errors.extend(
         f"{path}:{line_at(source, match.start())}: standard integer macro '{match.group(0)}' requires a canonical project expression"
         for match in STANDARD_INTEGER_MACRO.finditer(code)
     )
+
     return errors
 
 
 def remove_standard_integer_headers(source, code):
     matches = standard_integer_includes(source, code)
     for match in reversed(matches):
-        source = source[:match.start()] + source[match.end():]
+        source = source[: match.start()] + source[match.end() :]
+
     return source
 
 
@@ -1282,6 +1352,7 @@ def directive(line):
 def logical_end(lines, index):
     while index + 1 < len(lines) and lines[index].rstrip().endswith("\\"):
         index += 1
+
     return index
 
 
@@ -1304,8 +1375,13 @@ def preprocessor_violations(source):
                 not in (CONDITIONAL_DIRECTIVES | PREPROCESSOR_CONTENT)
             ):
                 violations.append(
-                    (index, index, "conditional code has an empty line before its directive")
+                    (
+                        index,
+                        index,
+                        "conditional code has an empty line before its directive",
+                    )
                 )
+
             if (
                 after.strip()
                 and not after.lstrip().startswith("}")
@@ -1313,7 +1389,11 @@ def preprocessor_violations(source):
                 not in (CONDITIONAL_DIRECTIVES | PREPROCESSOR_CONTENT)
             ):
                 violations.append(
-                    (index, end + 1, "conditional code has an empty line after its directive")
+                    (
+                        index,
+                        end + 1,
+                        "conditional code has an empty line after its directive",
+                    )
                 )
 
     definitions = []
@@ -1325,9 +1405,11 @@ def preprocessor_violations(source):
                 definitions[-1] = (definitions[-1][0], end)
             else:
                 definitions.append((index, end))
+
             index = end + 1
         else:
             index += 1
+
     for start, end in definitions:
         before = lines[start - 1] if start else ""
         after = lines[end + 1] if end + 1 < len(lines) else ""
@@ -1343,6 +1425,7 @@ def preprocessor_violations(source):
                     "definition groups have an empty line before their first directive",
                 )
             )
+
         if after.strip() and directive(after) not in CONDITIONAL_DIRECTIVES:
             violations.append(
                 (
@@ -1351,14 +1434,14 @@ def preprocessor_violations(source):
                     "definition groups have an empty line after their final directive",
                 )
             )
+
     return violations
 
 
 def preprocessor_errors(path, analysis):
     """Keep definitions and conditional code in explicit source regions."""
     return [
-        f"{path}:{line + 1}: {message}"
-        for line, _, message in analysis.preprocessor
+        f"{path}:{line + 1}: {message}" for line, _, message in analysis.preprocessor
     ]
 
 
@@ -1366,6 +1449,7 @@ def first_word(tokens):
     for token, _, _ in tokens:
         if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", token):
             return token
+
     return ""
 
 
@@ -1373,17 +1457,21 @@ def declaration(tokens):
     words = [token for token, _, _ in tokens]
     if not words or words[0] in STATEMENTS or words[0] in CONTROL:
         return False
+
     if words[0] in DECLARATIONS or words[0] == "decltype":
         return True
 
     index = 0
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", words[index]):
         return False
+
     index += 1
     while index + 1 < len(words) and words[index] == "::":
         if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", words[index + 1]):
             return False
+
         index += 2
+
     if index < len(words) and words[index] == "<":
         depth = 0
         while index < len(words):
@@ -1392,6 +1480,7 @@ def declaration(tokens):
             index += 1
             if depth == 0:
                 break
+
     while index < len(words) and words[index] in {
         "*",
         "&",
@@ -1400,6 +1489,7 @@ def declaration(tokens):
         "volatile",
     }:
         index += 1
+
     return index < len(words) and (
         re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", words[index]) is not None
     )
@@ -1408,15 +1498,17 @@ def declaration(tokens):
 def executable_scope(tokens, brace, parentheses):
     if brace == 0:
         return False
+
     previous = tokens[brace - 1][0]
     if previous in {"else", "try", "do"} or previous == "]":
         return True
+
     if previous == ")":
         opening = parentheses.get(brace - 1)
-        return (
-            opening is not None
-            and (opening == 0 or tokens[opening - 1][0] != "requires")
+        return opening is not None and (
+            opening == 0 or tokens[opening - 1][0] != "requires"
         )
+
     return executable_signature(tokens, brace, parentheses)
 
 
@@ -1435,6 +1527,7 @@ def paragraph_violations(analysis):
         closing = braces[opening]
         if not executable_scope(tokens, opening, parentheses):
             continue
+
         before = tokens[opening - 1][0] if opening else ""
         if before == ")":
             parenthesis = parentheses.get(opening - 1)
@@ -1453,13 +1546,16 @@ def paragraph_violations(analysis):
             if token == "(":
                 index = parentheses.get(index, index) + 1
                 continue
+
             if token == "[":
                 index = brackets.get(index, index) + 1
                 continue
+
             if token == "{":
                 end = braces.get(index)
                 if end is None:
                     break
+
                 prefix = tokens[start:index]
                 if not prefix or first_word(prefix) in CONTROL:
                     head = first_word(prefix)
@@ -1483,9 +1579,12 @@ def paragraph_violations(analysis):
                                 head,
                             )
                         )
+
                     start = end + 1
+
                 index = end + 1
                 continue
+
             if token == ";":
                 entity = tokens[start:index]
                 if entity:
@@ -1493,10 +1592,9 @@ def paragraph_violations(analysis):
                     kind = (
                         "block"
                         if head in CONTROL
-                        else "declaration"
-                        if declaration(entity)
-                        else "statement"
+                        else "declaration" if declaration(entity) else "statement"
                     )
+
                     if head == "while" and entities and entities[-1][3] == "do":
                         entities[-1] = (
                             entities[-1][0],
@@ -1505,10 +1603,10 @@ def paragraph_violations(analysis):
                             entities[-1][3],
                         )
                     else:
-                        entities.append(
-                            (kind, entity[0][1], tokens[index][2], head)
-                        )
+                        entities.append((kind, entity[0][1], tokens[index][2], head))
+
                 start = index + 1
+
             index += 1
 
         state = -1
@@ -1517,13 +1615,17 @@ def paragraph_violations(analysis):
         for kind, start_offset, end_offset, _ in entities:
             if re.search(r"\n[ \t]*\n", source[previous_end:start_offset]):
                 state = -1
+
             rank = ranks[kind]
             if state == ranks["block"] or rank < state:
                 violations.append(start_offset)
+
                 state = rank
             else:
                 state = max(state, rank)
+
             previous_end = end_offset
+
     return violations
 
 
@@ -1552,6 +1654,7 @@ def multiline_brace_violations(analysis):
             and preceding_parenthesis > 0
             and tokens[preceding_parenthesis - 1][0] == "requires"
         )
+
         if (
             requires_expression
             or source.find(
@@ -1567,6 +1670,7 @@ def multiline_brace_violations(analysis):
         current_end = source.find("\n", closing_end)
         if current_end < 0:
             continue
+
         suffix = code[closing_end:current_end].strip()
         if re.match(r"^(?:else|catch|while)\b", suffix):
             continue
@@ -1580,7 +1684,9 @@ def multiline_brace_violations(analysis):
             r"^(?:}|else\b|catch\b|while\b)", following_code
         ):
             continue
+
         violations.append(next_start)
+
     return violations
 
 
@@ -1596,6 +1702,7 @@ def line_starts(source):
     starts = [0]
     for match in re.finditer("\n", source):
         starts.append(match.end())
+
     return starts
 
 
@@ -1606,12 +1713,16 @@ def canonicalize_source(path, root, project):
     canonical = canonicalize_types(analysis)
     if canonical != analysis.source:
         analysis = SourceAnalysis(canonical)
+
     if not approved_file(path, root, project, APPROVED_STANDARD_INTEGER_FILES):
         canonical = remove_standard_integer_headers(canonical, analysis.code)
+
     if canonical != analysis.source:
         analysis = SourceAnalysis(canonical)
+
     if canonical != source:
         path.write_text(canonical, encoding="utf-8", newline="\n")
+
     return analysis
 
 
@@ -1620,22 +1731,25 @@ def format_source(path, analysis):
     source = path.read_text(encoding="utf-8")
     if source != analysis.source:
         analysis = SourceAnalysis(source)
+
     starts = line_starts(source)
     insertions = {
-        starts[line]
-        for _, line, _ in analysis.preprocessor
-        if line < len(starts)
+        starts[line] for _, line, _ in analysis.preprocessor if line < len(starts)
     }
+
     insertions.update(
-        source.rfind("\n", 0, offset) + 1
-        for offset in analysis.paragraphs
+        source.rfind("\n", 0, offset) + 1 for offset in analysis.paragraphs
     )
+
     insertions.update(analysis.multiline_braces)
     for offset in sorted(insertions, reverse=True):
         source = source[:offset] + "\n" + source[offset:]
+
     if insertions:
         path.write_text(source, encoding="utf-8", newline="\n")
+
         analysis = SourceAnalysis(source)
+
     return analysis
 
 
@@ -1655,9 +1769,15 @@ def source_errors(
         + qualified_namespace_errors(path, source, code, namespace_roots)
         + implementation_header_errors(path, root, source)
         + platform_header_errors(path, source, code)
-        + system_include_errors(path, source, code, APPROVED_CPP_HEADERS.get(
-            (project, path.relative_to(root).as_posix()), (),
-        ))
+        + system_include_errors(
+            path,
+            source,
+            code,
+            APPROVED_CPP_HEADERS.get(
+                (project, path.relative_to(root).as_posix()),
+                (),
+            ),
+        )
         + declaration_errors(path, root, project, source, code)
         + trailing_return_errors(path, analysis)
         + raw_allocation_errors(path, root, project, analysis)

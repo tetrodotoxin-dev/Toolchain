@@ -15,7 +15,12 @@ import sys
 
 def git(root, *arguments):
     return subprocess.run(
-        ["git", *arguments], cwd=root, capture_output=True, text=True, encoding="utf-8", check=True,
+        ["git", *arguments],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
     ).stdout.strip()
 
 
@@ -25,30 +30,43 @@ def snapshot(root, project, version):
     except subprocess.CalledProcessError as error:
         print(error.stderr.strip(), file=sys.stderr)
         return 1
+
     if repository != root:
         print("SDK releases must run from the repository root", file=sys.stderr)
         return 1
+
     status = git(root, "status", "--porcelain=v1", "--untracked-files=all")
     if status:
         print("snapshot requires a clean Git worktree:", file=sys.stderr)
         print(status, file=sys.stderr)
         return 1
+
     commit = git(root, "rev-parse", "HEAD")
     directory = root / ".bin/release"
     directory.mkdir(parents=True, exist_ok=True)
+
     archive = directory / (project + "-" + version + "-source.tar.gz")
     temporary = archive.with_name(archive.name + ".tmp")
     try:
         subprocess.run(
             ["git", "archive", "--format=tar.gz", "--output=" + str(temporary), commit],
-            cwd=root, check=True,
+            cwd=root,
+            check=True,
         )
+
         temporary.replace(archive)
     finally:
         temporary.unlink(missing_ok=True)
+
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-    archive.with_name(archive.name + ".sha256").write_text(digest + "  " + archive.name + "\n", encoding="utf-8", newline="\n")
-    archive.with_name(archive.name + ".commit").write_text(commit + "\n", encoding="utf-8", newline="\n")
+    archive.with_name(archive.name + ".sha256").write_text(
+        digest + "  " + archive.name + "\n", encoding="utf-8", newline="\n"
+    )
+
+    archive.with_name(archive.name + ".commit").write_text(
+        commit + "\n", encoding="utf-8", newline="\n"
+    )
+
     print("Snapshot: " + str(archive))
     print("Commit: " + commit)
     print("SHA-256: " + digest)
@@ -61,28 +79,57 @@ def main():
     if not workspace or not execroot or len(sys.argv) < 4:
         print("SDK releases run through `bazel run :sdk`", file=sys.stderr)
         return 1
+
     command = [os.environ.get("BAZEL_REAL") or "bazel"]
-    environment = {name: value for name, value in os.environ.items() if not name.startswith("RUNFILES_")}
-    result = subprocess.run([str(Path(execroot) / sys.argv[3])], cwd=workspace, env=environment)
+    environment = {
+        name: value
+        for name, value in os.environ.items()
+        if not name.startswith("RUNFILES_")
+    }
+
+    result = subprocess.run(
+        [str(Path(execroot) / sys.argv[3])], cwd=workspace, env=environment
+    )
+
     if result.returncode:
         return result.returncode
-    options = ["-c", "opt", "--strip=always", "--platforms=@bazel_tools//tools:host_platform"]
+
+    options = [
+        "-c",
+        "opt",
+        "--strip=always",
+        "--platforms=@bazel_tools//tools:host_platform",
+    ]
+
     stages = [
         ["run", "//:tests"],
     ]
+
     if len(sys.argv) > 4:
         stages.append(["build", *sys.argv[4:]])
+
     for arguments in stages:
-        result = subprocess.run([*command, *arguments, *options], cwd=workspace, env=environment)
+        result = subprocess.run(
+            [*command, *arguments, *options], cwd=workspace, env=environment
+        )
+
         if result.returncode:
             return result.returncode
+
     if len(sys.argv) > 4:
         output = subprocess.check_output(
-            [*command, "info", "bazel-bin", *options], cwd=workspace,
-            env=environment, text=True, encoding="utf-8",
+            [*command, "info", "bazel-bin", *options],
+            cwd=workspace,
+            env=environment,
+            text=True,
+            encoding="utf-8",
         ).strip()
-        for package in dict.fromkeys(target.split(":", 1)[0].removeprefix("//") for target in sys.argv[4:]):
+
+        for package in dict.fromkeys(
+            target.split(":", 1)[0].removeprefix("//") for target in sys.argv[4:]
+        ):
             print("SDK bundles: " + str(Path(output) / package), flush=True)
+
     return snapshot(Path(workspace).resolve(), sys.argv[1], sys.argv[2])
 
 

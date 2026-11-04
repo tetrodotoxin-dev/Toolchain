@@ -20,10 +20,12 @@ def linux(root):
                 if path.lstat().st_reparse_tag == stat.IO_REPARSE_TAG_MOUNT_POINT:
                     if name in directories:
                         directories.remove(name)
+
                     target = Path(os.readlink(path).removeprefix("\\\\?\\"))
                     if target.is_file():
                         if not target.resolve().is_relative_to(root.resolve()):
                             raise ValueError(f"SDK link leaves its sysroot: {path}")
+
                         path.rmdir()
                         shutil.copyfile(target, path)
                     elif not target.exists():
@@ -38,6 +40,7 @@ def linux(root):
                 destination = Path(target)
                 if not destination.is_relative_to(root):
                     destination = root / target.lstrip("/")
+
                 path.unlink()
                 path.symlink_to(os.path.relpath(destination, path.parent))
 
@@ -64,10 +67,12 @@ def linux(root):
         "usr/lib/x86_64-linux-gnu/librt.a",
         "usr/lib/x86_64-linux-gnu/libutil.a",
     }
+
     archives.update(
         path.relative_to(root).as_posix()
         for path in root.glob("usr/lib/gcc/*/*/libgcc.a")
     )
+
     for path in root.rglob("*.a"):
         if path.relative_to(root).as_posix() not in archives:
             path.unlink()
@@ -84,7 +89,11 @@ def linux(root):
 def windows(root, virtual_root):
     # Keep conventional lowercase library names in the extracted SDK.
     for path in (root / "lib").rglob("*"):
-        if path.is_file() and path.suffix.lower() == ".lib" and path.name != path.name.lower():
+        if (
+            path.is_file()
+            and path.suffix.lower() == ".lib"
+            and path.name != path.name.lower()
+        ):
             path.rename(path.with_name(path.name.lower()))
 
     # Windows SDK headers use mixed spellings even within their own includes.
@@ -98,14 +107,29 @@ def windows(root, virtual_root):
             else:
                 # LLD checks the physical library path after VFS resolution.
                 # Headers keep virtual names so later includes use this view.
-                entries.append({"type": "file", "name": child.name,
-                                "use-external-name": child.is_relative_to(root / "lib"),
-                                "external-contents": virtual_root + "/" + child.relative_to(root).as_posix()})
+                entries.append(
+                    {
+                        "type": "file",
+                        "name": child.name,
+                        "use-external-name": child.is_relative_to(root / "lib"),
+                        "external-contents": virtual_root
+                        + "/"
+                        + child.relative_to(root).as_posix(),
+                    }
+                )
+
         return {"type": "directory", "name": name, "contents": entries}
 
-    overlay = {"version": 0, "case-sensitive": False, "use-external-names": False,
-               "roots": [directory(root / name, virtual_root + "/" + name)
-                         for name in ("include", "lib")]}
+    overlay = {
+        "version": 0,
+        "case-sensitive": False,
+        "use-external-names": False,
+        "roots": [
+            directory(root / name, virtual_root + "/" + name)
+            for name in ("include", "lib")
+        ],
+    }
+
     (root / "case.yaml").write_text(json.dumps(overlay))
 
 
@@ -115,5 +139,8 @@ if __name__ == "__main__":
         linux(root)
     elif sys.argv[1] == "windows":
         windows(root, sys.argv[2])
+    elif sys.argv[1] == "copy":
+        shutil.copy2(sys.argv[2], sys.argv[3])
+
     else:
         raise ValueError("Unknown SDK filesystem: " + sys.argv[1])

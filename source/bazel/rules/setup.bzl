@@ -20,33 +20,55 @@ def _install(ctx):
         ctx.actions.symlink(output = output, target_file = source)
         outputs.append(output)
 
-    executable = ctx.actions.declare_file(ctx.label.name + (".cmd" if HOST_SYSTEM == "windows" else ".sh"))
+    # Toolchain's source headers enter compilation through source include paths.
+    # Setup exposes an output view for the editor before a C++ build has run.
+    # The file group keeps setup independent of C++ toolchain resolution.
+    for header in ctx.files._headers:
+        path = header.short_path.split("source/", 1)[1]
+        output = ctx.actions.declare_file(directory + "/include/" + path)
+        ctx.actions.symlink(output = output, target_file = header)
+        outputs.append(output)
+
+    executable = ctx.actions.declare_file(
+        ctx.label.name + (".cmd" if HOST_SYSTEM == "windows" else ".sh"),
+    )
+
     ctx.actions.expand_template(
         template = ctx.file._launcher,
         output = executable,
         substitutions = {},
         is_executable = True,
     )
+
     outputs.append(executable)
+
     runfiles = ctx.runfiles(files = outputs)
-    return [DefaultInfo(executable = executable, files = depset(outputs), runfiles = runfiles)]
+    return [
+        DefaultInfo(executable = executable, files = depset(outputs), runfiles = runfiles),
+    ]
 
 _setup = rule(
     implementation = _install,
     executable = True,
     attrs = {
         "_launcher": attr.label(
-            default = Label("//source/bazel:rules/setup.cmd" if HOST_SYSTEM == "windows" else "//source/bazel:rules/setup.sh"),
+            default = Label(
+                "//source/bazel:rules/setup.cmd" if HOST_SYSTEM == "windows" else "//source/bazel:rules/setup.sh",
+            ),
             allow_single_file = True,
         ),
         "_bazelrc": attr.label(default = Label("//:.bazelrc"), allow_single_file = True),
-        "_configuration": attr.label_list(default = [
-            Label("//source/vscode:c_cpp_properties.json"),
-            Label("//source/vscode:settings.json"),
-            Label("//source/vscode:launch.json"),
-            Label("//source/vscode:tasks.json"),
-            Label("//source/vscode:extensions.json"),
-        ], allow_files = True),
+        "_headers": attr.label(default = Label("//source:header_files")),
+        "_configuration": attr.label_list(
+            default = [
+                Label("//source/vscode:c_cpp_properties.json"),
+                Label("//source/vscode:settings.json"),
+                Label("//source/vscode:launch.json"),
+                Label("//source/vscode:tasks.json"),
+                Label("//source/vscode:extensions.json"),
+            ],
+            allow_files = True,
+        ),
     },
 )
 
@@ -65,13 +87,17 @@ def setup(name = "setup"):
     launch either executable under CodeLLDB.
     Formatting tasks use //:format so MODULE.bazel supplies SDK include order.
     IntelliSense uses source/ for the project's public include paths and
-    Bazel's generated include trees under .bin/bin for dependencies.
+    Bazel's generated include trees under .bin/out for dependencies. That root
+    retains Debug and Release headers when a formatter command changes .bin/bin
+    to another configuration. Setup supplies a header view for Toolchain's
+    compiler vocabulary; component targets supply the SDK virtual include trees.
 
     Args:
         name: Installer target name, defaulting to setup at the project root.
     """
     if native.package_name():
         fail("setup must be declared from the repository root BUILD file")
+
     _setup(name = name)
     if name != "vscode":
         native.alias(

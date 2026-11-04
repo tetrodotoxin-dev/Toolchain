@@ -15,29 +15,33 @@ if __name__ == "__main__":
     specification = importlib.util.spec_from_file_location(
         "comment_quality", classifier_path
     )
+
     classifier = importlib.util.module_from_spec(specification)
     sys.modules[specification.name] = classifier
     specification.loader.exec_module(classifier)
     assert classifier.line_comment_marker("#elifdef TOOLCHAIN_LINUX") is None
     assert classifier.line_comment_marker("#elifndef TOOLCHAIN_WINDOWS") is None
+
     markdown_link = classifier.classify(
         "[Photophore](https://github.com/tetrodotoxin-dev/Photophore)"
     )
-    assert "hyphenated prose" not in {
-        signal.name for signal in markdown_link.signals
-    }
+
+    assert "hyphenated prose" not in {signal.name for signal in markdown_link.signals}
+
     license_header = classifier.classify(
-        "# Tetrodotoxin\n"
-        "# Copyright (c) 2023-present Matt Kaes and contributors"
+        "# Tetrodotoxin\n" "# Copyright (c) 2023-present Matt Kaes and contributors"
     )
+
     assert license_header.decision == "Accept", license_header
     assert license_header.score == 0, license_header
     assert {signal.name for signal in license_header.signals} == {
         "license metadata"
     }, license_header
+
     copyright_prose = classifier.classify(
         "The parser treats Copyright (c) as ordinary payload text."
     )
+
     assert "license metadata" not in {
         signal.name for signal in copyright_prose.signals
     }, copyright_prose
@@ -49,6 +53,7 @@ if __name__ == "__main__":
         (),
         undocumented_type,
     )
+
     assert len(undocumented) == 1, undocumented
     assert undocumented[0].decision == "Reject", undocumented
     assert "missing primary type contract" in {
@@ -60,6 +65,7 @@ if __name__ == "__main__":
         "#pragma once\n\n"
         "class DistantContract {\n};\n"
     )
+
     comment_end = distant_contract.index("\n")
     distant_code = " " * comment_end + distant_contract[comment_end:]
     distant = classifier.classify_comments(
@@ -68,6 +74,7 @@ if __name__ == "__main__":
         ((0, comment_end, distant_contract[2:comment_end]),),
         distant_code,
     )
+
     assert "missing primary type contract" in {
         signal.name for verdict in distant for signal in verdict.signals
     }, distant
@@ -79,27 +86,26 @@ if __name__ == "__main__":
         normalized = classifier.classify_comments(
             Path(path), declaration, (), declaration
         )
+
         assert "missing primary type contract" in {
-            signal.name
-            for verdict in normalized
-            for signal in verdict.signals
+            signal.name for verdict in normalized for signal in verdict.signals
         }, (path, normalized)
+
     for prohibited in classifier.PROHIBITED_ALIAS_WORDS:
-        verdict = classifier.classify(
-            f"The operation uses {prohibited} as its result."
-        )
+        verdict = classifier.classify(f"The operation uses {prohibited} as its result.")
         assert verdict.decision == "Reject", (prohibited, verdict)
-        assert "prohibited alias word" in {
-            signal.name for signal in verdict.signals
-        }, (prohibited, verdict)
-    for identifier in ("admission_result", "AdmissionResult"):
-        verdict = classifier.classify(
-            f"The operation returns `{identifier}`."
+        assert "prohibited alias word" in {signal.name for signal in verdict.signals}, (
+            prohibited,
+            verdict,
         )
+
+    for identifier in ("admission_result", "AdmissionResult"):
+        verdict = classifier.classify(f"The operation returns `{identifier}`.")
         assert verdict.decision == "Reject", (identifier, verdict)
-        assert "prohibited alias word" in {
-            signal.name for signal in verdict.signals
-        }, (identifier, verdict)
+        assert "prohibited alias word" in {signal.name for signal in verdict.signals}, (
+            identifier,
+            verdict,
+        )
 
     corpus = [
         json.loads(line)
@@ -111,14 +117,10 @@ if __name__ == "__main__":
         return [sample for sample in corpus if sample["suite"] == name]
 
     examples = suite("examples")
-    feedback = {
-        sample["id"]: sample for sample in suite("feedback")
-    }
+    feedback = {sample["id"]: sample for sample in suite("feedback")}
     revisions = suite("revisions")
     holdout = suite("holdout")
-    holdout_feedback = {
-        sample["id"]: sample for sample in suite("holdout_feedback")
-    }
+    holdout_feedback = {sample["id"]: sample for sample in suite("holdout_feedback")}
     edited = suite("edited")
     source_context = suite("source_context")
     source_holdout = suite("source_holdout")
@@ -151,6 +153,7 @@ if __name__ == "__main__":
             "website": 3,
         }
     )
+
     assert Counter(sample["repository"] for sample in holdout) == Counter(
         {
             "cuda": 3,
@@ -163,6 +166,7 @@ if __name__ == "__main__":
             "website": 3,
         }
     )
+
     assert Counter(example["repository"] for example in examples) == Counter(
         {
             "cuda": 3,
@@ -186,12 +190,15 @@ if __name__ == "__main__":
             assert verdict.decision == "Reject", (example["id"], verdict)
         else:
             assert verdict.decision != "Reject", (example["id"], verdict)
+
         if review and "score_min" in review:
             assert review["score_min"] <= verdict.score <= review["score_max"], (
                 example["id"],
                 verdict,
             )
+
         assert classifier.classify(example["comment"]) == verdict
+
         marked = "// " + example["comment"].replace("\n", "\n// ")
         assert classifier.classify(marked) == verdict
         verdicts[example["id"]] = verdict
@@ -215,6 +222,7 @@ if __name__ == "__main__":
             assert verdict.decision == "Reject", (sample["id"], verdict)
         else:
             assert verdict.decision != "Reject", (sample["id"], verdict)
+
         assert classifier.classify(sample["comment"]) == verdict
         verdicts[sample["id"]] = verdict
 
@@ -235,22 +243,27 @@ if __name__ == "__main__":
             path = temporary_root / case["path"]
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(case["source"])
+
             verdict = classifier.classify_file(path, case["line"])
             assert verdict.decision == case["decision"], (case["id"], verdict)
+
             names = {signal.name for signal in verdict.signals}
             assert names.issuperset(case.get("signals", [])), (case["id"], verdict)
             assert names.isdisjoint(case.get("absent_signals", [])), (
                 case["id"],
                 verdict,
             )
+
             if "score_min" in case:
                 assert case["score_min"] <= verdict.score <= case["score_max"], (
                     case["id"],
                     verdict,
                 )
+
             if "compare_to" in case:
                 prior = source_context_verdicts[case["compare_to"]].score
                 assert verdict.score < prior, (case["id"], prior, verdict)
+
             source_context_verdicts[case["id"]] = verdict
 
     for sample in source_holdout:
@@ -261,46 +274,52 @@ if __name__ == "__main__":
             sample["attached_line"],
             sample["attached"],
         )
+
         base = classifier.classify(sample["comment"])
         verdict = classifier.source_verdict(
             base,
             context,
             classifier.source_signals(context),
         )
+
         assert verdict.decision == sample["decision"], (sample["id"], verdict)
-        assert classifier.source_verdict(
-            base,
-            context,
-            classifier.source_signals(context),
-        ) == verdict
+        assert (
+            classifier.source_verdict(
+                base,
+                context,
+                classifier.source_signals(context),
+            )
+            == verdict
+        )
 
     correction_verdicts = {}
     for sample in correction:
         verdict = classifier.classify(sample["comment"])
         assert verdict.decision == sample["decision"], (sample["id"], verdict)
+
         marked = "// " + sample["comment"].replace("\n", "\n// ")
         assert classifier.classify(marked) == verdict
         if "score_min" in sample:
             assert verdict.score >= sample["score_min"], (sample["id"], verdict)
+
         if "score_max" in sample:
             assert verdict.score <= sample["score_max"], (sample["id"], verdict)
+
         if "compare_to" in sample:
             assert verdict.score < correction_verdicts[sample["compare_to"]].score
+
         correction_verdicts[sample["id"]] = verdict
 
     bad = next(sample for sample in adversarial if sample["stage"] == "bad")
-    repaired = next(
-        sample for sample in adversarial if sample["stage"] == "clean"
-    )
-    mutations = [
-        sample for sample in adversarial if sample["stage"] == "mutation"
-    ]
+    repaired = next(sample for sample in adversarial if sample["stage"] == "clean")
+    mutations = [sample for sample in adversarial if sample["stage"] == "mutation"]
 
     adversarial_by_id = {sample["id"]: sample for sample in adversarial}
 
     def adversarial_comment(sample):
         if "comment" in sample:
             return sample["comment"]
+
         source = adversarial_by_id[sample["base"]]["comment"]
         assert source.count(sample["replace"]) == 1, sample["id"]
         return source.replace(sample["replace"], sample["with"])
@@ -314,21 +333,23 @@ if __name__ == "__main__":
         repaired["id"],
         repaired_verdict,
     )
-    assert (
-        repaired["score_min"]
-        <= repaired_verdict.score
-        <= repaired["score_max"]
-    ), (repaired["id"], repaired_verdict)
+
+    assert repaired["score_min"] <= repaired_verdict.score <= repaired["score_max"], (
+        repaired["id"],
+        repaired_verdict,
+    )
 
     canonicals = [
         sample for sample in correction + adversarial if sample.get("canonical")
     ]
+
     assert {sample["id"] for sample in canonicals} == {
         "ttx-supports-direct",
         "ttx-bind-direct",
         "ttx-binding-status-canonical",
         "ttx-query-contract-canonical",
     }
+
     for sample in canonicals:
         verdict = classifier.classify(adversarial_comment(sample))
         assert verdict.decision == "Accept", (sample["id"], verdict)
@@ -347,18 +368,22 @@ if __name__ == "__main__":
     for sample in ownership:
         verdict = classifier.classify(sample["comment"])
         assert verdict.decision == sample["decision"], (sample["id"], verdict)
+
         marked = "// " + sample["comment"].replace("\n", "\n// ")
         assert classifier.classify(marked) == verdict
         if "score_min" in sample:
             assert verdict.score >= sample["score_min"], (sample["id"], verdict)
+
         names = {signal.name for signal in verdict.signals}
         assert names.issuperset(sample.get("signals", [])), (sample["id"], verdict)
         assert names.isdisjoint(sample.get("absent_signals", [])), (
             sample["id"],
             verdict,
         )
+
         if "compare_to" in sample:
             assert verdict.score < ownership_verdicts[sample["compare_to"]].score
+
         ownership_verdicts[sample["id"]] = verdict
 
     punctuation_verdicts = {}
@@ -369,6 +394,7 @@ if __name__ == "__main__":
             sample["id"],
             verdict,
         )
+
         names = {signal.name for signal in verdict.signals}
         assert names.issuperset(sample.get("signals", [])), (sample["id"], verdict)
         assert names.isdisjoint(sample.get("absent_signals", [])), (
@@ -383,15 +409,18 @@ if __name__ == "__main__":
             sample["attached_line"],
             sample["attached"],
         )
+
         source_verdict = classifier.source_verdict(
             verdict,
             context,
             classifier.source_signals(context),
         )
+
         assert source_verdict.decision == sample["source_decision"], (
             sample["id"],
             source_verdict,
         )
+
         assert (
             sample["source_score_min"]
             <= source_verdict.score
@@ -400,4 +429,5 @@ if __name__ == "__main__":
 
         if "compare_to" in sample:
             assert verdict.score < punctuation_verdicts[sample["compare_to"]].score
+
         punctuation_verdicts[sample["id"]] = verdict

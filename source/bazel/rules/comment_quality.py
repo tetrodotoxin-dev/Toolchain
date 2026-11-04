@@ -10,7 +10,6 @@ from pathlib import Path
 import re
 import sys
 
-
 ACCEPT_THRESHOLD = 40
 REJECT_THRESHOLD = 60
 WORD = re.compile(r"[A-Za-z0-9][A-Za-z0-9_+'-]*")
@@ -151,12 +150,16 @@ def normalize(comment):
             line = line[1:].lstrip()
         elif line.startswith("/*"):
             line = line[2:].lstrip()
+
         if line.endswith("*/"):
             line = line[:-2].rstrip()
+
         if line.startswith("*"):
             line = line[1:].lstrip()
+
         if line:
             lines.append(line)
+
     return " ".join(lines)
 
 
@@ -170,9 +173,12 @@ def paragraphs(comment):
             current.append(line)
         elif current:
             result.append(" ".join(current))
+
             current = []
+
     if current:
         result.append(" ".join(current))
+
     return result
 
 
@@ -196,8 +202,10 @@ def is_license_metadata(source):
 def decision(score):
     if score < ACCEPT_THRESHOLD:
         return "Accept"
+
     if score < REJECT_THRESHOLD:
         return "Warn"
+
     return "Reject"
 
 
@@ -207,11 +215,13 @@ def source_verdict(base, context, extra):
         if any(signal.name in SOURCE_REJECT_SIGNALS for signal in extra)
         else 0
     )
+
     score = max(
         base.minimum_score,
         source_floor,
         max(0, min(100, base.score + sum(signal.points for signal in extra))),
     )
+
     return Verdict(
         decision(score),
         score,
@@ -227,75 +237,10 @@ def source_verdict(base, context, extra):
     )
 
 
-def classify(source):
-    """Return a repeatable style verdict and every contribution to its score."""
-    comment = normalize(source)
-    if is_license_metadata(source):
-        return Verdict(
-            "Accept",
-            0,
-            ACCEPT_THRESHOLD,
-            REJECT_THRESHOLD,
-            comment,
-            (
-                Signal(
-                    "license metadata",
-                    -45,
-                    "A copyright header is file metadata rather than explanatory prose.",
-                ),
-            ),
-        )
-
-    grammar_comment = normalize(
-        "\n".join(
-            line
-            for line in source.splitlines()
-            if not normalize(line).startswith("auto ")
-        )
-    )
-    punctuation_prose = re.sub(r"`[^`]*`", "", comment)
-    punctuation_prose = re.sub(r"\]\([^)]*\)", "]", punctuation_prose)
-    punctuation_prose = re.sub(r"https?://\S+", "", punctuation_prose)
-    words = WORD.findall(comment)
-    prohibited_aliases = {
-        word
-        for word in words
-        if any(alias in word.lower() for alias in PROHIBITED_ALIAS_WORDS)
-    }
-    imperative = bool(words) and words[0].lower() in {
-        "add",
-        "build",
-        "check",
-        "create",
-        "generate",
-        "get",
-        "handle",
-        "initialize",
-        "keep",
-        "make",
-        "return",
-        "set",
-        "update",
-        "use",
-    }
-    structural_heading = (
-        1 <= len(words) <= 7
-        and re.fullmatch(r"[A-Za-z]+(?:\s+[A-Za-z]+){0,6}", comment) is not None
-        and not imperative
-        and words[0].lower() not in {"fixme", "todo"}
-    )
-    bullet_count = sum(
-        re.match(r"\s*(?:(?://|#)\s+)?\*\s+", line) is not None
-        for line in source.splitlines()
-    )
-    signals = []
-    minimum_score = 0
-
-    def add(name, points, explanation, score_floor=0):
-        nonlocal minimum_score
-        signals.append(Signal(name, points, explanation))
-        minimum_score = max(minimum_score, score_floor)
-
+def _opening_signals(
+    comment, words, prohibited_aliases, namespace_annotation, structural_heading, add
+):
+    """Record vocabulary and structural annotations before evaluating prose claims."""
     if prohibited_aliases:
         add(
             "prohibited alias word",
@@ -314,11 +259,6 @@ def classify(source):
             70,
         )
 
-    namespace_annotation = re.fullmatch(
-        r"(?:end\s+)?namespace(?:\s+[A-Za-z_][A-Za-z0-9_:]*)?",
-        comment,
-        re.IGNORECASE,
-    ) is not None
     if namespace_annotation:
         add(
             "namespace annotation",
@@ -327,8 +267,7 @@ def classify(source):
         )
 
     if re.fullmatch(
-        r"(?:'[^']*'|\"[^\"]*\"|[A-Z]+\d+\.?|0x[0-9A-Fa-f]+|\d+|"
-        r"[+*/%=<>!&|^~?-])",
+        r"(?:'[^']*'|\"[^\"]*\"|[A-Z]+\d+\.?|0x[0-9A-Fa-f]+|\d+|" r"[+*/%=<>!&|^~?-])",
         comment,
     ):
         add(
@@ -351,6 +290,9 @@ def classify(source):
             "The short statement has little room for a mechanism, boundary or reason.",
         )
 
+
+def _wording_signals(comment, punctuation_prose, add):
+    """Record punctuation and generic praise that obscure a concrete explanation."""
     hyphenated_prose = TECHNICAL_HYPHENATED.sub("", punctuation_prose)
     if re.search(
         r"(?<=[A-Za-z0-9])-(?=[A-Za-z0-9])|[\u2013\u2014]",
@@ -382,18 +324,15 @@ def classify(source):
             "A generic quality word substitutes for concrete evidence.",
         )
 
-    generic_benefit = matches(
-        r"\b(?:ensure(?:s|d|ing)?|provide(?:s|d|ing)?|allow(?:s|ed|ing)?|"
-        r"handle(?:s|d|ing)?|responsible for|improve(?:s|d|ing)?|"
-        r"optimi[sz](?:e|es|ed|ing)|efficient(?:ly)?|can)\b",
-        comment,
-    )
 
+def _framing_signals(comment, add):
+    """Record generic subjects, framing and unspecified protocol vocabulary."""
     canned_framing = matches(
         r"\b(?:note that|it is important|in conclusion|as mentioned|"
         r"for completeness|needless to say)\b",
         comment,
     )
+
     if canned_framing:
         add(
             "canned framing",
@@ -455,11 +394,15 @@ def classify(source):
             "The description repeats its role without adding a reason or constraint.",
         )
 
+
+def _binding_wording_signals(comment, add):
+    """Keep binding outcomes separate from the work performed by their providers."""
     contradictory_status_action = matches(
         r"\b(?:Satisfied|Success)\s+(?:provides|returns|supplies)\s+"
         r"(?:neither|no|nothing)\b",
         comment,
     )
+
     if contradictory_status_action:
         add(
             "contradictory status action",
@@ -475,6 +418,7 @@ def classify(source):
         r"returns?|stores|supplies|transfers|writes?)\b",
         comment,
     )
+
     if status_as_operational_actor and not contradictory_status_action:
         add(
             "status used as operational actor",
@@ -512,6 +456,9 @@ def classify(source):
             65,
         )
 
+
+def _lifetime_wording_signals(comment, add):
+    """Record claims that confuse pointer records with the access they describe."""
     if matches(
         r"\b(?:caller|callee|consumer|provider)\s+(?:now\s+)?"
         r"owns?\s+(?:(?:a|an|the)\s+)?(?:new\s+)?lifetime\b",
@@ -542,11 +489,13 @@ def classify(source):
         r"[^.!?]{0,50}\b(?:access|lifetime|ownership)\b",
         comment,
     )
+
     copying_denies_extension = matches(
         r"\bcopying\b[^.!?]{0,140}\b(?:cannot|does not|never)\b"
         r"[^.!?]{0,50}\b(?:acquires?|extends?|grants?)\b",
         comment,
     )
+
     if copying_extends_access and not copying_denies_extension:
         add(
             "copy claims lifetime transfer",
@@ -570,6 +519,9 @@ def classify(source):
             65,
         )
 
+
+def _reasoning_signals(comment, generic_benefit, add):
+    """Collect the concrete reasoning used by the later sufficiency checks."""
     causal = matches(
         r"\b(?:because|since|so that|so|therefore|otherwise|rather than|"
         r"instead of|before|after|until|unless|while|without|even when|"
@@ -579,6 +531,7 @@ def classify(source):
         r"\bkeeps?\b[^.!?]{0,60}\b(?:from|independent)\b",
         comment,
     )
+
     if causal:
         add(
             "causal account",
@@ -596,6 +549,7 @@ def classify(source):
         comment,
         re.IGNORECASE,
     )
+
     if guarantees:
         points = -min(24, len(guarantees) * 6)
         add(
@@ -610,6 +564,7 @@ def classify(source):
         r"caller|callee|synchronous)\b",
         comment,
     )
+
     if lifetime_relation:
         add(
             "lifetime relation",
@@ -623,6 +578,7 @@ def classify(source):
         r"speed\s+(?:versus|vs\.?)\s+size)\b",
         comment,
     )
+
     if tradeoff:
         add(
             "tradeoff or evidence",
@@ -635,6 +591,7 @@ def classify(source):
         r"in practice|seems? to)\b",
         comment,
     )
+
     if empirical:
         add(
             "empirical voice",
@@ -646,6 +603,7 @@ def classify(source):
         r"\bhelps? (?:avoid|reduce|save)\b",
         comment,
     )
+
     if stated_benefit:
         add(
             "stated benefit",
@@ -659,6 +617,7 @@ def classify(source):
         r"\bexercises?\s+(?:the\s+)?(?:boundary|case|failure|path)\b",
         comment,
     )
+
     if test_purpose:
         add(
             "test purpose",
@@ -681,6 +640,7 @@ def classify(source):
         or re.search(r"\b[A-Za-z]+\+\+\b", comment)
         or re.search(r"\b0x[0-9A-Fa-f]+\b", comment)
     )
+
     if identifiers:
         add(
             "local identifiers",
@@ -697,11 +657,9 @@ def classify(source):
         )
 
     grounded_benefit = (
-        generic_benefit
-        and guarantees
-        and identifiers
-        and len(technical_terms) >= 2
+        generic_benefit and guarantees and identifiers and len(technical_terms) >= 2
     )
+
     if generic_benefit and not grounded_benefit:
         add(
             "generic benefit",
@@ -714,6 +672,7 @@ def classify(source):
         r"[^.]{0,100}\b(?:cannot|does not|fails?|refuses?|rejects?)\b",
         comment,
     )
+
     if conditional_boundary:
         add(
             "conditional boundary",
@@ -726,6 +685,7 @@ def classify(source):
         r"Win32|Wayland|MathML|KaTeX|TextMate)\b|\b\d+(?:\.\d+)?\b",
         comment,
     )
+
     if checkable:
         add(
             "checkable detail",
@@ -733,6 +693,22 @@ def classify(source):
             "A standard, platform or quantity makes the statement independently checkable.",
         )
 
+    return {
+        "causal": causal,
+        "guarantees": guarantees,
+        "lifetime_relation": lifetime_relation,
+        "tradeoff": tradeoff,
+        "empirical": empirical,
+        "stated_benefit": stated_benefit,
+        "test_purpose": test_purpose,
+        "identifiers": identifiers,
+        "technical_terms": technical_terms,
+        "checkable": checkable,
+    }
+
+
+def _ownership_shorthand_signals(comment, add):
+    """Require the concrete resource and access interval behind lifetime wording."""
     if matches(r"\b(?:is|are|was|were) borrowed\b", comment):
         add(
             "contract shorthand",
@@ -770,6 +746,9 @@ def classify(source):
             "The prose asserts completed policy work without naming its observable result.",
         )
 
+
+def _inventory_signals(comment, words, guarantees, bullet_count, add):
+    """Distinguish a reviewable contract inventory from unexplained abstractions."""
     abstract_terms = re.findall(
         r"\b(?:behavior|canonical|concerns?|configuration|description|details?|"
         r"form|geometry|invariants?|logic|normalization|requirements?|state|"
@@ -777,6 +756,7 @@ def classify(source):
         comment,
         re.IGNORECASE,
     )
+
     if (
         len(words) >= 50
         and len(abstract_terms) >= 5
@@ -835,12 +815,14 @@ def classify(source):
         comment,
         re.IGNORECASE,
     )
+
     domain_mechanism = matches(
         r"\b(?:ABI|anchor|callback|compile(?:s|d|ing)?|compiler|context|CUDA|"
         r"emission|entry|execution|filesystem|function|host|launch|module|"
         r"native (?:code|path)|path|serialization|source)\b",
         comment,
     )
+
     if len(words) >= 30 and len(ownership_terms) >= 5 and not domain_mechanism:
         add(
             "ownership-only inventory",
@@ -848,6 +830,121 @@ def classify(source):
             "The passage inventories lifetime plumbing without explaining the "
             "domain mechanism it preserves.",
         )
+
+
+def classify(source):
+    """Return a repeatable style verdict and every contribution to its score."""
+    comment = normalize(source)
+    if is_license_metadata(source):
+        return Verdict(
+            "Accept",
+            0,
+            ACCEPT_THRESHOLD,
+            REJECT_THRESHOLD,
+            comment,
+            (
+                Signal(
+                    "license metadata",
+                    -45,
+                    "A copyright header is file metadata rather than explanatory prose.",
+                ),
+            ),
+        )
+
+    grammar_comment = normalize(
+        "\n".join(
+            line
+            for line in source.splitlines()
+            if not normalize(line).startswith("auto ")
+        )
+    )
+
+    punctuation_prose = re.sub(r"`[^`]*`", "", comment)
+    punctuation_prose = re.sub(r"\]\([^)]*\)", "]", punctuation_prose)
+    punctuation_prose = re.sub(r"https?://\S+", "", punctuation_prose)
+    words = WORD.findall(comment)
+    prohibited_aliases = {
+        word
+        for word in words
+        if any(alias in word.lower() for alias in PROHIBITED_ALIAS_WORDS)
+    }
+
+    imperative = bool(words) and words[0].lower() in {
+        "add",
+        "build",
+        "check",
+        "create",
+        "generate",
+        "get",
+        "handle",
+        "initialize",
+        "keep",
+        "make",
+        "return",
+        "set",
+        "update",
+        "use",
+    }
+
+    structural_heading = (
+        1 <= len(words) <= 7
+        and re.fullmatch(r"[A-Za-z]+(?:\s+[A-Za-z]+){0,6}", comment) is not None
+        and not imperative
+        and words[0].lower() not in {"fixme", "todo"}
+    )
+
+    bullet_count = sum(
+        re.match(r"\s*(?:(?://|#)\s+)?\*\s+", line) is not None
+        for line in source.splitlines()
+    )
+
+    namespace_annotation = (
+        re.fullmatch(
+            r"(?:end\s+)?namespace(?:\s+[A-Za-z_][A-Za-z0-9_:]*)?",
+            comment,
+            re.IGNORECASE,
+        )
+        is not None
+    )
+
+    signals = []
+    minimum_score = 0
+
+    def add(name, points, explanation, score_floor=0):
+        nonlocal minimum_score
+        signals.append(Signal(name, points, explanation))
+
+        minimum_score = max(minimum_score, score_floor)
+
+    _opening_signals(
+        comment,
+        words,
+        prohibited_aliases,
+        namespace_annotation,
+        structural_heading,
+        add,
+    )
+
+    _wording_signals(comment, punctuation_prose, add)
+
+    generic_benefit = matches(
+        r"\b(?:ensure(?:s|d|ing)?|provide(?:s|d|ing)?|allow(?:s|ed|ing)?|"
+        r"handle(?:s|d|ing)?|responsible for|improve(?:s|d|ing)?|"
+        r"optimi[sz](?:e|es|ed|ing)|efficient(?:ly)?|can)\b",
+        comment,
+    )
+
+    _framing_signals(comment, add)
+
+    _binding_wording_signals(comment, add)
+
+    _lifetime_wording_signals(comment, add)
+
+    evidence = _reasoning_signals(comment, generic_benefit, add)
+
+    _ownership_shorthand_signals(comment, add)
+
+    _inventory_signals(comment, words, evidence["guarantees"], bullet_count, add)
 
     mechanism_nouns = set(
         value.lower()
@@ -859,16 +956,17 @@ def classify(source):
             re.IGNORECASE,
         )
     )
+
     sentence_count = len(re.findall(r"[.!?](?:\s|$)", comment))
     if (
         len(words) <= 40
         and sentence_count <= 2
         and len(mechanism_nouns) >= 5
-        and not causal
-        and not guarantees
-        and not lifetime_relation
-        and not tradeoff
-        and not empirical
+        and not evidence["causal"]
+        and not evidence["guarantees"]
+        and not evidence["lifetime_relation"]
+        and not evidence["tradeoff"]
+        and not evidence["empirical"]
     ):
         add(
             "compressed mechanism",
@@ -879,19 +977,20 @@ def classify(source):
 
     substantive = any(
         (
-            causal,
-            bool(guarantees),
-            lifetime_relation,
-            tradeoff,
-            empirical,
-            bool(identifiers),
-            len(technical_terms) >= 2,
-            checkable,
+            evidence["causal"],
+            bool(evidence["guarantees"]),
+            evidence["lifetime_relation"],
+            evidence["tradeoff"],
+            evidence["empirical"],
+            bool(evidence["identifiers"]),
+            len(evidence["technical_terms"]) >= 2,
+            evidence["checkable"],
             bullet_count >= 2,
-            stated_benefit,
-            test_purpose,
+            evidence["stated_benefit"],
+            evidence["test_purpose"],
         )
     )
+
     if len(words) >= 10 and not structural_heading and not substantive:
         add(
             "unsupported description",
@@ -901,13 +1000,10 @@ def classify(source):
         )
 
     deictic_opener = matches(r"^(?:this|these|those|it)\b", comment)
-    if (
-        (len(words) <= 25 and deictic_opener)
-        or (
-            len(words) <= 15
-            and matches(r"\b(?:this|these|those|it)\b", comment)
-            and not causal
-        )
+    if (len(words) <= 25 and deictic_opener) or (
+        len(words) <= 15
+        and matches(r"\b(?:this|these|those|it)\b", comment)
+        and not evidence["causal"]
     ):
         add(
             "unresolved reference",
@@ -915,7 +1011,7 @@ def classify(source):
             "A short comment points at nearby code without naming the relationship.",
         )
 
-    if imperative and not causal:
+    if imperative and not evidence["causal"]:
         add(
             "imperative narration",
             35,
@@ -947,6 +1043,7 @@ def classify(source):
         minimum_score,
         max(0, min(100, 45 + sum(signal.points for signal in signals))),
     )
+
     return Verdict(
         decision(score),
         score,
@@ -962,12 +1059,14 @@ def line_comment_marker(line):
     stripped = line.lstrip()
     if stripped.startswith("//"):
         return "//"
+
     if stripped.startswith("#") and not re.match(
         r"#\s*(?:define|elif|elifdef|elifndef|else|endif|error|if|ifdef|ifndef|"
         r"include|pragma|undef)\b",
         stripped,
     ):
         return "#"
+
     return None
 
 
@@ -984,6 +1083,7 @@ def attached_extent(lines, attached, code_lines=None):
             or current.lstrip().startswith("/*")
         ):
             break
+
         ordinary_end += 1
         code_count += 1
 
@@ -997,11 +1097,14 @@ def attached_extent(lines, attached, code_lines=None):
         for character in source_lines[position]:
             if character == "{":
                 depth += 1
+
                 opened = True
             elif character == "}" and opened:
                 depth -= 1
+
         if opened and depth == 0:
             return position + 1
+
     return ordinary_end
 
 
@@ -1011,31 +1114,39 @@ def source_slice(path, line):
     lines = source_path.read_text(encoding="utf-8").splitlines()
     if line < 1 or line > len(lines):
         raise ValueError(f"{source_path}:{line}: line is outside the source file")
+
     index = line - 1
     marker = line_comment_marker(lines[index])
     if marker:
         begin = index
         while begin and line_comment_marker(lines[begin - 1]) == marker:
             begin -= 1
+
         end = index + 1
         while end < len(lines) and line_comment_marker(lines[end]) == marker:
             end += 1
+
         comment = "\n".join(lines[position] for position in range(begin, end))
     else:
         begin = index
         while begin >= 0 and "/*" not in lines[begin]:
             begin -= 1
+
         end = index
         while end < len(lines) and "*/" not in lines[end]:
             end += 1
+
         if begin < 0 or end == len(lines):
             raise ValueError(f"{source_path}:{line}: line does not belong to a comment")
+
         end += 1
+
         comment = "\n".join(lines[position] for position in range(begin, end))
 
     attached = end
     while attached < len(lines) and not lines[attached].strip():
         attached += 1
+
     attached_end = attached_extent(lines, attached)
     return SourceSlice(
         str(source_path),
@@ -1044,6 +1155,534 @@ def source_slice(path, line):
         attached + 1,
         "\n".join(lines[attached:attached_end]),
     )
+
+
+def _canonical_state_signals(
+    context, comment, type_name, opening, representation_opening
+):
+    """Review the validity and construction guarantees behind a canonical form."""
+    signals = []
+    first_sentence = re.split(r"[.!?](?:\s|$)", opening, maxsplit=1)[0]
+    canonical_claim = (
+        representation_opening
+        and matches(
+            r"\b(?:canonical(?:ize[sd]?|ization|ly)?|" r"normaliz(?:e[sd]?|ation))\b",
+            first_sentence,
+        )
+    ) or matches(
+        r"\b"
+        + re.escape(type_name)
+        + r"\b[^.!?]{0,120}\b(?:canonical(?:ize[sd]?|ization|ly)?|"
+        r"normaliz(?:e[sd]?|ation))\b",
+        first_sentence,
+    )
+
+    if canonical_claim:
+        validity_boundary = matches(
+            r"\b(?:accept(?:s|ed|ing)?|cannot|invalid|must|only|"
+            r"reject(?:s|ed|ing)?|require(?:s|d|ing)?)\b",
+            comment,
+        )
+
+        identity_boundary = matches(
+            r"\b(?:equivalen(?:ce|t)|identity|same\b[^.]{0,60}\bform|"
+            r"one\b[^.]{0,60}\brepresentation)\b",
+            comment,
+        )
+
+        materialization_boundary = matches(
+            r"\b(?:emit(?:s|ted|ting|ission)?|native|prefix|separator|"
+            r"serializ(?:e[sd]?|ation)|syntax)\b",
+            comment,
+        )
+
+        if not (validity_boundary and identity_boundary and materialization_boundary):
+            signals.append(
+                Signal(
+                    "underspecified canonical form",
+                    60,
+                    "A canonical type must state which spellings are valid, "
+                    "what gives equivalent values one identity and how that "
+                    "identity is serialized or emitted.",
+                )
+            )
+
+        public_section = re.search(
+            r"(?m)^([ \t]*)public:\s*$",
+            context.attached,
+        )
+
+        public_surface = context.attached
+        member_indent = r"[ \t]*"
+        if public_section:
+            public_surface = context.attached[public_section.end() :]
+            member_indent = re.escape(public_section.group(1) + " ")
+            private_section = re.search(
+                r"(?m)^" + re.escape(public_section.group(1)) + r"private:\s*$",
+                public_surface,
+            )
+
+            if private_section:
+                public_surface = public_surface[: private_section.start()]
+
+        unchecked_constructor = False
+        for constructor in re.finditer(
+            r"(?m)^"
+            + member_indent
+            + r"(?![ \t])"
+            + r"[^\n;{}]*?(?<!~)\b"
+            + re.escape(type_name)
+            + r"\s*\(([^)]*)\)([^;{\n]*)",
+            public_surface,
+        ):
+            parameters = constructor.group(1)
+            suffix = constructor.group(2)
+            if type_name in parameters or matches(r"=\s*delete\b", suffix):
+                continue
+
+            unchecked_constructor = True
+            break
+
+        if unchecked_constructor:
+            signals.append(
+                Signal(
+                    "unexplained validated state",
+                    60,
+                    "A canonical type permits unchecked public construction "
+                    "instead of routing invalid input through a checked "
+                    "factory.",
+                )
+            )
+
+    return signals
+
+
+def _public_bound_signals(context, comment):
+    """Require the resource reason and failure behavior for a public size bound."""
+    signals = []
+    public_bound = re.search(
+        r"\bstatic\s+constexpr\b[^;\n]*\b(?:"
+        r"max(?:imum)?_(?:bytes|capacity|count|size)|"
+        r"(?:bytes|capacity|count|size)_limit)\s*=",
+        context.attached,
+    )
+
+    bound_extent = matches(
+        r"\b(?:at most|bound(?:ary)?|exceed(?:s|ed|ing)?|limit(?:s|ed|ing)?|"
+        r"maximum|over limit|up to)\b",
+        comment,
+    )
+
+    bound_reason = matches(
+        r"\b(?:because|so that|therefore|to avoid|to keep|without)\b",
+        comment,
+    )
+
+    bound_failure = matches(
+        r"\b(?:fail(?:s|ed|ure)?|invalid|none|reject(?:s|ed|ing)?)\b",
+        comment,
+    )
+
+    if public_bound and not (bound_extent and bound_reason and bound_failure):
+        signals.append(
+            Signal(
+                "unexplained public bound",
+                60,
+                "A public size bound appears in the primary type without "
+                "the resource reason or over-limit behavior that makes the "
+                "number part of its contract.",
+            )
+        )
+
+    return signals
+
+
+def _policy_attribution_signals(comment):
+    """Keep the owning type and its independently named policies distinct."""
+    signals = []
+    negative_capability_inventory = matches(
+        r"\b(?:provides?|supplies?)\s+no\b[^.!?]{0,80},"
+        r"[^.!?]{0,80},[^.!?]{0,120}\b(?:and|or)\b",
+        comment,
+    )
+
+    if negative_capability_inventory:
+        signals.append(
+            Signal(
+                "negative capability inventory",
+                50,
+                "A primary type lists absent capabilities instead of "
+                "establishing its purpose and complete positive contract.",
+            )
+        )
+
+    policy_behavior_sentences = []
+    policy_behavior_actors = set()
+    for sentence in re.split(r"[.!?](?:\s|$)", comment):
+        assignment = re.match(
+            r"\s*(?P<actors>[A-Z][A-Za-z0-9_]*"
+            r"(?:(?:,\s*|\s+and\s+|,\s+and\s+)"
+            r"[A-Z][A-Za-z0-9_]*)*)"
+            r"(?:\s+(?:policies|implementations|variants))?\s+"
+            r"(?:allocates?|constructs?|defaults?|ends?|keeps?|owns?|"
+            r"reclaims?|releases?|requires?|reserves?|retains?|supplies?|"
+            r"uses?)\b",
+            sentence,
+        )
+
+        if assignment:
+            policy_behavior_sentences.append(sentence)
+            policy_behavior_actors.update(
+                re.findall(
+                    r"\b[A-Z][A-Za-z0-9_]*\b",
+                    assignment.group("actors"),
+                )
+            )
+
+    if (
+        matches(r"\b(?:policies|implementations|variants)\b", comment)
+        and len(policy_behavior_sentences) >= 2
+        and len(policy_behavior_actors) >= 2
+    ):
+        signals.append(
+            Signal(
+                "foreign policy invariants",
+                70,
+                "The shared type assigns behavior to multiple named policies "
+                "instead of leaving each contract with its implementation.",
+            )
+        )
+
+    return signals
+
+
+def _destruction_signals(comment):
+    """Review resource ownership and invalidation when destruction is suppressed."""
+    signals = []
+    destructor_suppression = matches(
+        r"\b(?:does not|do not|never)\s+(?:call|invoke)\s+"
+        r"(?:(?:individual|object|element)\s+)?destructors?\b|"
+        r"\b(?:calls?|invokes?)\s+no\s+"
+        r"(?:(?:individual|object|element)\s+)?destructors?\b|"
+        r"\bwithout\s+(?:calling|invoking)\s+"
+        r"(?:(?:individual|object|element)\s+)?destructors?\b|"
+        r"\bno\s+(?:(?:individual|object|element)\s+)?destructors?\s+"
+        r"(?:run|runs|are called)\b",
+        comment,
+    )
+
+    invalidation_boundary = matches(
+        r"\binvalidates?\b|\breset ends\b|"
+        r"\baccess (?:ends?|promise|promises)\b|"
+        r"\bno longer (?:accessible|available|valid)\b|"
+        r"\bcannot (?:be )?(?:accessed|inspected|used)\b|"
+        r"\buntil (?:the )?Arena resets\b|"
+        r"\bpointers?\b[^.]{0,100}\buntil\b[^.]{0,50}\breset",
+        comment,
+    )
+
+    resource_boundary = matches(
+        r"\bindependently owned resources?\b|"
+        r"\b(?:objects?|values?) owned by the same Arena\b|"
+        r"\bstate governed by the same Arena\b|"
+        r"\b(?:cannot|must not) (?:depend|rely) on\b[^.]{0,80}"
+        r"\bdestructors?\b[^.]{0,60}\brelease\b",
+        comment,
+    )
+
+    if destructor_suppression and not invalidation_boundary:
+        signals.append(
+            Signal(
+                "destructor suppression without invalidation",
+                55,
+                "A bulk lifetime contract skips destructors without naming "
+                "when existing pointers and references lose access.",
+            )
+        )
+
+    if destructor_suppression and not resource_boundary:
+        signals.append(
+            Signal(
+                "destructor suppression without resource boundary",
+                55,
+                "A bulk lifetime contract skips destructors without ruling "
+                "out resources that require individual cleanup.",
+            )
+        )
+
+    return signals
+
+
+def _primary_contract_signals(context, primary_declaration, comment, opening):
+    """Review the purpose, validity and lifetime of the primary public type."""
+    signals = []
+    type_name = primary_declaration.group(1)
+    literal_opening = matches(
+        r"^(?:(?:A|An|The)\s+)?"
+        + re.escape(type_name)
+        + r"\s+(?:is|owns|contains|holds|stores|wraps)\b",
+        opening,
+    )
+
+    purpose = matches(
+        r"\b(?:because|decouples?|exists to|lets?|allows?|rather than|"
+        r"separates?|so that|therefore|unifies?|without duplicating)\b",
+        opening,
+    )
+
+    representation_opening = matches(
+        r"^(?:Contains?|Holds?|Stores?|Wraps?)\b",
+        opening,
+    )
+
+    if representation_opening and not purpose:
+        signals.append(
+            Signal(
+                "primary representation before purpose",
+                60,
+                "A primary type opens with its representation before "
+                "explaining which caller or domain problem requires it.",
+            )
+        )
+
+    signals.extend(
+        _canonical_state_signals(
+            context, comment, type_name, opening, representation_opening
+        )
+    )
+
+    signals.extend(_public_bound_signals(context, comment))
+
+    named_variants = {
+        name
+        for name in re.findall(r"\b[A-Z][A-Za-z0-9_]*\b", opening)
+        if name not in {"A", "An", "The", type_name}
+    }
+
+    implementation_inventory = len(named_variants) >= 3 and matches(
+        r"\b(?:implementations?|polic(?:y|ies)|variants?)\b",
+        opening,
+    )
+
+    if literal_opening and implementation_inventory and not purpose:
+        signals.append(
+            Signal(
+                "implementation inventory before purpose",
+                70,
+                "The primary type opens with literal storage or role details "
+                "and implementation variants before explaining why the shared "
+                "abstraction exists.",
+            )
+        )
+
+    signals.extend(_policy_attribution_signals(comment))
+
+    signals.extend(_destruction_signals(comment))
+
+    return signals
+
+
+def _source_paragraph_signals(context):
+    """Review the concrete operation count and domain of the attached paragraph."""
+    comment = normalize(context.comment)
+    attached_lines = [line for line in context.attached.splitlines() if line.strip()]
+    path = Path(context.path)
+    path_words = {part.lower() for part in path.parts}
+    signals = []
+    operations = sum(
+        bool(
+            re.search(r"(?<![=!<>])=(?!=)", line)
+            or re.search(r"\b(?:if|for|while|switch)\s*\(", line)
+            or re.search(r"\b[A-Za-z_][A-Za-z0-9_:]*\s*\(", line)
+        )
+        for line in attached_lines
+    )
+
+    if (
+        operations >= 6
+        and path.name not in {"BUILD", "BUILD.bazel"}
+        and len(WORD.findall(comment)) <= 35
+        and not matches(
+            r"\b(?:because|before|cannot|must|only if|rather than|since|so|"
+            r"therefore|until|while|without)\b",
+            comment,
+        )
+        and not matches(
+            r"\b(?:caller|lifetime|owns?|preserv(?:e|es|ed|ing)|"
+            r"retain(?:s|ed|ing)?|release(?:s|d|ing)?|version\s+\w+)\b",
+            comment,
+        )
+    ):
+        signals.append(
+            Signal(
+                "underexplained source paragraph",
+                15,
+                f"The attached paragraph performs {operations} operations "
+                "without a corresponding reason or boundary.",
+            )
+        )
+
+    declaration = re.search(
+        r"\b(?:class|struct)\s+(Program|Kernel|Buffer|Context|Image|Module|Runtime)\b",
+        context.attached,
+    )
+
+    domains = path_words.intersection({"cuda", "godot", "vulkan", "wayland", "win32"})
+    if (
+        declaration
+        and domains
+        and not any(
+            matches(r"\b" + re.escape(domain) + r"\b", comment) for domain in domains
+        )
+    ):
+        domain = sorted(domains)[0]
+        signals.append(
+            Signal(
+                "missing domain anchor",
+                20,
+                f"The generic {declaration.group(1)} declaration belongs to "
+                f"{domain}, but its comment never explains that domain relationship.",
+            )
+        )
+
+    if (
+        matches(r"\bbound Abstract\b", comment)
+        and "ttx_binding_status" in context.attached
+        and "ttx_storage" in context.attached
+        and "ttx_abstract" not in context.attached
+    ):
+        signals.append(
+            Signal(
+                "misnamed binding result",
+                20,
+                "The operation fills requested storage with an arbitrary API "
+                "record, but the comment calls that result an Abstract.",
+            )
+        )
+
+    return signals
+
+
+def _function_reference_signals(context, comment):
+    """Keep a member's explanation distinct from repetitions of its spelling."""
+    signals = []
+    function_declaration = re.search(
+        r"\bauto\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(",
+        context.attached,
+    )
+
+    if function_declaration:
+        function_name = function_declaration.group(1)
+        self_references = re.findall(
+            r"`(?:[A-Za-z_][A-Za-z0-9_]*::)*" + re.escape(function_name) + r"`",
+            comment,
+        )
+
+        if self_references:
+            signals.append(
+                Signal(
+                    "self referential function comment",
+                    5 * len(self_references),
+                    "The comment repeats the attached function's name even though "
+                    "the declaration already supplies that context.",
+                )
+            )
+
+        relocation_policy = (
+            function_name == "relocate"
+            and matches(r"\bdestination\b", context.attached)
+            and matches(r"\bsource\b", context.attached)
+        )
+
+        if relocation_policy:
+            names_both_locations = matches(r"`destination`", comment) and matches(
+                r"`source`", comment
+            )
+
+            explains_lifetime_choice = matches(
+                r"\b(?:allocation|Arena|block|capacity|lifetime|owner|release|"
+                r"remit|reset|storage)\b",
+                comment,
+            )
+
+            if not names_both_locations or not explains_lifetime_choice:
+                signals.append(
+                    Signal(
+                        "incomplete relocation contract",
+                        60,
+                        "A relocation policy must name the destination storage, "
+                        "the source value and the ownership or lifetime reason "
+                        "for copying or moving between them.",
+                    )
+                )
+
+            if matches(
+                r"\bwhen that expression is valid\b|"
+                r"\brejects? (?:constant source|rvalue|lvalue) construction\b|"
+                r"\bconstructed from (?:the |an? )?(?:constant source|rvalue|lvalue)\b",
+                comment,
+            ):
+                signals.append(
+                    Signal(
+                        "type trait narration",
+                        45,
+                        "The comment paraphrases constructibility dispatch instead "
+                        "of explaining the policy invariant that requires it.",
+                    )
+                )
+
+    return signals
+
+
+def _code_anchor_signals(comment, attached_lines, declaration_contract):
+    """Relate a numeric or positional claim to the attached source paragraph."""
+    signals = []
+    numbers = {
+        "zero": "0",
+        "one": "1",
+        "two": "2",
+        "three": "3",
+        "four": "4",
+    }
+
+    for term in (
+        "binding",
+        "column",
+        "index",
+        "lane",
+        "location",
+        "offset",
+        "row",
+        "slot",
+    ):
+        if not matches(r"\b" + term + r"\b", comment):
+            continue
+
+        values = [
+            value
+            for word, value in numbers.items()
+            if matches(r"\b" + word + r"\b", comment)
+        ]
+
+        values.extend(re.findall(r"\b\d+\b", comment))
+        for position, code in enumerate(attached_lines):
+            separated = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", code).lower()
+            if term in separated and (
+                not values or any(value in code for value in values)
+            ):
+                if position >= 3 and not declaration_contract:
+                    signals.append(
+                        Signal(
+                            "distant code anchor",
+                            20,
+                            f"The {term} claim first reaches matching code "
+                            f"{position + 1} statements after the comment.",
+                        )
+                    )
+
+                break
+
+    return signals
 
 
 def source_signals(context):
@@ -1110,6 +1749,7 @@ def source_signals(context):
             or matches(r"\b(?:class|struct|enum|typedef)\b", context.attached)
         )
     )
+
     if declaration_contract:
         signals.append(
             Signal(
@@ -1119,67 +1759,7 @@ def source_signals(context):
             )
         )
 
-    function_declaration = re.search(
-        r"\bauto\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(",
-        context.attached,
-    )
-    if function_declaration:
-        function_name = function_declaration.group(1)
-        self_references = re.findall(
-            r"`(?:[A-Za-z_][A-Za-z0-9_]*::)*"
-            + re.escape(function_name)
-            + r"`",
-            comment,
-        )
-        if self_references:
-            signals.append(
-                Signal(
-                    "self referential function comment",
-                    5 * len(self_references),
-                    "The comment repeats the attached function's name even though "
-                    "the declaration already supplies that context.",
-                )
-            )
-
-        relocation_policy = (
-            function_name == "relocate"
-            and matches(r"\bdestination\b", context.attached)
-            and matches(r"\bsource\b", context.attached)
-        )
-        if relocation_policy:
-            names_both_locations = matches(r"`destination`", comment) and matches(
-                r"`source`", comment
-            )
-            explains_lifetime_choice = matches(
-                r"\b(?:allocation|Arena|block|capacity|lifetime|owner|release|"
-                r"remit|reset|storage)\b",
-                comment,
-            )
-            if not names_both_locations or not explains_lifetime_choice:
-                signals.append(
-                    Signal(
-                        "incomplete relocation contract",
-                        60,
-                        "A relocation policy must name the destination storage, "
-                        "the source value and the ownership or lifetime reason "
-                        "for copying or moving between them.",
-                    )
-                )
-
-            if matches(
-                r"\bwhen that expression is valid\b|"
-                r"\brejects? (?:constant source|rvalue|lvalue) construction\b|"
-                r"\bconstructed from (?:the |an? )?(?:constant source|rvalue|lvalue)\b",
-                comment,
-            ):
-                signals.append(
-                    Signal(
-                        "type trait narration",
-                        45,
-                        "The comment paraphrases constructibility dispatch instead "
-                        "of explaining the policy invariant that requires it.",
-                    )
-                )
+    signals.extend(_function_reference_signals(context, comment))
 
     container_name = path.stem.lower()
     if (
@@ -1212,11 +1792,8 @@ def source_signals(context):
             comment,
         )
     )
-    if (
-        expected_primary_type
-        and primary_declaration
-        and not primary_type_evidence
-    ):
+
+    if expected_primary_type and primary_declaration and not primary_type_evidence:
         signals.append(
             Signal(
                 "thin primary type contract",
@@ -1226,278 +1803,13 @@ def source_signals(context):
             )
         )
 
-    primary_type = (
-        expected_primary_type
-        and primary_declaration
-    )
+    primary_type = expected_primary_type and primary_declaration
     comment_paragraphs = paragraphs(context.comment)
     opening = comment_paragraphs[0] if comment_paragraphs else comment
     if primary_type:
-        type_name = primary_declaration.group(1)
-        literal_opening = matches(
-            r"^(?:(?:A|An|The)\s+)?"
-            + re.escape(type_name)
-            + r"\s+(?:is|owns|contains|holds|stores|wraps)\b",
-            opening,
+        signals.extend(
+            _primary_contract_signals(context, primary_declaration, comment, opening)
         )
-        purpose = matches(
-            r"\b(?:because|decouples?|exists to|lets?|allows?|rather than|"
-            r"separates?|so that|therefore|unifies?|without duplicating)\b",
-            opening,
-        )
-        representation_opening = matches(
-            r"^(?:Contains?|Holds?|Stores?|Wraps?)\b",
-            opening,
-        )
-        if representation_opening and not purpose:
-            signals.append(
-                Signal(
-                    "primary representation before purpose",
-                    60,
-                    "A primary type opens with its representation before "
-                    "explaining which caller or domain problem requires it.",
-                )
-            )
-
-        first_sentence = re.split(r"[.!?](?:\s|$)", opening, maxsplit=1)[0]
-        canonical_claim = (
-            representation_opening
-            and matches(
-                r"\b(?:canonical(?:ize[sd]?|ization|ly)?|"
-                r"normaliz(?:e[sd]?|ation))\b",
-                first_sentence,
-            )
-        ) or matches(
-            r"\b"
-            + re.escape(type_name)
-            + r"\b[^.!?]{0,120}\b(?:canonical(?:ize[sd]?|ization|ly)?|"
-            r"normaliz(?:e[sd]?|ation))\b",
-            first_sentence,
-        )
-        if canonical_claim:
-            validity_boundary = matches(
-                r"\b(?:accept(?:s|ed|ing)?|cannot|invalid|must|only|"
-                r"reject(?:s|ed|ing)?|require(?:s|d|ing)?)\b",
-                comment,
-            )
-            identity_boundary = matches(
-                r"\b(?:equivalen(?:ce|t)|identity|same\b[^.]{0,60}\bform|"
-                r"one\b[^.]{0,60}\brepresentation)\b",
-                comment,
-            )
-            materialization_boundary = matches(
-                r"\b(?:emit(?:s|ted|ting|ission)?|native|prefix|separator|"
-                r"serializ(?:e[sd]?|ation)|syntax)\b",
-                comment,
-            )
-            if not (
-                validity_boundary
-                and identity_boundary
-                and materialization_boundary
-            ):
-                signals.append(
-                    Signal(
-                        "underspecified canonical form",
-                        60,
-                        "A canonical type must state which spellings are valid, "
-                        "what gives equivalent values one identity and how that "
-                        "identity is serialized or emitted.",
-                    )
-                )
-
-            public_section = re.search(
-                r"(?m)^([ \t]*)public:\s*$",
-                context.attached,
-            )
-            public_surface = context.attached
-            member_indent = r"[ \t]*"
-            if public_section:
-                public_surface = context.attached[public_section.end() :]
-                member_indent = re.escape(public_section.group(1) + " ")
-                private_section = re.search(
-                    r"(?m)^"
-                    + re.escape(public_section.group(1))
-                    + r"private:\s*$",
-                    public_surface,
-                )
-                if private_section:
-                    public_surface = public_surface[: private_section.start()]
-            unchecked_constructor = False
-            for constructor in re.finditer(
-                r"(?m)^"
-                + member_indent
-                + r"(?![ \t])"
-                + r"[^\n;{}]*?(?<!~)\b"
-                + re.escape(type_name)
-                + r"\s*\(([^)]*)\)([^;{\n]*)",
-                public_surface,
-            ):
-                parameters = constructor.group(1)
-                suffix = constructor.group(2)
-                if type_name in parameters or matches(r"=\s*delete\b", suffix):
-                    continue
-                unchecked_constructor = True
-                break
-            if unchecked_constructor:
-                signals.append(
-                    Signal(
-                        "unexplained validated state",
-                        60,
-                        "A canonical type permits unchecked public construction "
-                        "instead of routing invalid input through a checked "
-                        "factory.",
-                    )
-                )
-
-        public_bound = re.search(
-            r"\bstatic\s+constexpr\b[^;\n]*\b(?:"
-            r"max(?:imum)?_(?:bytes|capacity|count|size)|"
-            r"(?:bytes|capacity|count|size)_limit)\s*=",
-            context.attached,
-        )
-        bound_extent = matches(
-            r"\b(?:at most|bound(?:ary)?|exceed(?:s|ed|ing)?|limit(?:s|ed|ing)?|"
-            r"maximum|over limit|up to)\b",
-            comment,
-        )
-        bound_reason = matches(
-            r"\b(?:because|so that|therefore|to avoid|to keep|without)\b",
-            comment,
-        )
-        bound_failure = matches(
-            r"\b(?:fail(?:s|ed|ure)?|invalid|none|reject(?:s|ed|ing)?)\b",
-            comment,
-        )
-        if public_bound and not (bound_extent and bound_reason and bound_failure):
-            signals.append(
-                Signal(
-                    "unexplained public bound",
-                    60,
-                    "A public size bound appears in the primary type without "
-                    "the resource reason or over-limit behavior that makes the "
-                    "number part of its contract.",
-                )
-            )
-
-        named_variants = {
-            name
-            for name in re.findall(r"\b[A-Z][A-Za-z0-9_]*\b", opening)
-            if name not in {"A", "An", "The", type_name}
-        }
-        implementation_inventory = (
-            len(named_variants) >= 3
-            and matches(
-                r"\b(?:implementations?|polic(?:y|ies)|variants?)\b",
-                opening,
-            )
-        )
-        if literal_opening and implementation_inventory and not purpose:
-            signals.append(
-                Signal(
-                    "implementation inventory before purpose",
-                    70,
-                    "The primary type opens with literal storage or role details "
-                    "and implementation variants before explaining why the shared "
-                    "abstraction exists.",
-                )
-            )
-
-        negative_capability_inventory = matches(
-            r"\b(?:provides?|supplies?)\s+no\b[^.!?]{0,80},"
-            r"[^.!?]{0,80},[^.!?]{0,120}\b(?:and|or)\b",
-            comment,
-        )
-        if negative_capability_inventory:
-            signals.append(
-                Signal(
-                    "negative capability inventory",
-                    50,
-                    "A primary type lists absent capabilities instead of "
-                    "establishing its purpose and complete positive contract.",
-                )
-            )
-
-        policy_behavior_sentences = []
-        policy_behavior_actors = set()
-        for sentence in re.split(r"[.!?](?:\s|$)", comment):
-            assignment = re.match(
-                r"\s*(?P<actors>[A-Z][A-Za-z0-9_]*"
-                r"(?:(?:,\s*|\s+and\s+|,\s+and\s+)"
-                r"[A-Z][A-Za-z0-9_]*)*)"
-                r"(?:\s+(?:policies|implementations|variants))?\s+"
-                r"(?:allocates?|constructs?|defaults?|ends?|keeps?|owns?|"
-                r"reclaims?|releases?|requires?|reserves?|retains?|supplies?|"
-                r"uses?)\b",
-                sentence,
-            )
-            if assignment:
-                policy_behavior_sentences.append(sentence)
-                policy_behavior_actors.update(
-                    re.findall(
-                        r"\b[A-Z][A-Za-z0-9_]*\b",
-                        assignment.group("actors"),
-                    )
-                )
-        if (
-            matches(r"\b(?:policies|implementations|variants)\b", comment)
-            and len(policy_behavior_sentences) >= 2
-            and len(policy_behavior_actors) >= 2
-        ):
-            signals.append(
-                Signal(
-                    "foreign policy invariants",
-                    70,
-                    "The shared type assigns behavior to multiple named policies "
-                    "instead of leaving each contract with its implementation.",
-                )
-            )
-
-        destructor_suppression = matches(
-            r"\b(?:does not|do not|never)\s+(?:call|invoke)\s+"
-            r"(?:(?:individual|object|element)\s+)?destructors?\b|"
-            r"\b(?:calls?|invokes?)\s+no\s+"
-            r"(?:(?:individual|object|element)\s+)?destructors?\b|"
-            r"\bwithout\s+(?:calling|invoking)\s+"
-            r"(?:(?:individual|object|element)\s+)?destructors?\b|"
-            r"\bno\s+(?:(?:individual|object|element)\s+)?destructors?\s+"
-            r"(?:run|runs|are called)\b",
-            comment,
-        )
-        invalidation_boundary = matches(
-            r"\binvalidates?\b|\breset ends\b|"
-            r"\baccess (?:ends?|promise|promises)\b|"
-            r"\bno longer (?:accessible|available|valid)\b|"
-            r"\bcannot (?:be )?(?:accessed|inspected|used)\b|"
-            r"\buntil (?:the )?Arena resets\b|"
-            r"\bpointers?\b[^.]{0,100}\buntil\b[^.]{0,50}\breset",
-            comment,
-        )
-        resource_boundary = matches(
-            r"\bindependently owned resources?\b|"
-            r"\b(?:objects?|values?) owned by the same Arena\b|"
-            r"\bstate governed by the same Arena\b|"
-            r"\b(?:cannot|must not) (?:depend|rely) on\b[^.]{0,80}"
-            r"\bdestructors?\b[^.]{0,60}\brelease\b",
-            comment,
-        )
-        if destructor_suppression and not invalidation_boundary:
-            signals.append(
-                Signal(
-                    "destructor suppression without invalidation",
-                    55,
-                    "A bulk lifetime contract skips destructors without naming "
-                    "when existing pointers and references lose access.",
-                )
-            )
-        if destructor_suppression and not resource_boundary:
-            signals.append(
-                Signal(
-                    "destructor suppression without resource boundary",
-                    55,
-                    "A bulk lifetime contract skips destructors without ruling "
-                    "out resources that require individual cleanup.",
-                )
-            )
 
     method_inventory = re.findall(
         r"`[^`]+`\s+(?:adds?|creates?|gets?|performs?|reads?|removes?|"
@@ -1505,6 +1817,7 @@ def source_signals(context):
         comment,
         re.IGNORECASE,
     )
+
     if primary_type and len(method_inventory) >= 2:
         signals.append(
             Signal(
@@ -1528,100 +1841,9 @@ def source_signals(context):
             )
         )
 
-    numbers = {
-        "zero": "0",
-        "one": "1",
-        "two": "2",
-        "three": "3",
-        "four": "4",
-    }
-    for term in ("binding", "column", "index", "lane", "location", "offset", "row", "slot"):
-        if not matches(r"\b" + term + r"\b", comment):
-            continue
-        values = [
-            value
-            for word, value in numbers.items()
-            if matches(r"\b" + word + r"\b", comment)
-        ]
-        values.extend(re.findall(r"\b\d+\b", comment))
-        for position, code in enumerate(attached_lines):
-            separated = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", code).lower()
-            if term in separated and (not values or any(value in code for value in values)):
-                if position >= 3 and not declaration_contract:
-                    signals.append(
-                        Signal(
-                            "distant code anchor",
-                            20,
-                            f"The {term} claim first reaches matching code "
-                            f"{position + 1} statements after the comment.",
-                        )
-                    )
-                break
+    signals.extend(_code_anchor_signals(comment, attached_lines, declaration_contract))
 
-    operations = sum(
-        bool(
-            re.search(r"(?<![=!<>])=(?!=)", line)
-            or re.search(r"\b(?:if|for|while|switch)\s*\(", line)
-            or re.search(r"\b[A-Za-z_][A-Za-z0-9_:]*\s*\(", line)
-        )
-        for line in attached_lines
-    )
-    if (
-        operations >= 6
-        and path.name not in {"BUILD", "BUILD.bazel"}
-        and len(WORD.findall(comment)) <= 35
-        and not matches(
-            r"\b(?:because|before|cannot|must|only if|rather than|since|so|"
-            r"therefore|until|while|without)\b",
-            comment,
-        )
-        and not matches(
-            r"\b(?:caller|lifetime|owns?|preserv(?:e|es|ed|ing)|"
-            r"retain(?:s|ed|ing)?|release(?:s|d|ing)?|version\s+\w+)\b",
-            comment,
-        )
-    ):
-        signals.append(
-            Signal(
-                "underexplained source paragraph",
-                15,
-                f"The attached paragraph performs {operations} operations "
-                "without a corresponding reason or boundary.",
-            )
-        )
-
-    declaration = re.search(
-        r"\b(?:class|struct)\s+(Program|Kernel|Buffer|Context|Image|Module|Runtime)\b",
-        context.attached,
-    )
-    domains = path_words.intersection({"cuda", "godot", "vulkan", "wayland", "win32"})
-    if declaration and domains and not any(
-        matches(r"\b" + re.escape(domain) + r"\b", comment) for domain in domains
-    ):
-        domain = sorted(domains)[0]
-        signals.append(
-            Signal(
-                "missing domain anchor",
-                20,
-                f"The generic {declaration.group(1)} declaration belongs to "
-                f"{domain}, but its comment never explains that domain relationship.",
-            )
-        )
-
-    if (
-        matches(r"\bbound Abstract\b", comment)
-        and "ttx_binding_status" in context.attached
-        and "ttx_storage" in context.attached
-        and "ttx_abstract" not in context.attached
-    ):
-        signals.append(
-            Signal(
-                "misnamed binding result",
-                20,
-                "The operation fills requested storage with an arbitrary API "
-                "record, but the comment calls that result an Abstract.",
-            )
-        )
+    signals.extend(_source_paragraph_signals(context))
     return signals
 
 
@@ -1630,6 +1852,7 @@ def attached_explicit_constructor(context):
     match = EXPLICIT_CONSTRUCTOR.search(context.attached)
     if not match or not EXPLICIT_PREFIX.fullmatch(context.attached[: match.start()]):
         return None
+
     return context.attached_line + context.attached[: match.start()].count("\n")
 
 
@@ -1641,6 +1864,7 @@ def explains_explicit_constructor(comment):
         comment,
     ):
         return True
+
     return matches(r"\bexplicit construction\b", comment) and matches(
         r"\b(?:distinguishes?|exposes?|keeps?|makes?|prevents?|requires?)\b",
         comment,
@@ -1660,6 +1884,7 @@ def primary_type_name(path):
     path = Path(path)
     if path.suffix != ".hpp":
         return None
+
     return re.sub(r"[^A-Za-z0-9]", "", path.stem).lower()
 
 
@@ -1667,6 +1892,7 @@ def primary_type_pattern(path):
     """Match class and struct declarations carrying the header identity."""
     if not primary_type_name(path):
         return None
+
     return re.compile(r"\b(?:class|struct)\s+([A-Za-z_][A-Za-z0-9_]*)\b")
 
 
@@ -1686,11 +1912,14 @@ def primary_type_definition_lines(path, source, code):
     for match in pattern.finditer(code):
         if not matches_primary_type(path, match):
             continue
+
         opening = code.find("{", match.end())
         terminator = code.find(";", match.end())
         if opening < 0 or (terminator >= 0 and terminator < opening):
             continue
+
         lines.append(source.count("\n", 0, match.start()) + 1)
+
     return tuple(lines)
 
 
@@ -1712,10 +1941,13 @@ def attached_primary_type_matches(context):
     for match in pattern.finditer(context.attached):
         if not matches_primary_type(context.path, match):
             continue
+
         prelude = context.attached[: match.start()]
         if re.search(r"[{};#]|\bnamespace\b", prelude):
             continue
+
         matches.append(match)
+
     return tuple(matches)
 
 
@@ -1723,6 +1955,7 @@ def policy_extension_signals(context, code):
     """Require an open CRTP capability to publish every invoked policy hook."""
     if not code or "policy_type" not in context.attached:
         return []
+
     if not re.search(
         r"\b(?:class|struct)\s+[A-Za-z_][A-Za-z0-9_]*",
         context.attached,
@@ -1737,6 +1970,7 @@ def policy_extension_signals(context, code):
     for line in context.comment.splitlines():
         marked = re.match(r"^\s*(?://|#)(.*)$", line)
         contract_lines.append(marked.group(1) if marked else line)
+
     signature_lines = {}
     for hook in hooks:
         for index, line in enumerate(contract_lines):
@@ -1765,13 +1999,11 @@ def policy_extension_signals(context, code):
 
         if (
             not description_lines
-            or any(
-                re.match(r"^ {4}\S", line) is None
-                for line in description_lines
-            )
+            or any(re.match(r"^ {4}\S", line) is None for line in description_lines)
             or len(WORD.findall(normalize("\n".join(description_lines)))) < 5
         ):
             undocumented.append(hook)
+
     if not missing and not undocumented:
         return []
 
@@ -1779,9 +2011,11 @@ def policy_extension_signals(context, code):
     if missing:
         names = ", ".join(f"`{hook}`" for hook in missing)
         failures.append(f"missing signatures for {names}")
+
     if undocumented:
         names = ", ".join(f"`{hook}`" for hook in undocumented)
         failures.append(f"missing local invariants for {names}")
+
     return [
         Signal(
             "incomplete policy extension contract",
@@ -1814,6 +2048,7 @@ def source_contexts(path, source, comments, code=None):
                 previous_comment,
                 previous_marker,
             ) = blocks[-1]
+
             between = source[previous_end:start]
             if (
                 marker == "//"
@@ -1827,7 +2062,9 @@ def source_contexts(path, source, comments, code=None):
                     previous_comment + "\n" + comment,
                     marker,
                 )
+
                 continue
+
         blocks.append((start, end, comment, marker))
 
     lines = source.splitlines()
@@ -1836,9 +2073,11 @@ def source_contexts(path, source, comments, code=None):
     for start, end, comment, _ in blocks:
         if not normalize(comment):
             continue
+
         attached = source.count("\n", 0, end) + 1
         while attached < len(lines) and not lines[attached].strip():
             attached += 1
+
         attached_end = attached_extent(lines, attached, code_lines)
         contexts.append(
             SourceSlice(
@@ -1849,6 +2088,7 @@ def source_contexts(path, source, comments, code=None):
                 "\n".join(lines[attached:attached_end]),
             )
         )
+
     return tuple(contexts)
 
 
@@ -1863,15 +2103,20 @@ def classify_comments(path, source, comments, code=None):
         constructor = attached_explicit_constructor(context)
         if constructor:
             covered_constructors.add(constructor)
+
         covered_primary_types.update(attached_primary_type_lines(context))
+
         extra = source_signals(context)
         if code is not None:
             extra += policy_extension_signals(context, code)
+
         verdicts.append(source_verdict(base, context, extra))
+
     if code is not None:
         for line in explicit_constructor_lines(source, code):
             if line in covered_constructors:
                 continue
+
             context = SourceSlice(str(path), line, "", line, "")
             verdicts.append(
                 source_verdict(
@@ -1880,9 +2125,11 @@ def classify_comments(path, source, comments, code=None):
                     (EXPLICIT_CONSTRUCTOR_SIGNAL,),
                 )
             )
+
         for line in primary_type_definition_lines(path, source, code):
             if line in covered_primary_types:
                 continue
+
             context = SourceSlice(str(path), line, "", line, "")
             verdicts.append(
                 source_verdict(
@@ -1891,16 +2138,16 @@ def classify_comments(path, source, comments, code=None):
                     (MISSING_PRIMARY_TYPE_SIGNAL,),
                 )
             )
+
     return tuple(sorted(verdicts, key=lambda verdict: verdict.line or 0))
 
 
 def diagnostic(verdict):
     """Render one source finding for the repository formatter."""
     signals = list(
-        dict.fromkeys(
-            signal.name for signal in verdict.signals if signal.points > 0
-        )
+        dict.fromkeys(signal.name for signal in verdict.signals if signal.points > 0)
     )
+
     basis = ", ".join(signals) if signals else "baseline requires review"
     severity = "error" if verdict.decision == "Reject" else "warning"
     return (
@@ -1917,6 +2164,7 @@ def summary(verdicts):
     for verdict in verdicts:
         counts[verdict.decision] += 1
         total_score += verdict.score
+
     scanned = len(verdicts)
     mean = total_score / scanned if scanned else 0.0
     return "\n".join(
@@ -1942,6 +2190,7 @@ def render(verdict):
             )
     else:
         lines.append("Signals: no strong style evidence; the score remains uncertain.")
+
     lines.append("Quality decision only; authorship is not inferred.")
     return "\n".join(lines)
 
@@ -1950,11 +2199,13 @@ def main():
     parser = argparse.ArgumentParser(
         description="Rate comment prose for generic AI-slop characteristics."
     )
+
     parser.add_argument(
         "--json",
         action="store_true",
         help="write the complete verdict as JSON",
     )
+
     parser.add_argument("--source", help="source file containing the comment")
     parser.add_argument("--line", type=int, help="one-based line inside the comment")
     parser.add_argument(
@@ -1962,12 +2213,15 @@ def main():
         nargs="*",
         help="comment text; standard input is used when omitted",
     )
+
     arguments = parser.parse_args()
     if arguments.source:
         if arguments.line is None:
             parser.error("--source requires --line")
+
         if arguments.comment:
             parser.error("comment text cannot accompany --source")
+
         try:
             verdict = classify_file(arguments.source, arguments.line)
         except (OSError, ValueError) as error:
@@ -1975,14 +2229,18 @@ def main():
     else:
         if arguments.line is not None:
             parser.error("--line requires --source")
+
         source = " ".join(arguments.comment) if arguments.comment else sys.stdin.read()
         if not source.strip():
             parser.error("comment text is empty")
+
         verdict = classify(source)
+
     if arguments.json:
         print(json.dumps(asdict(verdict), indent=2))
     else:
         print(render(verdict))
+
     return 0
 
 

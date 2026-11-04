@@ -8,24 +8,42 @@ def check(name, args = [], data = [], **kwargs):
     """Keep each program's arguments shared by Bazel run and direct execution."""
     source = kwargs.pop("srcs")[0]
     main = kwargs.pop("main", source)
-    python_command(name = name, script = main, arguments = args, data = data, testonly = True, **kwargs)
+    python_command(
+        name = name,
+        script = main,
+        arguments = args,
+        data = data,
+        testonly = True,
+        **kwargs
+    )
+
     return struct(name = name, script = ":" + main, args = args, data = data)
 
 def _commands_impl(ctx):
     output = ctx.actions.declare_file(ctx.label.name + ".json")
     commands = {}
     for name, arguments in ctx.attr.commands.items():
-        commands[name] = [ctx.expand_location(argument, targets = ctx.attr.data) for argument in json.decode(arguments)]
+        commands[name] = [
+            ctx.expand_location(argument, targets = ctx.attr.data)
+            for argument in json.decode(arguments)
+        ]
+
     ctx.actions.write(output, json.encode(commands))
+
     files = [output] + ctx.files.data
     for target in ctx.attr.data:
         manifest = target[DefaultInfo].files_to_run.runfiles_manifest
         if manifest:
             files.append(manifest)
-    return [DefaultInfo(
-        files = depset([output]),
-        runfiles = ctx.runfiles(files = files).merge_all([target[DefaultInfo].default_runfiles for target in ctx.attr.data]),
-    )]
+
+    return [
+        DefaultInfo(
+            files = depset([output]),
+            runfiles = ctx.runfiles(files = files).merge_all(
+                [target[DefaultInfo].default_runfiles for target in ctx.attr.data],
+            ),
+        ),
+    ]
 
 _commands = rule(
     implementation = _commands_impl,
@@ -37,15 +55,31 @@ _commands = rule(
 
 def runner(name, checks, binaries = [], data = []):
     """Declare a process runner with its programs, inputs and argument inventory."""
-    commands = {check.name: json.encode([native.package_name() + "/" + check.script[1:]] + check.args) for check in checks}
-    commands.update({binary.split(":")[-1]: json.encode([".bin/bin/$(rootpath " + binary + ")"]) for binary in binaries})
+    commands = {
+        check.name: json.encode(
+            [native.package_name() + "/" + check.script[1:]] + check.args,
+        )
+        for check in checks
+    }
+
+    commands.update(
+        {
+            binary.split(":")[-1]: json.encode([".bin/bin/$(rootpath " + binary + ")"])
+            for binary in binaries
+        },
+    )
+
     _commands(
         name = name + "_commands",
         commands = commands,
-        data = list({label: True for check in checks for label in [check.script] + check.data}) + binaries,
+        data = list(
+                   {label: True for check in checks for label in [check.script] + check.data},
+               ) +
+               binaries,
         testonly = True,
         tags = ["manual"],
     )
+
     python_command(
         name = name,
         script = "runner.py",

@@ -26,8 +26,8 @@ package_release(
 
 filegroup(
     name = "checksum",
-    tags = ["manual"],
     testonly = True,
     srcs = [":fixture"],
     output_group = "checksum",
+    tags = ["manual"],
 )

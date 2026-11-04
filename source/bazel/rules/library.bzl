@@ -14,7 +14,18 @@ LINUX = PLATFORMS["linux-x86_64-v3"].condition
 WEB = PLATFORMS["wasm32-emscripten"].condition
 WINDOWS = PLATFORMS["windows-x86_64-msvc"].condition
 
-def library(name = None, module = None, linkage = "static", components = {}, component_deps = {}, srcs = [], hdrs = [], includes = [], deps = [], defines = [], **kwargs):
+def library(
+        name = None,
+        module = None,
+        linkage = "static",
+        components = {},
+        component_deps = {},
+        srcs = [],
+        hdrs = [],
+        includes = [],
+        deps = [],
+        defines = [],
+        **kwargs):
     """Compile a library and declare its component header interfaces.
 
     Components follow the source/<module>/<component> layout. Their dependency
@@ -39,23 +50,55 @@ def library(name = None, module = None, linkage = "static", components = {}, com
     module = module or native.module_name()
     if linkage not in ["static", "shared"]:
         fail("library linkage must be static or shared")
+
     unknown = [component for component in component_deps if component not in components]
     if unknown:
         fail("component_deps names undeclared components: " + str(unknown))
+
     for component, dependencies in components.items():
-        unknown = [dependency for dependency in dependencies if dependency not in components]
+        unknown = [
+            dependency
+            for dependency in dependencies
+            if dependency not in components
+        ]
+
         if unknown:
-            fail("component " + component + " names undeclared sibling components: " + str(unknown))
-    common = {key: kwargs[key] for key in ["visibility", "testonly", "target_compatible_with", "compatible_with"] if key in kwargs}
+            fail(
+                "component " +
+                component +
+                " names undeclared sibling components: " +
+                str(unknown),
+            )
+
+    common = {
+        key: kwargs[key]
+        for key in [
+            "visibility",
+            "testonly",
+            "target_compatible_with",
+            "compatible_with",
+        ]
+        if key in kwargs
+    }
+
     for component, dependencies in components.items():
         cc_library(
             name = component,
-            hdrs = native.glob([module + "/" + component + "/**/*.h", module + "/" + component + "/**/*.hpp"], allow_empty = True),
+            hdrs = native.glob(
+                [
+                    module + "/" + component + "/**/*.h",
+                    module + "/" + component + "/**/*.hpp",
+                ],
+                allow_empty = True,
+            ),
             includes = includes,
             defines = defines,
-            deps = [":" + dependency for dependency in dependencies] + component_deps.get(component, []) + [Label("//source:headers")],
+            deps = [":" + dependency for dependency in dependencies] +
+                   component_deps.get(component, []) +
+                   [Label("//source:headers")],
             **common
         )
+
     compile_library = static_library if linkage == "static" else shared_library
     compile_library(
         name = name or module,
@@ -77,12 +120,31 @@ def _project_name(project):
     Returns:
         An uppercase identifier with dots and hyphens replaced by underscores.
     """
-    value = (project or native.module_name()).upper().replace("-", "_").replace(".", "_")
-    if not value or value[0] in "0123456789" or any([letter not in "ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789" for letter in value.elems()]):
+    value = (
+        (project or native.module_name()).upper().replace("-", "_").replace(".", "_")
+    )
+
+    if (
+        not value or
+        value[0] in "0123456789" or
+        any(
+            [
+                letter not in "ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789"
+                for letter in value.elems()
+            ],
+        )
+    ):
         fail("project must identify the library used by EXPORTED(PROJECT)")
+
     return value
 
-def static_library(name, deps = [], project = None, defines = [], implementation_deps = [], **kwargs):
+def static_library(
+        name,
+        deps = [],
+        project = None,
+        defines = [],
+        implementation_deps = [],
+        **kwargs):
     """Compile a static library with Toolchain's export annotation available.
 
     PROJECT_STATIC=1 reaches this implementation and its consumers so both
@@ -122,17 +184,52 @@ def _shared_runtime_impl(ctx):
     # The completed link identifies embedded static code and the shared
     # dependencies carried onward to consumers. Reusing that result keeps an
     # alwayslink implementation archive inside its completed shared object.
-    libraries = [library for library in shared.linker_input.libraries if (library.resolved_symlink_dynamic_library or library.dynamic_library) not in primary]
-    inputs = [cc_common.create_linker_input(owner = ctx.label, libraries = depset(libraries))]
-    inputs.extend([dependency.linker_input for dependency in shared.dynamic_deps.to_list()])
-    return [CcInfo(linking_context = cc_common.create_linking_context(linker_inputs = depset(inputs)))]
+    libraries = [
+        library
+        for library in shared.linker_input.libraries
+        if (library.resolved_symlink_dynamic_library or library.dynamic_library) not in
+           primary
+    ]
+
+    inputs = [
+        cc_common.create_linker_input(owner = ctx.label, libraries = depset(libraries)),
+    ]
+
+    inputs.extend(
+        [dependency.linker_input for dependency in shared.dynamic_deps.to_list()],
+    )
+
+    return [
+        CcInfo(
+            linking_context = cc_common.create_linking_context(
+                linker_inputs = depset(inputs),
+            ),
+        ),
+    ]
 
 _shared_runtime = rule(
     implementation = _shared_runtime_impl,
     attrs = {"shared": attr.label(mandatory = True, providers = [CcSharedLibraryInfo])},
 )
 
-def shared_library(name, srcs = [], hdrs = [], deps = [], project = None, copts = [], defines = [], local_defines = [], includes = [], linkopts = [], shared_lib_name = None, user_link_flags = [], features = [], tags = [], implementation_deps = [], header_deps = None, **kwargs):
+def shared_library(
+        name,
+        srcs = [],
+        hdrs = [],
+        deps = [],
+        project = None,
+        copts = [],
+        defines = [],
+        local_defines = [],
+        includes = [],
+        linkopts = [],
+        shared_lib_name = None,
+        user_link_flags = [],
+        features = [],
+        tags = [],
+        implementation_deps = [],
+        header_deps = None,
+        **kwargs):
     """Compile a shared library and expose its headers and binary to consumers.
 
     PROJECT_EXPORT=1 belongs to this target's source compilation. Consumers
@@ -164,36 +261,51 @@ def shared_library(name, srcs = [], hdrs = [], deps = [], project = None, copts 
         **kwargs: Additional cc_shared_library attributes.
     """
     visibility = kwargs.pop("visibility", None)
-    common = {key: kwargs.pop(key) for key in ["testonly", "target_compatible_with", "compatible_with"] if key in kwargs}
+    common = {
+        key: kwargs.pop(key)
+        for key in ["testonly", "target_compatible_with", "compatible_with"]
+        if key in kwargs
+    }
+
     kwargs.update(common)
+
     headers = name + "_headers"
     implementation = name + "_implementation"
     shared = name + "_shared"
     interface = name + "_interface"
     runtime = name + "_runtime"
-    cc_library(
-        name = headers,
-        hdrs = hdrs,
-        deps = deps + [Label("//source:headers")],
-        defines = defines,
-        includes = includes,
-        visibility = ["//visibility:private"],
-        **common
-    )
-    cc_library(
-        name = implementation,
-        srcs = srcs,
-        deps = [":" + headers],
-        implementation_deps = implementation_deps,
-        copts = copts,
-        local_defines = local_defines + [_project_name(project) + "_EXPORT=1"],
-        linkopts = linkopts,
-        linkstatic = True,
-        features = features,
-        tags = tags,
-        visibility = ["//visibility:private"],
-        **common
-    )
+    link_deps = deps + implementation_deps
+    compile_sources = srcs or header_deps == None
+    if compile_sources:
+        cc_library(
+            name = headers,
+            hdrs = hdrs,
+            deps = deps + [Label("//source:headers")],
+            defines = defines,
+            includes = includes,
+            visibility = ["//visibility:private"],
+            **common
+        )
+
+        cc_library(
+            name = implementation,
+            srcs = srcs,
+            deps = [":" + headers],
+            implementation_deps = implementation_deps,
+            copts = copts,
+            local_defines = local_defines + [_project_name(project) + "_EXPORT=1"],
+            linkopts = linkopts,
+            linkstatic = True,
+            features = features,
+            tags = tags,
+            visibility = ["//visibility:private"],
+            **common
+        )
+
+        link_deps = [":" + implementation]
+
+    # A project supplies compiled components and their public interface. It
+    # needs the completed shared link, with no additional compilation facade.
 
     # EXPORTED(project) defines the exact Windows export surface. This feature
     # selection keeps annotated symbols authoritative, while the tag selects
@@ -201,14 +313,22 @@ def shared_library(name, srcs = [], hdrs = [], deps = [], project = None, copts 
     # every shared symbol and finds packaged runtimes beside the primary binary.
     cc_shared_library(
         name = shared,
-        deps = [":" + implementation],
-        shared_lib_name = shared_lib_name or select({WINDOWS: name + ".dll", "//conditions:default": "lib" + name + ".so"}),
+        deps = link_deps,
+        shared_lib_name = shared_lib_name or
+                          select(
+                              {WINDOWS: name + ".dll", "//conditions:default": "lib" + name + ".so"},
+                          ),
         tags = tags + ["__DONT_DEPEND_ON_DEF_PARSER__"],
         features = features + ["-windows_export_all_symbols"],
-        user_link_flags = select({LINUX: ["-Wl,-z,defs", "-Wl,-rpath,$ORIGIN"], "//conditions:default": []}) + user_link_flags,
+        user_link_flags = select(
+                              {LINUX: ["-Wl,-z,defs", "-Wl,-rpath,$ORIGIN"], "//conditions:default": []},
+                          ) +
+                          user_link_flags +
+                          ([] if compile_sources else linkopts),
         visibility = ["//visibility:private"],
         **kwargs
     )
+
     native.filegroup(
         name = interface,
         srcs = [":" + shared],
@@ -216,17 +336,22 @@ def shared_library(name, srcs = [], hdrs = [], deps = [], project = None, copts 
         visibility = ["//visibility:private"],
         **common
     )
+
     _shared_runtime(
         name = runtime,
         shared = ":" + shared,
         visibility = ["//visibility:private"],
         **common
     )
+
     cc_import(
         name = name,
         shared_library = ":" + shared,
-        interface_library = select({WINDOWS: ":" + interface, "//conditions:default": None}),
-        deps = ([":" + headers] if header_deps == None else header_deps) + [":" + runtime],
+        interface_library = select(
+            {WINDOWS: ":" + interface, "//conditions:default": None},
+        ),
+        deps = ([":" + headers] if header_deps == None else header_deps) +
+               [":" + runtime],
         linkopts = linkopts,
         visibility = visibility,
         **common

@@ -22,6 +22,7 @@ def _wasm_runner(settings, attr):
     features = [feature for feature in settings[_FEATURES] if feature != "wasm_threads"]
     if attr.threads:
         features.append("wasm_threads")
+
     return {
         "//command_line_option:platforms": [_WASM_RUNNER_PLATFORM],
         _FEATURES: features,
@@ -40,7 +41,10 @@ def _runfile(ctx, file):
 
 def _web_runner_impl(ctx):
     """Generate one host launcher for an Emscripten validation program."""
-    executable = ctx.actions.declare_file(ctx.label.name + (".cmd" if HOST_SYSTEM == "windows" else ""))
+    executable = ctx.actions.declare_file(
+        ctx.label.name + (".cmd" if HOST_SYSTEM == "windows" else ""),
+    )
+
     binary = ctx.file.binary
     binary_target = ctx.attr.binary[0]
     node = ctx.file.node
@@ -53,6 +57,7 @@ def _web_runner_impl(ctx):
         },
         is_executable = True,
     )
+
     runfiles = ctx.runfiles(files = [binary, node])
     runfiles = runfiles.merge(binary_target[DefaultInfo].default_runfiles)
     runfiles = runfiles.merge(ctx.attr.node[DefaultInfo].default_runfiles)
@@ -70,7 +75,9 @@ _web_runner = rule(
         "node": attr.label(mandatory = True, allow_single_file = True),
         "threads": attr.bool(default = True),
         "_template": attr.label(
-            default = Label("//source/bazel:rules/web_runner.cmd.tpl" if HOST_SYSTEM == "windows" else "//source/bazel:rules/web_runner.sh"),
+            default = Label(
+                "//source/bazel:rules/web_runner.cmd.tpl" if HOST_SYSTEM == "windows" else "//source/bazel:rules/web_runner.sh",
+            ),
             allow_single_file = True,
         ),
         "_allowlist_function_transition": attr.label(
@@ -82,12 +89,18 @@ _web_runner = rule(
 def _sources(directory):
     if native.package_name():
         fail(directory + " must be declared from the repository root BUILD file")
+
     sources = native.glob(
-        ["validation/" + directory + "/**/*." + extension for extension in _SOURCE_EXTENSIONS],
+        [
+            "validation/" + directory + "/**/*." + extension
+            for extension in _SOURCE_EXTENSIONS
+        ],
         allow_empty = True,
     )
+
     if not sources:
         fail("validation/" + directory + " must contain validation sources")
+
     return sources
 
 def _program(name, runtime, deps, web_deps, web_threads, data):
@@ -100,6 +113,7 @@ def _program(name, runtime, deps, web_deps, web_threads, data):
         deps = deps + [runtime],
         data = data,
     )
+
     cc_binary(
         name = name + "_web_binary",
         tags = ["manual"],
@@ -108,6 +122,7 @@ def _program(name, runtime, deps, web_deps, web_threads, data):
         deps = web_deps + [runtime],
         data = data,
     )
+
     _web_runner(
         name = name + "_web",
         tags = ["manual"],
@@ -152,6 +167,7 @@ def validation(
     """
     if native.package_name():
         fail("validation must be declared from the repository root BUILD file")
+
     if deps == None:
         common = ["//:" + native.module_name()]
         web_common = ["//:_validation_static"] if web_deps == None else web_deps
@@ -160,7 +176,10 @@ def validation(
         web_common = deps if web_deps == None else web_deps
 
     web_tests = test_deps if web_test_deps == None else web_test_deps
-    web_benchmarks = benchmark_deps if web_benchmark_deps == None else web_benchmark_deps
+    web_benchmarks = (
+        benchmark_deps if web_benchmark_deps == None else web_benchmark_deps
+    )
+
     data = native.glob(["validation/data/**"], allow_empty = True)
     _program(
         name = "tests",
@@ -170,6 +189,7 @@ def validation(
         web_threads = web_threads,
         data = data + test_data,
     )
+
     _program(
         name = "benchmarks",
         runtime = Label("//source/toolchain/validation:benchmark"),

@@ -19,7 +19,10 @@ def candidate_snapshot():
         ],
         extension = "tar.gz",
         mode = "0644",
-        package_file_name = native.module_name() + "-" + native.module_version() + "-source.tar.gz",
+        package_file_name = native.module_name() +
+                            "-" +
+                            native.module_version() +
+                            "-source.tar.gz",
         remap_paths = {template: "BUILD"},
         strip_prefix = ".",
         tags = ["manual"],

@@ -6,7 +6,7 @@
       "includePath": [
         "${workspaceFolder}",
         "${workspaceFolder}/source",
-        "${workspaceFolder}/.bin/bin/**"
+        "${workspaceFolder}/.bin/out/**"
       ],
       "cStandard": "c23",
       "cppStandard": "c++26"

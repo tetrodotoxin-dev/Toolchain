@@ -10,11 +10,13 @@ filegroup(
 
 filegroup(
     name = "linker",
-    srcs = glob([
-        "usr/lib/**",
-        "lib/**",
-        "lib64/**",
-    ]),
+    srcs = glob(
+        [
+            "usr/lib/**",
+            "lib/**",
+            "lib64/**",
+        ],
+    ),
     visibility = ["//visibility:public"],
 )
 

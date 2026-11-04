@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 
+
 def compile_source(compiler, include, source):
     with tempfile.TemporaryDirectory(prefix="compile-allocation-") as temporary:
         path = Path(temporary) / "probe.cpp"
@@ -40,6 +41,7 @@ if __name__ == "__main__":
         "  return values.get_capacity() == 2 && values.get_data()[1] == 42;\n"
         "}());\n",
     )
+
     assert valid.returncode == 0, valid.stderr
 
     runtime = compile_source(
@@ -51,6 +53,7 @@ if __name__ == "__main__":
         "  Allocation<S32> values(2);\n"
         "}\n",
     )
+
     assert runtime.returncode != 0, runtime.stderr
     assert "constant expression" in runtime.stderr, runtime.stderr
 
@@ -63,5 +66,6 @@ if __name__ == "__main__":
         "  return Lifetime::allocate_object<S32>();\n"
         "}\n",
     )
+
     assert bypass.returncode != 0, bypass.stderr
     assert "no member named 'allocate_object'" in bypass.stderr, bypass.stderr

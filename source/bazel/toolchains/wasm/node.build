@@ -2,7 +2,13 @@
 
 package(default_visibility = ["//visibility:public"])
 
-_NODE = glob(["bin/node", "node.exe"], allow_empty = True)
+_NODE = glob(
+    [
+        "bin/node",
+        "node.exe",
+    ],
+    allow_empty = True,
+)
 
 exports_files(_NODE)
 

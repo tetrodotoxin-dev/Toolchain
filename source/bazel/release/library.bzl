@@ -15,67 +15,58 @@ _SdkLibrariesInfo = provider(
     },
 )
 
-def sdk_import(library, dependencies, implementation_dependencies, static_libraries, shared_libraries, interface_libraries, defines, linkopts, alwayslink, runtime, archives, digests, system, binaries, components):
-    """Declare a release's platform imports and scoped component interfaces."""
-    # Each platform may have a different dependency set. Only the imports selected
-    # by that platform enter the consuming target's link and runtime dependencies.
-    for index in range(max([len(libraries) for libraries in system.values()])):
+def _field(records, name, default = None):
+    """Select one attribute from the records for the supported platforms."""
+    return select({platform: record.get(name, default) for platform, record in records.items()})
+
+def _primary_library(platforms, linkage):
+    """Select the primary file only for the linkage recorded by its archive."""
+    return select({
+        platform: metadata["library"] if metadata["linkage"] == linkage else None
+        for platform, metadata in platforms.items()
+    })
+
+def _imports(platforms, kind):
+    """Declare each platform-selected dependency and return its target labels.
+
+    Runtime DLLs, static archives and host interfaces retain their distinct
+    linker roles. Empty slots let one target inventory serve every platform.
+    """
+    prefix = "archive" if kind == "archives" else kind
+    count = max([len(metadata[kind]) for metadata in platforms.values()])
+    for index in range(count):
+        records = {
+            platform: metadata[kind][index] if index < len(metadata[kind]) else {}
+            for platform, metadata in platforms.items()
+        }
+
         cc_import(
-            name = "system_" + str(index),
-            interface_library = select({
-                platform: libraries[index]["interface"] if index < len(libraries) else None
-                for platform, libraries in system.items()
-            }),
-            linkopts = select({
-                platform: libraries[index]["linkopts"] if index < len(libraries) else []
-                for platform, libraries in system.items()
-            }),
-            system_provided = True,
+            name = prefix + "_" + str(index),
+            interface_library = _field(records, "interface"),
+            static_library = _field(records, "library") if kind == "archives" else None,
+            shared_library = _field(records, "library") if kind == "runtime" else None,
+            linkopts = _field(records, "linkopts", []),
+            alwayslink = _field(records, "alwayslink", False),
+            system_provided = kind == "system",
             visibility = ["//visibility:private"],
         )
 
-    for index in range(max([len(libraries) for libraries in archives.values()])):
-        cc_import(
-            name = "archive_" + str(index),
-            linkopts = select({
-                platform: libraries[index]["linkopts"] if index < len(libraries) else []
-                for platform, libraries in archives.items()
-            }),
-            static_library = select({
-                platform: libraries[index]["library"] if index < len(libraries) else None
-                for platform, libraries in archives.items()
-            }),
-            visibility = ["//visibility:private"],
-            alwayslink = select({
-                platform: libraries[index]["alwayslink"] if index < len(libraries) else False
-                for platform, libraries in archives.items()
-            }),
-        )
+    return select({
+        platform: [":" + prefix + "_" + str(index) for index in range(len(metadata[kind]))]
+        for platform, metadata in platforms.items()
+    })
 
-    for index in range(max([len(libraries) for libraries in runtime.values()])):
-        cc_import(
-            name = "runtime_" + str(index),
-            interface_library = select({
-                platform: libraries[index]["interface"] if index < len(libraries) else None
-                for platform, libraries in runtime.items()
-            }),
-            shared_library = select({
-                platform: libraries[index]["library"] if index < len(libraries) else None
-                for platform, libraries in runtime.items()
-            }),
-            visibility = ["//visibility:private"],
-        )
+def sdk_import(library, dependencies, implementation_dependencies, platforms, components):
+    """Declare the release binary and the header interfaces that consumers use.
 
+    Each platform record retains the archive's metadata and resolved file paths.
+    Native C++ attributes select their own field from those same records.
+    """
+    imported = _imports(platforms, "runtime") + _imports(platforms, "archives") + _imports(platforms, "system")
     cc_library(
         name = "headers",
-        hdrs = native.glob(
-            [
-                "headers/include/**/*.h",
-                "headers/include/**/*.hpp",
-            ],
-            allow_empty = True,
-        ),
-        defines = select(defines),
+        hdrs = native.glob(["headers/include/**/*.h", "headers/include/**/*.hpp"], allow_empty = True),
+        defines = _field(platforms, "defines"),
         implementation_deps = implementation_dependencies,
         strip_include_prefix = "headers/include",
         deps = dependencies,
@@ -83,39 +74,27 @@ def sdk_import(library, dependencies, implementation_dependencies, static_librar
 
     cc_import(
         name = "_sdk_library",
-        interface_library = select(interface_libraries),
-        linkopts = select(linkopts),
-        shared_library = select(shared_libraries),
-        static_library = select(static_libraries),
-        deps = [":headers"] + select({
-            platform: [":runtime_" + str(index) for index in range(len(libraries))]
-            for platform, libraries in runtime.items()
-        }) + select({
-            platform: [":archive_" + str(index) for index in range(len(libraries))]
-            for platform, libraries in archives.items()
-        }) + select({
-            platform: [":system_" + str(index) for index in range(len(libraries))]
-            for platform, libraries in system.items()
-        }),
-        alwayslink = select(alwayslink),
+        interface_library = _field(platforms, "interface"),
+        linkopts = _field(platforms, "linkopts"),
+        shared_library = _primary_library(platforms, "shared"),
+        static_library = _primary_library(platforms, "static"),
+        deps = [":headers"] + imported,
+        alwayslink = _field(platforms, "alwayslink", False),
         visibility = ["//visibility:private"],
     )
 
     sdk_library(
         name = library,
         actual = ":_sdk_library",
-        digests = select(digests),
+        digests = _field(platforms, "sha256"),
         deps = dependencies + implementation_dependencies,
     )
 
-    native.filegroup(
-        name = "build",
-        srcs = select(binaries),
-    )
+    native.filegroup(name = "build", srcs = _field(platforms, "binaries"))
 
-    # Components share the selected binary while keeping the aggregate header
-    # interface private. Scoped archives retain sibling edges and receive external
-    # labels from the consuming module's component declarations.
+    # These header targets create the virtual include trees used by both the
+    # compiler and editor navigation. Sharing the binary keeps their header
+    # scopes independent while preserving each component's dependency edges.
     for name, component in components.items():
         cc_library(
             name = "_sdk_component_" + name,
@@ -151,7 +130,13 @@ def _signature(library, digests):
     interface = library.resolved_symlink_interface_library or library.interface_library
     if binary not in digests or (interface and interface not in digests):
         return None
-    return (digests[binary], interface.basename if interface else None, digests.get(interface), library.alwayslink)
+
+    return (
+        digests[binary],
+        interface.basename if interface else None,
+        digests.get(interface),
+        library.alwayslink,
+    )
 
 def _select(runtime, library, digests):
     """Reuse an identical SDK runtime or reject conflicting published contents.
@@ -167,9 +152,11 @@ def _select(runtime, library, digests):
     signature = _signature(library, digests)
     if signature == None:
         return library
+
     name = _binary(library).basename
     if name in runtime and _signature(runtime[name], digests) != signature:
         fail("Conflicting SDK runtime contents or link requirements for " + name)
+
     return runtime.setdefault(name, library)
 
 def _library_impl(ctx):
@@ -186,6 +173,7 @@ def _library_impl(ctx):
     for dependency in ctx.attr.deps:
         if _SdkLibrariesInfo in dependency:
             digests.update(dependency[_SdkLibrariesInfo].digests)
+
     for target, digest in ctx.attr.digests.items():
         digests[target[DefaultInfo].files.to_list()[0]] = digest
 
@@ -210,23 +198,32 @@ def _library_impl(ctx):
                 selected[_binary(library).basename] = library
                 if _binary(library) in seen:
                     continue
+
                 seen[_binary(library)] = True
+
             libraries.append(library)
 
         # Packaging identifies the primary library by its public target.
         # Dependency inputs retain their original declaring targets.
-        inputs.append(cc_common.create_linker_input(
-            owner = ctx.label if entry.owner == ctx.attr.actual.label else entry.owner,
-            libraries = depset(libraries),
-            user_link_flags = entry.user_link_flags,
-            additional_inputs = depset(entry.additional_inputs),
-            linkstamps = depset(entry.linkstamps),
-        ))
+        inputs.append(
+            cc_common.create_linker_input(
+                owner = (
+                    ctx.label if entry.owner == ctx.attr.actual.label else entry.owner
+                ),
+                libraries = depset(libraries),
+                user_link_flags = entry.user_link_flags,
+                additional_inputs = depset(entry.additional_inputs),
+                linkstamps = depset(entry.linkstamps),
+            ),
+        )
+
     return [
         ctx.attr.actual[DefaultInfo],
         CcInfo(
             compilation_context = actual.compilation_context,
-            linking_context = cc_common.create_linking_context(linker_inputs = depset(inputs)),
+            linking_context = cc_common.create_linking_context(
+                linker_inputs = depset(inputs),
+            ),
         ),
         _SdkLibrariesInfo(digests = digests, runtime = selected),
     ]

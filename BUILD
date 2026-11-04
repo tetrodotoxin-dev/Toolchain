@@ -5,10 +5,12 @@ load(":defs.bzl", "format", "sdk", "setup", "validation")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    ".bazelrc",
-    "defs.bzl",
-])
+exports_files(
+    [
+        ".bazelrc",
+        "defs.bzl",
+    ],
+)
 
 toolchains()
 
@@ -17,9 +19,9 @@ format()
 sdk(tags = ["manual"])
 
 validation(
-    deps = [],
     benchmark_data = ["//validation/integration:validation_benchmark_data"],
     test_data = ["//validation/integration:validation_test_data"],
+    deps = [],
 )
 
 setup()

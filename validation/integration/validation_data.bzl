@@ -14,10 +14,15 @@ def _validation_data_impl(ctx):
 
     if test_data not in tests:
         fail("Tests are missing their declared runtime artifact: " + test_data)
+
     if benchmark_data in tests:
         fail("Tests contain benchmark-only runtime data: " + benchmark_data)
+
     if benchmark_data not in benchmarks:
-        fail("Benchmarks are missing their declared runtime artifact: " + benchmark_data)
+        fail(
+            "Benchmarks are missing their declared runtime artifact: " + benchmark_data,
+        )
+
     if test_data in benchmarks:
         fail("Benchmarks contain test-only runtime data: " + test_data)
 

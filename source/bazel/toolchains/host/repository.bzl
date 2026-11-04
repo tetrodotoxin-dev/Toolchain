@@ -16,9 +16,11 @@ def _host(ctx):
     """
     system = ctx.os.name.lower()
     system = "windows" if "windows" in system else system
+
     # Distribution changes must refresh compiler-derived host settings.
     ctx.watch(Label("//source/bazel:toolchains/host/distribution.bzl"))
     ctx.symlink(ctx.path(ctx.attr._distribution).dirname.get_child("llvm"), "llvm")
+
     suffix = ".exe" if system == "windows" else ""
     executables = {
         "CXX": "clang++",
@@ -35,6 +37,7 @@ def _host(ctx):
         "STRIP": "llvm-strip",
         "COV": "llvm-cov",
     }
+
     values = {"HOST_SYSTEM": system}
     files = []
     for name, executable in executables.items():
@@ -47,9 +50,12 @@ def _host(ctx):
         if executable == "llvm-lib" and not selected.exists:
             location = "llvm-lib" + suffix
             ctx.symlink(ctx.path("llvm/bin/llvm-ar" + suffix), location)
+
             selected = ctx.path(location)
+
         if not selected.exists:
             fail("LLVM installation is missing " + str(selected))
+
         values[name] = str(selected).replace("\\", "/")
         files.append(location)
 
@@ -57,19 +63,26 @@ def _host(ctx):
         # copy an alias instead, leaving the selected path as the actual file.
         if selected.realpath.basename != selected.basename:
             files.append("llvm/bin/" + selected.realpath.basename)
+
     resource = ctx.execute([values["CXX"], "-print-resource-dir"])
     if resource.return_code:
         fail(resource.stderr)
 
     values["RESOURCE_INCLUDE"] = resource.stdout.strip().replace("\\", "/") + "/include"
-    python = ctx.path(Label("@host_python//:BUILD.bazel")).dirname.get_child("python" + suffix)
+
+    python = ctx.path(Label("@host_python//:BUILD.bazel")).dirname.get_child(
+        "python" + suffix,
+    )
+
     values["PYTHON"] = str(python).replace("\\", "/")
     values["PATH"] = str(ctx.path("llvm/bin")).replace("\\", "/")
     values["TEMP"] = ctx.os.environ.get("TEMP", "/tmp")
+
     substitutions = {
         '"__' + name + '__"': json.encode(value)
         for name, value in values.items()
     }
+
     tools = sorted({file: True for file in files})
     substitutions['["__TOOLS__"]'] = repr(tools)
     ctx.template("settings.bzl", ctx.attr._settings, substitutions = substitutions)
@@ -82,8 +95,12 @@ host_tools = repository_rule(
     implementation = _host,
     attrs = {
         "_distribution": attr.label(default = Label("@llvm_distribution//:BUILD.bazel")),
-        "_build": attr.label(default = Label("//source/bazel:toolchains/host/tools.build")),
-        "_settings": attr.label(default = Label("//source/bazel:toolchains/host/settings.bzl.tpl")),
+        "_build": attr.label(
+            default = Label("//source/bazel:toolchains/host/tools.build"),
+        ),
+        "_settings": attr.label(
+            default = Label("//source/bazel:toolchains/host/settings.bzl.tpl"),
+        ),
     },
     environ = ["BAZEL_LLVM", "TEMP"],
 )

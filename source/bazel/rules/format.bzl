@@ -28,17 +28,20 @@ def _format_impl(ctx):
         },
         is_executable = True,
     )
+
     ctx.actions.symlink(output = policy, target_file = ctx.file._policy)
     ctx.actions.symlink(output = comment_quality, target_file = ctx.file._comment_quality)
     ctx.actions.symlink(output = configuration, target_file = ctx.file._configuration)
 
     executable = python_launcher(ctx, driver)
     files = [executable, driver, policy, comment_quality, configuration]
-    return [DefaultInfo(
-        executable = executable,
-        files = depset([executable]),
-        runfiles = ctx.runfiles(files = files),
-    )]
+    return [
+        DefaultInfo(
+            executable = executable,
+            files = depset([executable]),
+            runfiles = ctx.runfiles(files = files),
+        ),
+    ]
 
 _format = rule(
     implementation = _format_impl,
@@ -57,7 +60,9 @@ _format = rule(
             allow_single_file = True,
         ),
         "_launcher": attr.label(
-            default = Label("//source/bazel:rules/python.cmd.tpl" if HOST_SYSTEM == "windows" else "//source/bazel:rules/python.sh.tpl"),
+            default = Label(
+                "//source/bazel:rules/python.cmd.tpl" if HOST_SYSTEM == "windows" else "//source/bazel:rules/python.sh.tpl",
+            ),
             allow_single_file = True,
         ),
         "_policy": attr.label(
@@ -86,4 +91,5 @@ def format():
     """
     if native.package_name():
         fail("format must be declared from the repository root BUILD file")
+
     _format(name = "format")

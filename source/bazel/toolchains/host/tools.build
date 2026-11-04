@@ -8,14 +8,15 @@ exports_files(["settings.bzl"] + TOOLS)
 # runfiles. Compiler actions receive the complete files group below.
 filegroup(
     name = "files",
-    srcs = TOOLS + glob(
-        [
-            "llvm/lib/clang/**",
-            "llvm/lib/libLLVM*.so*",
-            "llvm/lib/libclang*.so*",
-            "llvm/bin/*.dll",
-        ],
-        allow_empty = True,
-    ),
+    srcs = TOOLS +
+           glob(
+               [
+                   "llvm/lib/clang/**",
+                   "llvm/lib/libLLVM*.so*",
+                   "llvm/lib/libclang*.so*",
+                   "llvm/bin/*.dll",
+               ],
+               allow_empty = True,
+           ),
     visibility = ["//visibility:public"],
 )

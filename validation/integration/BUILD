@@ -37,7 +37,11 @@ COMPILE_ALLOCATION = check(
     args = [CXX],
 )
 
-LIFETIME = ["lifetime", "lifetime_standard_first", "lifetime_standard_after"]
+LIFETIME = [
+    "lifetime",
+    "lifetime_standard_first",
+    "lifetime_standard_after",
+]
 
 [
     cc_binary(
@@ -47,7 +51,14 @@ LIFETIME = ["lifetime", "lifetime_standard_first", "lifetime_standard_after"]
         local_defines = defines,
         deps = ["//source:headers"],
     )
-    for name, defines in zip(LIFETIME, [[], ["LIFETIME_STANDARD_FIRST"], ["LIFETIME_STANDARD_AFTER"]])
+    for name, defines in zip(
+        LIFETIME,
+        [
+            [],
+            ["LIFETIME_STANDARD_FIRST"],
+            ["LIFETIME_STANDARD_AFTER"],
+        ],
+    )
 ]
 
 # The reporting fixture exercises every result path through the public runner.
@@ -82,27 +93,27 @@ FORMAT = check(
 component_headers(
     name = "component_headers",
     component = "//validation/data:consumer",
+    excluded = ["//validation/data:components/unrelated/value.h"],
     required = [
         "//validation/data:components/consumer/value.h",
         "//validation/data:components/foundation/value.h",
         "//validation/data:sdk/public.h",
     ],
-    excluded = ["//validation/data:components/unrelated/value.h"],
 )
 
 cc_binary(
     name = "components",
     testonly = True,
-    linkstatic = False,
     srcs = ["components.c"],
+    linkstatic = False,
     deps = [":component_headers"],
 )
 
 cc_binary(
     name = "static",
     testonly = True,
-    linkstatic = False,
     srcs = ["library.c"],
+    linkstatic = False,
     deps = [
         "//validation/data:static",
         "//validation/data:system_host",
@@ -112,8 +123,8 @@ cc_binary(
 cc_binary(
     name = "shared",
     testonly = True,
-    linkstatic = False,
     srcs = ["library.c"],
+    linkstatic = False,
     deps = [
         "//validation/data:shared",
         "//validation/data:system_host",
@@ -123,11 +134,11 @@ cc_binary(
 cc_binary(
     name = "symbols",
     testonly = True,
-    linkstatic = False,
     srcs = [
         "library.c",
         "symbols.c",
     ],
+    linkstatic = False,
     deps = [
         "//validation/data:shared",
         "//validation/data:system_host",
@@ -174,10 +185,10 @@ package_release(
 # Like its release input, it stays out of local wildcard builds.
 filegroup(
     name = "checksum",
-    tags = ["manual"],
     testonly = True,
     srcs = [":fixture"],
     output_group = "checksum",
+    tags = ["manual"],
 )
 
 # This test creates a fresh Bazel workspace and consumes the candidate source
@@ -186,8 +197,6 @@ filegroup(
 SDK = [
     check(
         name = "sdk" if case == "all" else "sdk_" + case,
-        tags = ["manual"],
-        main = "sdk.py",
         srcs = ["sdk.py"],
         args = [
             ".bin/bin/$(rootpath //:_candidate_snapshot)",
@@ -206,8 +215,14 @@ SDK = [
             "//validation/integration/linkage:checksum",
             "//validation/integration/linkage:fixture",
         ],
+        main = "sdk.py",
+        tags = ["manual"],
     )
-    for case in ["all", "matching", "mixed"]
+    for case in [
+        "all",
+        "matching",
+        "mixed",
+    ]
 ]
 
 # Independent output roots force fresh release and SDK actions. Debug builds
@@ -230,8 +245,8 @@ WEB = check(
         "$(execpath @emscripten_node//:node)",
     ],
     data = [
-        "//:tests_web",
         "//:benchmarks_web",
+        "//:tests_web",
         "@emscripten_node//:node",
     ],
     tags = ["manual"],
@@ -241,7 +256,21 @@ WEB = check(
 # Toolchain checkout. Its leaves stay individually runnable during diagnosis.
 runner(
     name = "integration",
-    checks = [COMMENT_QUALITY, COMPILE_ALLOCATION, FORMAT, HARNESS, REPRODUCIBILITY, SNAPSHOT, WEB, SDK[0]],
-    binaries = [":components", ":shared", ":static", ":symbols"] + [":" + name for name in LIFETIME],
+    binaries = [
+        ":components",
+        ":shared",
+        ":static",
+        ":symbols",
+    ] + [":" + name for name in LIFETIME],
+    checks = [
+        COMMENT_QUALITY,
+        COMPILE_ALLOCATION,
+        FORMAT,
+        HARNESS,
+        REPRODUCIBILITY,
+        SNAPSHOT,
+        WEB,
+        SDK[0],
+    ],
     data = [":validation_data"],
 )

@@ -3,15 +3,19 @@ load("@rules_cc//cc:cc_import.bzl", "cc_import")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//:defs.bzl", "library")
 
-package(default_visibility = [
-    "//:__pkg__",
-    "//validation/integration:__pkg__",
-    "//validation/integration/linkage:__pkg__",
-])
+package(
+    default_visibility = [
+        "//:__pkg__",
+        "//validation/integration:__pkg__",
+        "//validation/integration/linkage:__pkg__",
+    ],
+)
 
-exports_files([
-    "sdk/toolchain.build.tpl",
-])
+exports_files(
+    [
+        "sdk/toolchain.build.tpl",
+    ],
+)
 
 cc_binary(
     name = "reporting",
@@ -42,14 +46,18 @@ library(
     hdrs = ["sdk/host.h"],
     linkage = "shared",
     module = "toolchain_host",
-    shared_lib_name = select({
-        "//:windows": "system_host.dll",
-        "//conditions:default": "libsystem_host.so.1",
-    }),
-    user_link_flags = select({
-        "//:linux": ["-Wl,-soname,libsystem_host.so.1"],
-        "//conditions:default": [],
-    }),
+    shared_lib_name = select(
+        {
+            "//:windows": "system_host.dll",
+            "//conditions:default": "libsystem_host.so.1",
+        },
+    ),
+    user_link_flags = select(
+        {
+            "//:linux": ["-Wl,-soname,libsystem_host.so.1"],
+            "//conditions:default": [],
+        },
+    ),
 )
 
 filegroup(
@@ -62,34 +70,40 @@ filegroup(
 # Relocated consumers must find the host runtime, even with this file present.
 genrule(
     name = "system_host_stub",
-    target_compatible_with = ["@platforms//os:linux"],
     testonly = True,
     srcs = [":system_host_shared"],
     outs = ["link/libsystem_host.so"],
     cmd = "cp $(location :system_host_shared) $@",
     cmd_bat = 'copy /Y "$(location :system_host_shared)" "$@" >nul',
+    target_compatible_with = ["@platforms//os:linux"],
 )
 
 cc_import(
     name = "system_host_import",
     testonly = True,
     hdrs = ["sdk/host.h"],
-    interface_library = select({
-        "//:windows": ":system_host_interface",
-        "//conditions:default": ":system_host_stub",
-    }),
-    linkopts = select({
-        "//:linux": ["-Wl,--undefined=toolchain_host_entry"],
-        "//conditions:default": [],
-    }),
+    interface_library = select(
+        {
+            "//:windows": ":system_host_interface",
+            "//conditions:default": ":system_host_stub",
+        },
+    ),
+    linkopts = select(
+        {
+            "//:linux": ["-Wl,--undefined=toolchain_host_entry"],
+            "//conditions:default": [],
+        },
+    ),
     system_provided = True,
 )
 
-_HOST = select({
-    "//:linux": [":system_host_import"],
-    "//:windows": [":system_host_import"],
-    "//conditions:default": [],
-})
+_HOST = select(
+    {
+        "//:linux": [":system_host_import"],
+        "//:windows": [":system_host_import"],
+        "//conditions:default": [],
+    },
+)
 
 # This runtime gives the SDK a transitive shared dependency with a distinct
 # soname, exercising archive metadata and relocated loading together.
@@ -102,16 +116,20 @@ library(
     ],
     hdrs = ["sdk/runtime.h"],
     linkage = "shared",
-    linkopts = select({
-        "//:linux": ["-Wl,--wrap=toolchain_archive_probe"],
-        "//conditions:default": [],
-    }),
+    linkopts = select(
+        {
+            "//:linux": ["-Wl,--wrap=toolchain_archive_probe"],
+            "//conditions:default": [],
+        },
+    ),
     module = "toolchain_runtime",
-    shared_lib_name = select({
-        "//:linux": "libruntime.so.1",
-        "//:windows": "runtime.dll",
-        "//conditions:default": "libruntime.so",
-    }),
+    shared_lib_name = select(
+        {
+            "//:linux": "libruntime.so.1",
+            "//:windows": "runtime.dll",
+            "//conditions:default": "libruntime.so",
+        },
+    ),
     deps = _HOST,
 )
 
@@ -123,10 +141,12 @@ library(
         "sdk/runtime.c",
     ],
     hdrs = ["sdk/runtime.h"],
-    linkopts = select({
-        "//:linux": ["-Wl,--wrap=toolchain_archive_probe"],
-        "//conditions:default": [],
-    }),
+    linkopts = select(
+        {
+            "//:linux": ["-Wl,--wrap=toolchain_archive_probe"],
+            "//conditions:default": [],
+        },
+    ),
     module = "toolchain_runtime",
     deps = _HOST,
     alwayslink = True,
@@ -161,10 +181,13 @@ library(
     ],
     defines = ["TOOLCHAIN_PROJECT_VALUE=1"],
     includes = ["sdk/private"],
-    deps = [":runtime_static"] + select({
-        "//:windows": [":plugin_import"],
-        "//conditions:default": [],
-    }),
+    deps = [":runtime_static"] +
+           select(
+               {
+                   "//:windows": [":plugin_import"],
+                   "//conditions:default": [],
+               },
+           ),
 )
 
 library(
@@ -178,10 +201,13 @@ library(
     defines = ["TOOLCHAIN_PROJECT_VALUE=1"],
     includes = ["sdk/private"],
     linkage = "shared",
-    deps = [":runtime"] + select({
-        "//:windows": [":plugin_import"],
-        "//conditions:default": [],
-    }),
+    deps = [":runtime"] +
+           select(
+               {
+                   "//:windows": [":plugin_import"],
+                   "//conditions:default": [],
+               },
+           ),
 )
 
 cc_library(
@@ -255,10 +281,12 @@ library(
     ],
     defines = ["TOOLCHAIN_TEST_VALUE=21"],
     implementation_deps = [":dependency_static"],
-    linkopts = select({
-        "//:linux": ["-Wl,--wrap=toolchain_link_probe"],
-        "//conditions:default": [],
-    }),
+    linkopts = select(
+        {
+            "//:linux": ["-Wl,--wrap=toolchain_link_probe"],
+            "//conditions:default": [],
+        },
+    ),
     local_defines = [
         "TOOLCHAIN_TEST_PRIVATE=1",
         "EXPECT_PROJECT_STATIC=1",
@@ -288,10 +316,12 @@ library(
         ":runtime",
     ],
     linkage = "shared",
-    linkopts = select({
-        "//:linux": ["-Wl,--wrap=toolchain_link_probe"],
-        "//conditions:default": [],
-    }),
+    linkopts = select(
+        {
+            "//:linux": ["-Wl,--wrap=toolchain_link_probe"],
+            "//conditions:default": [],
+        },
+    ),
     local_defines = [
         "TOOLCHAIN_TEST_PRIVATE=1",
         "EXPECT_PROJECT_STATIC=0",
@@ -321,10 +351,12 @@ library(
         ":private",
     ],
     linkage = "shared",
-    linkopts = select({
-        "//:linux": ["-Wl,--wrap=toolchain_link_probe"],
-        "//conditions:default": [],
-    }),
+    linkopts = select(
+        {
+            "//:linux": ["-Wl,--wrap=toolchain_link_probe"],
+            "//conditions:default": [],
+        },
+    ),
     local_defines = [
         "TOOLCHAIN_TEST_PRIVATE=1",
         "EXPECT_PROJECT_STATIC=1",
@@ -348,10 +380,12 @@ library(
     ],
     defines = ["TOOLCHAIN_TEST_VALUE=21"],
     implementation_deps = [":dependency_shared"],
-    linkopts = select({
-        "//:linux": ["-Wl,--wrap=toolchain_link_probe"],
-        "//conditions:default": [],
-    }),
+    linkopts = select(
+        {
+            "//:linux": ["-Wl,--wrap=toolchain_link_probe"],
+            "//conditions:default": [],
+        },
+    ),
     local_defines = [
         "TOOLCHAIN_TEST_PRIVATE=1",
         "EXPECT_PROJECT_STATIC=0",

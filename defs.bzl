@@ -2,12 +2,28 @@
 
 """Public build declarations for Toolchain consumers."""
 
-load("//source/bazel:package.bzl", _archive = "package_release", _package = "package", _sdk = "sdk")
+load(
+    "//source/bazel:package.bzl",
+    _archive = "package_release",
+    _package = "package",
+    _sdk = "sdk",
+)
 load("//source/bazel:rules/format.bzl", _format = "format")
-load("//source/bazel:rules/library.bzl", _LINUX = "LINUX", _WEB = "WEB", _WINDOWS = "WINDOWS", _library = "library")
-load("//source/bazel:rules/project.bzl", _binary = "binary", _component = "component", _project = "project")
-load("//source/bazel:rules/validation.bzl", _validation = "validation")
+load(
+    "//source/bazel:rules/library.bzl",
+    _LINUX = "LINUX",
+    _WEB = "WEB",
+    _WINDOWS = "WINDOWS",
+    _library = "library",
+)
+load(
+    "//source/bazel:rules/project.bzl",
+    _binary = "binary",
+    _component = "component",
+    _project = "project",
+)
 load("//source/bazel:rules/setup.bzl", _setup = "setup")
+load("//source/bazel:rules/validation.bzl", _validation = "validation")
 
 LINUX = _LINUX
 WEB = _WEB
