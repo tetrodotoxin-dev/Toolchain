@@ -1038,9 +1038,13 @@ if __name__ == "__main__":
             assert library.toolchain_c_entry(20) == 21
             assert library.toolchain_cpp_entry(21) == 42
     else:
-        toolchain, matching, mixed, host, objdump = [
-            Path(argument).resolve() for argument in sys.argv[1:-1]
+        toolchain, matching, mixed, host = [
+            Path(argument).resolve() for argument in sys.argv[1:-2]
         ]
+
+        # LLVM tool aliases can select their multicall operation through argv[0].
+        # Make the tool absolute without resolving its supplied symlink name.
+        objdump = Path(sys.argv[-2]).absolute()
 
         case = sys.argv[-1]
         assert case in ["all", "matching", "mixed"], case
